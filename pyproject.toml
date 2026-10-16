@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling==1.29.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ssgrasping"
+version = "0.0.1"
+description = "Robot-neutral grasping and manipulation skills over ssrobot: pick, place, retract, guarded moves, and grasp checks"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Siddhartha Srinivasa" }]
+# Neutral contracts only: no simulator, planner, viewer, or robot package. ssrobot is not
+# on an index yet, so it is pinned to a commit.
+dependencies = [
+    "ssrobot @ git+https://github.com/personalrobotics/ssrobot@2fa693dca8a23d936598ca03733c87088826f6d7",
+]
+
+[dependency-groups]
+# Tests run both reference robots in MuJoCo with sscbirrt planning. The robot packages
+# are pinned to the commits ssrobot's reference-robot gate pins, and are test fixtures
+# only, never runtime dependencies.
+dev = [
+    "ssrobot[mujoco,planning] @ git+https://github.com/personalrobotics/ssrobot@2fa693dca8a23d936598ca03733c87088826f6d7",
+    "geodude-assets @ git+https://github.com/personalrobotics/geodude_assets@9d79afc6c9a2ba6ccb4c755fa8fcfac5240af93a",
+    "ada-assets @ git+https://github.com/personalrobotics/ada_assets@66b2d12ffb70fe217c64c45691166fc43d1b203b",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "ruff>=0.8",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ssgrasping"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "RUF"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests", "scripts"]
+
+[[tool.mypy.overrides]]
+module = ["mujoco.*", "sscbirrt.*", "geodude_assets.*", "ada_assets.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
