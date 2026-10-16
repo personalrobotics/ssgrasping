@@ -163,7 +163,7 @@ wheels = [
 [[package]]
 name = "geodude-assets"
 version = "0.1.0"
-source = { git = "https://github.com/personalrobotics/geodude_assets?rev=9d79afc6c9a2ba6ccb4c755fa8fcfac5240af93a#9d79afc6c9a2ba6ccb4c755fa8fcfac5240af93a" }
+source = { git = "https://github.com/personalrobotics/geodude_assets?rev=30ca5ff8706e5d856fd22d2511c879026ee45bb3#30ca5ff8706e5d856fd22d2511c879026ee45bb3" }
 dependencies = [
     { name = "mujoco" },
     { name = "numpy-stl" },
@@ -957,16 +957,16 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "ssrobot", git = "https://github.com/personalrobotics/ssrobot?rev=2fa693dca8a23d936598ca03733c87088826f6d7" }]
+requires-dist = [{ name = "ssrobot", git = "https://github.com/personalrobotics/ssrobot?rev=583759f969753b1ba2b5bce306c52e7a35a54c41" }]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "ada-assets", git = "https://github.com/personalrobotics/ada_assets?rev=66b2d12ffb70fe217c64c45691166fc43d1b203b" },
-    { name = "geodude-assets", git = "https://github.com/personalrobotics/geodude_assets?rev=9d79afc6c9a2ba6ccb4c755fa8fcfac5240af93a" },
+    { name = "geodude-assets", git = "https://github.com/personalrobotics/geodude_assets?rev=30ca5ff8706e5d856fd22d2511c879026ee45bb3" },
     { name = "mypy", specifier = ">=1.13" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "ruff", specifier = ">=0.8" },
-    { name = "ssrobot", extras = ["mujoco", "planning"], git = "https://github.com/personalrobotics/ssrobot?rev=2fa693dca8a23d936598ca03733c87088826f6d7" },
+    { name = "ssrobot", extras = ["mujoco", "planning"], git = "https://github.com/personalrobotics/ssrobot?rev=583759f969753b1ba2b5bce306c52e7a35a54c41" },
 ]
 
 [[package]]
@@ -1004,7 +1004,7 @@ wheels = [
 [[package]]
 name = "ssrobot"
 version = "0.0.0"
-source = { git = "https://github.com/personalrobotics/ssrobot?rev=2fa693dca8a23d936598ca03733c87088826f6d7#2fa693dca8a23d936598ca03733c87088826f6d7" }
+source = { git = "https://github.com/personalrobotics/ssrobot?rev=583759f969753b1ba2b5bce306c52e7a35a54c41#583759f969753b1ba2b5bce306c52e7a35a54c41" }
 
 [package.optional-dependencies]
 mujoco = [
