@@ -14,7 +14,7 @@ authors = [{ name = "Siddhartha Srinivasa" }]
 # Neutral contracts only: no simulator, planner, viewer, or robot package. ssrobot is not
 # on an index yet, so it is pinned to a commit.
 dependencies = [
-    "ssrobot @ git+https://github.com/personalrobotics/ssrobot@2fa693dca8a23d936598ca03733c87088826f6d7",
+    "ssrobot @ git+https://github.com/personalrobotics/ssrobot@583759f969753b1ba2b5bce306c52e7a35a54c41",
 ]
 
 [dependency-groups]
@@ -22,8 +22,8 @@ dependencies = [
 # are pinned to the commits ssrobot's reference-robot gate pins, and are test fixtures
 # only, never runtime dependencies.
 dev = [
-    "ssrobot[mujoco,planning] @ git+https://github.com/personalrobotics/ssrobot@2fa693dca8a23d936598ca03733c87088826f6d7",
-    "geodude-assets @ git+https://github.com/personalrobotics/geodude_assets@9d79afc6c9a2ba6ccb4c755fa8fcfac5240af93a",
+    "ssrobot[mujoco,planning] @ git+https://github.com/personalrobotics/ssrobot@583759f969753b1ba2b5bce306c52e7a35a54c41",
+    "geodude-assets @ git+https://github.com/personalrobotics/geodude_assets@30ca5ff8706e5d856fd22d2511c879026ee45bb3",
     "ada-assets @ git+https://github.com/personalrobotics/ada_assets@66b2d12ffb70fe217c64c45691166fc43d1b203b",
     "mypy>=1.13",
     "pytest>=8.3",
@@ -48,7 +48,7 @@ strict = true
 files = ["src", "tests", "scripts"]
 
 [[tool.mypy.overrides]]
-module = ["mujoco.*", "sscbirrt.*", "geodude_assets.*", "ada_assets.*"]
+module = ["mujoco.*", "sscbirrt.*", "tsr.*", "geodude_assets.*", "ada_assets.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
