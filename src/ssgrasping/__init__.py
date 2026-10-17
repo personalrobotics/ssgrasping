@@ -5,17 +5,20 @@ attachment APIs into staged skills: grasp, verify, retract, place, and release. 
 no simulator, planner, kinematics, retiming, or runtime control, and imports none.
 """
 
+from ssgrasping.execution import SkillExecution, run_skill
 from ssgrasping.grasp import GraspSpec, grasp
-from ssgrasping.outcomes import Evidence, SkillResult, SkillStatus, Stage
+from ssgrasping.outcomes import Evidence, SkillResult, SkillState, Stage
 from ssgrasping.place import PlaceSpec, place
 
 __all__ = [
     "Evidence",
     "GraspSpec",
     "PlaceSpec",
+    "SkillExecution",
     "SkillResult",
-    "SkillStatus",
+    "SkillState",
     "Stage",
     "grasp",
     "place",
+    "run_skill",
 ]

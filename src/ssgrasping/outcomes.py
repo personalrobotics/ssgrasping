@@ -2,8 +2,9 @@
 
 A skill runs its stages in order and records each one: its name, whether it succeeded,
 why, the runtime time and scene revision when it ended, and what the skill then
-believed about the object (held, attached). The result names the stage that decided it.
-Stages are skill-specific; only the terminal status is shared.
+believed about the object (held, attached). The result names the stage that decided it
+and the attachment the scene declared at the end. Stages are skill-specific; only the
+state is shared.
 """
 
 from __future__ import annotations
@@ -11,24 +12,31 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass, field
 
+from ssrobot import Attachment
 
-class SkillStatus(enum.StrEnum):
-    """How a skill ended."""
 
+class SkillState(enum.StrEnum):
+    """Where a skill execution is: not started, running, or how it ended."""
+
+    PENDING = "pending"
+    RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class Evidence(enum.StrEnum):
     """Where a stage's evidence came from."""
 
     PORTABLE = "portable"
-    """An observation a physical robot also reports, such as a gripper opening."""
+    """An observation a physical robot also reports, such as a gripper opening or its
+    joint positions."""
     PRIVILEGED = "privileged"
     """Simulator state a physical robot does not report, such as an object's pose or the
     attachment monitor."""
     PLANNED = "planned"
-    """The planner and validator, on the snapshot the stage planned in."""
+    """The description, the planner, and the validator, on the snapshot the stage
+    planned in."""
     COMMANDED = "commanded"
     """A command's terminal status, from the runtime."""
 
@@ -51,11 +59,13 @@ class Stage:
 
 @dataclass(frozen=True, slots=True)
 class SkillResult:
-    """A skill's stages, in order, and how it ended."""
+    """A skill's stages, in order, how it ended, and the attachment it left declared."""
 
     skill: str
-    status: SkillStatus
+    state: SkillState
     stages: tuple[Stage, ...]
+    attachment: Attachment | None
+    """The object's attachment as the scene declared it at the end, if any."""
     values: dict[str, object] = field(default_factory=dict)
     """Measured values worth keeping, by name: an opening, a reached distance."""
 
@@ -66,4 +76,4 @@ class SkillResult:
 
     @property
     def succeeded(self) -> bool:
-        return self.status is SkillStatus.SUCCEEDED
+        return self.state is SkillState.SUCCEEDED

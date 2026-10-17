@@ -1,32 +1,42 @@
 """Place a held object in a region on a target support, and let go.
 
-``place`` runs these stages, recording each:
-1. ``transfer``: plan the end effector into the placement regions raised by
-   ``preplace_m``, with the hand alone allowed, and execute. A plan is kept only if the
-   descent, with the target allowed, also plans from where it ends; up to
+``place`` returns a passive ``SkillExecution`` (see ``ssgrasping.execution``) that runs
+these stages, recording each. Every straight move is along the support's explicit
+outward ``normal``: away from it to pre-place and retreat, toward it to descend.
+1. ``preflight``: every reference resolves, and every command, channel, and the guard
+   the placement uses is available. Nothing is commanded before it passes.
+2. ``transfer``: plan the end effector into the placement regions moved ``preplace_m``
+   along the normal, with the hand alone allowed, and execute. A plan is kept only if
+   the descent, with the target allowed, also plans from where it ends; up to
    ``transfer_attempts`` seeds are tried. The regions are given for the object; the
    held object's attachment transform turns them into regions for the end effector.
-2. ``allow_target``: replace the allowance with the hand and the target support, for
-   the terminal descent only.
-3. ``descend``: hold still for ``settle_ticks``, so the guard tares a settled wrist and
-   not the transfer's transient; plan straight down by ``preplace_m + overshoot_m``,
-   compile it for the runtime, and execute it under ``guard``. ``guard_triggered`` is the expected
-   contact; ``trajectory_completed`` without contact is a failed placement.
-4. ``release``: open the gripper, then detach.
-5. ``retreat``: move straight up by ``retreat_m``.
-6. ``placed``: the object rests in one of the regions, by its privileged pose.
+3. ``allow_target``: replace the allowance with the hand and the target support, for
+   the terminal descent only, keeping the attachment's transform.
+4. ``descend``: hold still for ``settle_ns``, so the guard tares a settled wrist and
+   not the transfer's transient; plan straight toward the support by
+   ``preplace_m + overshoot_m``, compile it for the runtime, and execute it under
+   ``guard``. ``guard_triggered`` is the expected stop; ``trajectory_completed`` without
+   it is a failed placement.
+5. ``contact``: the stop was the terminal contact, not an early or unrelated one. From
+   the measured joints, the end effector's kinematics, and the declared attachment
+   transform, the held object must be in a region once moved back by some distance in
+   ``[-overshoot_m, terminal_m]`` along the normal.
+6. ``release``: open the gripper, require the command to succeed and the opening to
+   reach ``released_opening``, then detach. An unconfirmed release keeps the attachment
+   and reports the object's held state as unknown.
+7. ``retreat``: move straight along the normal by ``retreat_m``.
+8. ``placed``: the object rests in one of the regions, within ``region_tolerance`` of
+   all six bounds, by its privileged pose.
 
 A failure before ``release`` leaves the object attached and held.
 """
 
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
 from ssrobot import (
-    ExecutionState,
     GuardCause,
     GuardedJointTrajectory,
     Planner,
@@ -34,15 +44,15 @@ from ssrobot import (
     Pose,
     RobotContext,
     SceneSnapshot,
-    SsrobotError,
     Tsr,
     WrenchGuard,
     prepare,
 )
 
-from ssgrasping._poses import compose, invert, roll_pitch_yaw
-from ssgrasping._skill import Failed, Run
-from ssgrasping.outcomes import Evidence, SkillResult
+from ssgrasping._poses import compose, inside, invert, offset_interval
+from ssgrasping._skill import Body, Run, Wait, check_spec, preflight, unit
+from ssgrasping.execution import SkillExecution
+from ssgrasping.outcomes import Evidence
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,126 +62,184 @@ class PlaceSpec:
     manipulator: str
     end_effector: str
     gripper: str
+    opening_channel: str
+    """The gripper-opening channel read to confirm release: one value, 0 closed to 1
+    open."""
     object: str
     target: str
     """The robot frame or scene fixture the object is placed on; allowed only for the
     terminal descent."""
+    normal: tuple[float, float, float]
+    """The target support's outward unit normal, in the world."""
     regions: Sequence[Tsr]
     """Where the object's frame may rest when placed, in the world."""
     preplace_m: float
-    """How far above the regions the transfer ends, and the descent starts."""
+    """How far from the regions, along the normal, the transfer ends and the descent
+    starts."""
     overshoot_m: float
     """How far past the regions the descent may go before contact stops it."""
+    terminal_m: float
+    """How far short of the regions a stop still counts as the terminal contact."""
     guard: WrenchGuard
     """The force-torque condition that stops the descent on contact."""
     retreat_m: float
-    upright_rad: float = 0.1
-    """How far from upright, in roll or pitch, the placed object may rest."""
+    region_tolerance: tuple[float, float] = (2e-3, 0.05)
+    """How far, in metres and radians, a placed object may lie outside a region's
+    bounds and still count as in it: it settles after release."""
     open_opening: float = 1.0
-    settle_ticks: int = 500
+    released_opening: float = 0.9
+    """The opening that confirms the fingers have let go."""
+    settle_ns: int = 1_000_000_000
+    """How long the fingers, or the arm before the guarded descent, settle."""
     line_tolerance_m: float = 1e-3
-    max_ticks: int = 20_000
     transfer_attempts: int = 8
     """How many seeds to try for a transfer whose descent also plans."""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "normal", unit(self.normal, "normal"))
+        check_spec(len(self.regions) > 0, "at least one region", "regions")
+        for name in ("preplace_m", "retreat_m", "line_tolerance_m"):
+            check_spec(getattr(self, name) > 0, "must be positive", name)
+        for name in ("overshoot_m", "terminal_m", "settle_ns"):
+            check_spec(getattr(self, name) >= 0, "must be non-negative", name)
+        check_spec(self.terminal_m <= self.preplace_m, "at most preplace_m", "terminal_m")
+        metres, radians = self.region_tolerance
+        check_spec(metres >= 0 and radians >= 0, "non-negative", "region_tolerance")
+        for name in ("open_opening", "released_opening"):
+            check_spec(0.0 <= getattr(self, name) <= 1.0, "between 0 and 1", name)
+        check_spec(self.transfer_attempts >= 1, "at least 1", "transfer_attempts")
 
 
 def place(
     ctx: RobotContext, planner: Planner, spec: PlaceSpec, *, check_planner: Planner | None = None
-) -> SkillResult:
-    """Place the held ``spec.object`` on ``spec.target``; see the module.
+) -> SkillExecution:
+    """A pending placement of the held ``spec.object`` on ``spec.target``; see the
+    module. Advance it, or drive it with ``run_skill``.
 
     ``check_planner`` plans the descent checks from candidate transfers, as in
     ``grasp``."""
     run = Run(ctx, "place", spec.object)
     checker = planner if check_planner is None else check_planner
-    run.held = True
+    return SkillExecution(run, _place(run, planner, checker, spec))
+
+
+def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Body:
+    ctx = run.ctx
+    attachment = ctx.scene.attachment(spec.object)
+    run.held = None if attachment is None else True
+    preflight(
+        run,
+        manipulator=spec.manipulator,
+        end_effector=spec.end_effector,
+        gripper=spec.gripper,
+        support=spec.target,
+        channels={spec.opening_channel: (1,), spec.guard.channel: (6,)},
+        guard=spec.guard,
+    )
+    if attachment is None:
+        run.record("transfer", False, f"{spec.object!r} is not attached", Evidence.PLANNED)
+    assert attachment is not None
     arm = ctx.manipulator(spec.manipulator)
-    try:
-        attachment = ctx.scene.attachment(spec.object)
-        if attachment is None:
-            run.held = None
-            run.record("transfer", False, f"{spec.object!r} is not attached", Evidence.PLANNED)
-        assert attachment is not None
-        hand = attachment.allow
-        object_to_hand = invert(attachment.transform)
-        raised = [_raised(_for_hand(r, object_to_hand), spec.preplace_m) for r in spec.regions]
-        transfer = run.choose(
-            "transfer",
-            "descend",
-            lambda snapshot, seed: arm.plan_to_tsr(
-                raised, snapshot=snapshot, planner=planner, seed=seed
-            ),
-            lambda start: _down(ctx, _allowing(start, spec), checker, spec),
-            spec.transfer_attempts,
-        )
-        run.move("transfer", transfer, planner, spec.max_ticks)
+    hand = attachment.allow
+    object_to_hand = invert(attachment.transform)
+    raised = [
+        _moved(_for_hand(r, object_to_hand), spec.normal, spec.preplace_m) for r in spec.regions
+    ]
+    transfer = run.choose(
+        "transfer",
+        "descend",
+        lambda snapshot, seed: arm.plan_to_tsr(
+            raised, snapshot=snapshot, planner=planner, seed=seed
+        ),
+        lambda start: _toward(ctx, _allowing(start, spec), checker, spec),
+        spec.transfer_attempts,
+    )
+    yield from run.move("transfer", transfer, planner)
 
-        run.replace_allowance(spec.end_effector, (*hand, spec.target))
+    run.begin("allow_target")
+    run.replace_allowance("allow_target", spec.end_effector, (*hand, spec.target))
+    run.record("allow_target", True, f"allowed {', '.join((*hand, spec.target))}", Evidence.PLANNED)
+
+    yield from _descend(run, planner, spec)
+
+    run.begin("contact")
+    stop = _held_pose(run, spec)
+    reached = [offset_interval(stop, r, spec.normal, spec.region_tolerance) for r in spec.regions]
+    usable = [
+        (i, (lo, hi))
+        for i, span in enumerate(reached)
+        if span is not None
+        for lo, hi in [span]
+        if lo <= spec.terminal_m and hi >= -spec.overshoot_m
+    ]
+    run.values["contact_pose"] = {
+        "position": list(stop.position),
+        "quat_wxyz": list(stop.quat_wxyz),
+    }
+    run.record(
+        "contact",
+        bool(usable),
+        f"held object {usable[0][1][0]:.4f}..{usable[0][1][1]:.4f} m from region {usable[0][0]}"
+        if usable
+        else f"stopped outside the terminal band of every region, at {stop.position}",
+        Evidence.PORTABLE,
+    )
+
+    yield from run.grip("release", spec.gripper, spec.open_opening, spec.settle_ns)
+    opening = float(run.observe(spec.opening_channel)[0])
+    run.values["released_opening"] = opening
+    if opening < spec.released_opening:
+        run.held = None
         run.record(
-            "allow_target", True, f"allowed {', '.join((*hand, spec.target))}", Evidence.PLANNED
+            "release",
+            False,
+            f"opening {opening:.3f} < {spec.released_opening}: release not confirmed",
+            Evidence.PORTABLE,
         )
+    ctx.detach(spec.object)
+    run.held = False
+    run.record("release", True, f"opening {opening:.3f}; detached", Evidence.PORTABLE)
 
-        _descend(run, ctx, planner, spec)
+    run.begin("retreat")
+    retreat = arm.plan_to_end_effector_offset(
+        spec.normal, spec.retreat_m, planner=planner, position_tolerance=spec.line_tolerance_m
+    )
+    yield from run.move("retreat", retreat, planner)
 
-        run.grip(spec.gripper, spec.open_opening, spec.settle_ticks)
-        ctx.detach(spec.object)
-        run.held = False
-        run.record("release", True, "opened and detached", Evidence.COMMANDED)
-
-        retreat = arm.plan_to_end_effector_offset(
-            (0.0, 0.0, 1.0),
-            spec.retreat_m,
-            planner=planner,
-            position_tolerance=spec.line_tolerance_m,
-        )
-        run.move("retreat", retreat, planner, spec.max_ticks)
-
-        pose = next(o.pose for o in ctx.snapshot().objects if o.name == spec.object)
-        run.values["placed_pose"] = {
-            "position": list(pose.position),
-            "quat_wxyz": list(pose.quat_wxyz),
-        }
-        inside = [i for i, r in enumerate(spec.regions) if _inside(pose, r, spec.upright_rad)]
-        run.record(
-            "placed",
-            bool(inside),
-            f"in region {inside[0]}" if inside else f"outside every region at {pose.position}",
-            Evidence.PRIVILEGED,
-        )
-    except Failed:
-        pass
-    return run.result()
+    pose = next(o.pose for o in ctx.snapshot().objects if o.name == spec.object)
+    run.values["placed_pose"] = {"position": list(pose.position), "quat_wxyz": list(pose.quat_wxyz)}
+    within = [i for i, r in enumerate(spec.regions) if inside(pose, r, spec.region_tolerance)]
+    run.record(
+        "placed",
+        bool(within),
+        f"in region {within[0]}" if within else f"outside every region at {pose.position}",
+        Evidence.PRIVILEGED,
+    )
 
 
-def _descend(run: Run, ctx: RobotContext, planner: Planner, spec: PlaceSpec) -> None:
-    """The guarded terminal descent: planned, compiled for the runtime, executed."""
-    for _ in range(spec.settle_ticks):
-        ctx.step()
-    view = ctx.manipulator(spec.manipulator)
+def _descend(run: Run, planner: Planner, spec: PlaceSpec) -> Body:
+    """The guarded terminal descent: settled, planned, compiled for the runtime, run."""
+    ctx = run.ctx
+    run.begin("descend")
+    yield Wait(until_ns=ctx.now.time_ns + spec.settle_ns)
     snapshot = ctx.snapshot()
-    plan = _down(ctx, snapshot, planner, spec)
+    plan = _toward(ctx, snapshot, planner, spec)
     if not plan.succeeded:
         run.record("descend", False, f"planning {plan.status.value}", Evidence.PLANNED)
-    scene = ctx.planning_scene(snapshot, view.group)
-    try:
-        ready = prepare(
-            plan,
-            scene,
-            validator=planner.validator(plan.request, scene),
-            description=ctx.description,
-            contract=ctx.trajectory_contract,
-        )
-    except SsrobotError as e:
-        run.record("descend", False, f"{e.code}: {e.message}", Evidence.PLANNED)
-    command = GuardedJointTrajectory(trajectory=ready.command, guard=spec.guard)
-    status = ctx.run_until(
-        ctx.submit(command, snapshot=snapshot, source="planner"), max_ticks=spec.max_ticks
+    scene = ctx.planning_scene(snapshot, plan.request.group)
+    ready = prepare(
+        plan,
+        scene,
+        validator=planner.validator(plan.request, scene),
+        description=ctx.description,
+        contract=ctx.trajectory_contract,
     )
-    outcome = status.guard
-    if status.state is not ExecutionState.SUCCEEDED or outcome is None:
-        code = "" if status.diagnostic is None else f": {status.diagnostic.code}"
-        run.record("descend", False, f"{status.state.value}{code}", Evidence.COMMANDED)
-    assert outcome is not None
+    command = GuardedJointTrajectory(trajectory=ready.command, guard=spec.guard)
+    execution = ctx.submit(command, snapshot=snapshot, source="planner")
+    yield Wait(execution=execution)
+    run.finished("descend", execution)
+    outcome = execution.status.guard
+    assert outcome is not None  # a succeeded guarded trajectory reports its outcome
     run.values["descent"] = {
         "cause": outcome.cause.value,
         "measure": outcome.measure,
@@ -187,15 +255,29 @@ def _descend(run: Run, ctx: RobotContext, planner: Planner, spec: PlaceSpec) -> 
     )
 
 
-def _down(
-    ctx: RobotContext,
-    snapshot: SceneSnapshot,
-    planner: Planner,
-    spec: PlaceSpec,
+def _held_pose(run: Run, spec: PlaceSpec) -> Pose:
+    """Where the held object is, by the measured joints, the end effector's kinematics,
+    and the declared attachment transform: no simulator object state."""
+    ctx = run.ctx
+    arm = ctx.manipulator(spec.manipulator)
+    frame = arm.frame
+    assert frame is not None  # the end effector's frame
+    attachment = ctx.scene.attachment(spec.object)
+    assert attachment is not None
+    snapshot = ctx.snapshot()
+    q = tuple(snapshot.position(j) for j in ctx.description.group(arm.group).joints)
+    hand = ctx.planning_scene(snapshot, arm.group).forward_kinematics(q, frame)
+    return compose(hand, attachment.transform)
+
+
+def _toward(
+    ctx: RobotContext, snapshot: SceneSnapshot, planner: Planner, spec: PlaceSpec
 ) -> PlanResult:
-    """The straight descent from ``snapshot``, to ``overshoot_m`` past the regions."""
+    """The straight descent toward the support from ``snapshot``, to ``overshoot_m``
+    past the regions."""
+    x, y, z = spec.normal
     return ctx.manipulator(spec.manipulator).plan_to_end_effector_offset(
-        (0.0, 0.0, -1.0),
+        (-x, -y, -z),
         spec.preplace_m + spec.overshoot_m,
         snapshot=snapshot,
         planner=planner,
@@ -218,23 +300,9 @@ def _for_hand(region: Tsr, object_to_hand: Pose) -> Tsr:
     return replace(region, offset=compose(region.offset, object_to_hand))
 
 
-def _raised(region: Tsr, height: float) -> Tsr:
-    x, y, z = region.origin.position
-    return replace(
-        region, origin=Pose(position=(x, y, z + height), quat_wxyz=region.origin.quat_wxyz)
+def _moved(region: Tsr, direction: tuple[float, float, float], distance: float) -> Tsr:
+    """``region`` moved ``distance`` along the world ``direction``."""
+    position = tuple(
+        p + distance * d for p, d in zip(region.origin.position, direction, strict=True)
     )
-
-
-def _inside(pose: Pose, region: Tsr, upright_rad: float) -> bool:
-    """Whether ``pose`` is in ``region``: its displacement from the region's origin,
-    less the offset, within the position bounds, and its roll and pitch within
-    ``upright_rad``. Yaw is free."""
-    local = compose(compose(invert(region.origin), pose), invert(region.offset))
-    within = all(
-        low - 1e-3 <= v <= high + 1e-3
-        for v, (low, high) in zip(local.position, region.position_bounds, strict=True)
-    )
-    roll, pitch, _ = roll_pitch_yaw(local.quat_wxyz)
-    return (
-        within and abs(roll) <= upright_rad and abs(pitch) <= upright_rad and not math.isnan(roll)
-    )
+    return replace(region, origin=Pose(position=position, quat_wxyz=region.origin.quat_wxyz))  # type: ignore[arg-type]

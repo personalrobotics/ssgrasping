@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import math
 
-from ssrobot import Pose
+from ssrobot import Pose, Tsr
 
 Quaternion = tuple[float, float, float, float]
 Vector = tuple[float, float, float]
@@ -70,3 +70,59 @@ def roll_pitch_yaw(q: Quaternion) -> Vector:
     pitch = math.asin(max(-1.0, min(1.0, 2 * (w * y - z * x))))
     yaw = math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
     return (roll, pitch, yaw)
+
+
+def _region_local(pose: Pose, region: Tsr) -> Pose:
+    """``pose`` as the region's ``T_w``: ``inv(origin) ∘ pose ∘ inv(offset)``."""
+    return compose(compose(invert(region.origin), pose), invert(region.offset))
+
+
+def _angle_within(angle: float, low: float, high: float, tolerance: float) -> bool:
+    """Whether ``angle``, wrapped by whole turns, lies in ``[low, high]`` ± ``tolerance``."""
+    if high - low + 2 * tolerance >= 2 * math.pi:
+        return True
+    start = low - tolerance
+    return start + (angle - start) % (2 * math.pi) <= high + tolerance
+
+
+def _rotation_within(local: Pose, region: Tsr, tolerance: float) -> bool:
+    angles = roll_pitch_yaw(local.quat_wxyz)
+    return all(
+        _angle_within(a, low, high, tolerance)
+        for a, (low, high) in zip(angles, region.rotation_bounds, strict=True)
+    )
+
+
+def inside(pose: Pose, region: Tsr, tolerance: tuple[float, float]) -> bool:
+    """Whether ``pose`` is in ``region``, within ``(metres, radians)`` of every one of
+    its six bounds. Roll, pitch, and yaw are the region's fixed-axis angles, wrapped
+    into their bounds by whole turns."""
+    local = _region_local(pose, region)
+    metres, radians = tolerance
+    return all(
+        low - metres <= v <= high + metres
+        for v, (low, high) in zip(local.position, region.position_bounds, strict=True)
+    ) and _rotation_within(local, region, radians)
+
+
+def offset_interval(
+    pose: Pose, region: Tsr, direction: Vector, tolerance: tuple[float, float]
+) -> tuple[float, float] | None:
+    """The distances ``d`` for which ``pose`` moved by ``-d`` along the world unit
+    ``direction`` is in ``region`` (as ``inside``), or None if there are none or its
+    rotation is outside. Each position bound is linear in ``d``, so this is exact."""
+    local = _region_local(pose, region)
+    metres, radians = tolerance
+    if not _rotation_within(local, region, radians):
+        return None
+    step = rotate(invert(region.origin).quat_wxyz, direction)  # d's effect, region frame
+    lo, hi = -math.inf, math.inf
+    for v, m, (low, high) in zip(local.position, step, region.position_bounds, strict=True):
+        # low - metres <= v - d m <= high + metres
+        if abs(m) < 1e-12:
+            if not low - metres <= v <= high + metres:
+                return None
+            continue
+        a, b = (v - high - metres) / m, (v - low + metres) / m
+        lo, hi = max(lo, min(a, b)), min(hi, max(a, b))
+    return (lo, hi) if lo <= hi else None
