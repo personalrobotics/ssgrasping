@@ -87,6 +87,10 @@ MAX_TICKS = 200_000
 # about the finger axis as the arm accelerates (0.101 rad at the peak of the transfer,
 # settling back to under 0.01 rad), and that swing is still a held can.
 SWING_TOLERANCE_RAD = 0.2
+# The guarded descent's force threshold: the tared wrist force peaks near 3 N as the arm
+# speeds up and slows down in free motion, and passes 12 N within 20 ms of the can
+# touching the surface, rising to about 30 N.
+CONTACT_N = 8.0
 DRIFT_TOLERANCE_M = 1e-4  # below the ~0.3 mm the can drifts in the fingers on the lift
 
 
@@ -191,7 +195,7 @@ def _place_spec(**changes: Any) -> PlaceSpec:
         overshoot_m=0.01,
         terminal_m=0.01,
         guard=WrenchGuard(
-            channel="right_wrist_wrench", part=WrenchPart.FORCE, threshold=3.0, tare=True
+            channel="right_wrist_wrench", part=WrenchPart.FORCE, threshold=CONTACT_N, tare=True
         ),
         retreat_m=0.08,
     )
