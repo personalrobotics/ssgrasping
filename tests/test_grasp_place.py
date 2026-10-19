@@ -87,9 +87,12 @@ MAX_TICKS = 200_000
 # about the finger axis as the arm accelerates (0.101 rad at the peak of the transfer,
 # settling back to under 0.01 rad), and that swing is still a held can.
 SWING_TOLERANCE_RAD = 0.2
-# The guarded descent's force threshold: the tared wrist force peaks near 3 N as the arm
-# speeds up and slows down in free motion, and passes 12 N within 20 ms of the can
-# touching the surface, rising to about 30 N.
+# The guarded descent's force threshold. Measured at ssrobot 917795a, which reads the wrist
+# at the state each tick reaches (#162), over four placements on Geodude's table: the
+# tared force is 1.8-2.2 N as the descent starts, peaks at 4.4-5.1 N in free motion as
+# the arm decelerates toward the line's end 3-6 mm above the surface, is 6-18 N on the
+# first tick of contact, crosses 8 N within one tick of touching, and presses at 31-53 N.
+# 8 N is 2.9 N (1.58x) above the free-motion peak; that peak scales with descent speed.
 CONTACT_N = 8.0
 DRIFT_TOLERANCE_M = 1e-4  # below the ~0.3 mm the can drifts in the fingers on the lift
 
