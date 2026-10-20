@@ -278,7 +278,12 @@ def preflight(
         "preflight",
         not problems,
         "; ".join(problems)
-        or f"references, commands, channels{'' if guard is None else ', and guard'} available",
+        or (
+            "references, commands, and channels"
+            if guard is None
+            else "references, commands, channels, and guard"
+        )
+        + " available",
         Evidence.PLANNED,
     )
 
