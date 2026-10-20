@@ -277,7 +277,13 @@ def preflight(
     run.record(
         "preflight",
         not problems,
-        "; ".join(problems) or "references, commands, channels, and guard available",
+        "; ".join(problems)
+        or (
+            "references, commands, and channels"
+            if guard is None
+            else "references, commands, channels, and guard"
+        )
+        + " available",
         Evidence.PLANNED,
     )
 
