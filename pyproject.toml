@@ -14,15 +14,16 @@ authors = [{ name = "Siddhartha Srinivasa" }]
 # Neutral contracts only: no simulator, planner, viewer, or robot package. ssrobot is not
 # on an index yet, so it is pinned to a commit.
 dependencies = [
-    "ssrobot @ git+https://github.com/personalrobotics/ssrobot@917795ab1a95dc52331f2604bf486141b903249a",
+    "ssrobot @ git+https://github.com/personalrobotics/ssrobot@6794c9c77f9869500d1d54b391dd75d36722eb57",
 ]
 
 [dependency-groups]
 # Tests run both reference robots in MuJoCo with sscbirrt planning. The robot packages
-# are pinned to the commits ssrobot's reference-robot gate pins, and are test fixtures
-# only, never runtime dependencies.
+# are pinned to the commits ssrobot's reference-robot gate pinned at 917795a, and are
+# test fixtures only, never runtime dependencies. (The gate has since moved Geodude to a
+# recalibrated gripper, which the skills' evidence has not been re-measured against.)
 dev = [
-    "ssrobot[mujoco,planning] @ git+https://github.com/personalrobotics/ssrobot@917795ab1a95dc52331f2604bf486141b903249a",
+    "ssrobot[mujoco,planning] @ git+https://github.com/personalrobotics/ssrobot@6794c9c77f9869500d1d54b391dd75d36722eb57",
     "geodude-assets @ git+https://github.com/personalrobotics/geodude_assets@30ca5ff8706e5d856fd22d2511c879026ee45bb3",
     "ada-assets @ git+https://github.com/personalrobotics/ada_assets@66b2d12ffb70fe217c64c45691166fc43d1b203b",
     "mypy>=1.13",
