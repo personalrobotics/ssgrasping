@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ssgrasping"
 version = "0.0.1"
-description = "Robot-neutral grasping and manipulation skills over ssrobot: pick, place, retract, guarded moves, and grasp checks"
+description = "Robot-neutral grasping and manipulation skills over ssrobot: pick, place, drop into a container, retract, guarded moves, and grasp checks"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
