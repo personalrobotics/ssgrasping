@@ -19,7 +19,7 @@ wheels = [
 [[package]]
 name = "ada-assets"
 version = "0.1.0"
-source = { git = "https://github.com/personalrobotics/ada_assets?rev=66b2d12ffb70fe217c64c45691166fc43d1b203b#66b2d12ffb70fe217c64c45691166fc43d1b203b" }
+source = { git = "https://github.com/personalrobotics/ada_assets?rev=b9880d45457dde90ae11f3704b6d8b1b6e99d00d#b9880d45457dde90ae11f3704b6d8b1b6e99d00d" }
 dependencies = [
     { name = "mujoco" },
 ]
@@ -163,7 +163,7 @@ wheels = [
 [[package]]
 name = "geodude-assets"
 version = "0.1.0"
-source = { git = "https://github.com/personalrobotics/geodude_assets?rev=30ca5ff8706e5d856fd22d2511c879026ee45bb3#30ca5ff8706e5d856fd22d2511c879026ee45bb3" }
+source = { git = "https://github.com/personalrobotics/geodude_assets?rev=7b740c37f79c49335a2451610541d7b3ef7ba1b7#7b740c37f79c49335a2451610541d7b3ef7ba1b7" }
 dependencies = [
     { name = "mujoco" },
     { name = "numpy-stl" },
@@ -961,8 +961,8 @@ requires-dist = [{ name = "ssrobot", git = "https://github.com/personalrobotics/
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "ada-assets", git = "https://github.com/personalrobotics/ada_assets?rev=66b2d12ffb70fe217c64c45691166fc43d1b203b" },
-    { name = "geodude-assets", git = "https://github.com/personalrobotics/geodude_assets?rev=30ca5ff8706e5d856fd22d2511c879026ee45bb3" },
+    { name = "ada-assets", git = "https://github.com/personalrobotics/ada_assets?rev=b9880d45457dde90ae11f3704b6d8b1b6e99d00d" },
+    { name = "geodude-assets", git = "https://github.com/personalrobotics/geodude_assets?rev=7b740c37f79c49335a2451610541d7b3ef7ba1b7" },
     { name = "mypy", specifier = ">=1.13" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "ruff", specifier = ">=0.8" },

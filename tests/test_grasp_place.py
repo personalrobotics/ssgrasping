@@ -95,7 +95,8 @@ SWING_TOLERANCE_RAD = 0.2
 # 8 N is 2.9 N (1.58x) above the free-motion peak; that peak scales with descent speed.
 # Re-measured at ssrobot 640b9a4 with sscbirrt 3.11, which retimes the descent: the
 # free-motion peak is 4.4-5.1 N over the three of those placements whose transfer keeps the
-# can, so the margin stands.
+# can, so the margin stands. Again at geodude_assets 7b740c3 (torsional friction, the
+# recalibrated gripper): 4.3-4.9 N.
 CONTACT_N = 8.0
 DRIFT_TOLERANCE_M = 1e-4  # below the ~0.3 mm the can drifts in the fingers on the lift
 # Held transfers are planned at this fraction of the joints' velocity and acceleration
