@@ -263,7 +263,8 @@ class Run:
     ) -> Generator[Wait, None, Ahead | None]:
         """Execute ``plan`` and wait for it to finish.
 
-        A ``PlanResult`` is executed with ``ctx.execute``. An ``Ahead`` (a plan made on a
+        A ``PlanResult`` is executed with ``ctx.execute``; given ``replan``, one the robot
+        no longer starts from (``start_mismatch``) is planned again. An ``Ahead`` (a plan made on a
         prediction) runs as a continuation once its source has finished: refusals in
         ``RECOVER`` fail the stage; any other refusal, or a failed plan on the prediction,
         is replanned with ``replan`` from the actual state, and recorded so.
@@ -274,6 +275,16 @@ class Run:
         detail = "succeeded"
         if isinstance(plan, Ahead):
             execution, detail = yield from self._continue(name, plan, planner, replan)
+        elif replan is not None and plan.succeeded:
+            # A plan made beforehand: if the robot is no longer where it starts, plan again.
+            try:
+                execution = self.ctx.execute(plan, planner=planner)
+            except SsrobotError as e:
+                if e.code != "start_mismatch":
+                    self.record(name, False, f"{e.code}: {e.message}", Evidence.PLANNED)
+                execution, detail = self._replanned(
+                    name, replan, planner, "replanned: start_mismatch"
+                )
         else:
             execution = self._execute(name, plan, planner)
         upcoming = None if then is None else then(execution)
