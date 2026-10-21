@@ -15,6 +15,11 @@ scene revision, held and attached state, and evidence kind:
   comes to rest inside it, by its privileged pose; run twice, byte-identical.
 - ``unconfirmed_release``: the gripper opens only halfway, so ``release`` is not
   confirmed and the can stays attached.
+- ``slipped``: the attachment monitor reports the can leaving the fingers during the
+  transfer (injected, as a slip would report it; the can stays in hand). ``release``
+  fails before the gripper is commanded, the attachment is kept, and the can is
+  reported held: it may still be in hand.
+Transfers are planned at ``CARRY_SCALING`` of the limits, as ``test_grasp_place``'s.
 The environment the artifact was made in is recorded with it; byte-identity is claimed
 within one environment.
 
@@ -29,12 +34,14 @@ import math
 from pathlib import Path
 from typing import Any
 
-from ssrobot import Planner, Pose, RobotContext, Tsr
+from ssrobot import AttachmentViolation, Planner, Pose, RobotContext, RuntimeUpdate, Tsr
 
 from ssgrasping import DropSpec, SkillState, drop, grasp
 from tests.test_grasp_place import (
     CAN_XY,
+    CARRY_SCALING,
     HEIGHT,
+    MAX_TICKS,
     RADIUS,
     SURFACE_Z,
     UP,
@@ -119,6 +126,7 @@ def _drop_spec(**changes: Any) -> DropSpec:
         regions=[zone],
         retreat_m=0.08,
         inside=[interior],
+        carry_scaling=CARRY_SCALING,
     )
     return dataclasses.replace(spec, **changes)
 
@@ -135,15 +143,67 @@ def _pick_and_drop(changes: dict[str, Any] | None = None) -> Any:
     return run
 
 
+class SlipDuringTransfer:
+    """A test runtime: Geodude in MuJoCo whose attachment monitor reports the can leaving
+    the fingers once ``slip`` is set, as a slip during a transfer would report it."""
+
+    def __init__(self, inner: Any) -> None:
+        self._inner = inner
+        self.slip = False
+        self._reported = False
+
+    def poll(self) -> RuntimeUpdate:
+        update: RuntimeUpdate = self._inner.poll()
+        if not self.slip or self._reported:
+            return update
+        self._reported = True
+        left = AttachmentViolation(
+            object="can", stamp=update.stamp, position_error=0.05, rotation_error=0.0
+        )
+        return dataclasses.replace(update, events=(*update.events, left))
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
+def _slipped(runtimes: list[SlipDuringTransfer]) -> Any:
+    def run(ctx: RobotContext, planner: Planner, checker: Planner, can: Pose) -> dict[str, Any]:
+        picked = _drive(ctx, grasp(ctx, planner, _grasp_spec(can), check_planner=checker))
+        execution = drop(ctx, planner, _drop_spec(), check_planner=checker)
+        for _ in range(MAX_TICKS):
+            execution.advance()
+            if execution.done:
+                break
+            if execution.stage == "transfer" and execution.active is not None:
+                runtimes[-1].slip = True
+            ctx.step()
+        assert execution.result is not None
+        return {"grasp": _report(picked), "drop": _report(execution.result)}
+
+    return run
+
+
+def _wrapping(runtimes: list[SlipDuringTransfer]) -> Any:
+    """Wrap a session's runtime in ``SlipDuringTransfer``, kept in ``runtimes``."""
+
+    def wrap(runtime: Any) -> SlipDuringTransfer:
+        runtimes.append(SlipDuringTransfer(runtime))
+        return runtimes[-1]
+
+    return wrap
+
+
 def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> None:
     scene = tmp_path / "can_and_bin.xml"
     scene.write_text(_scene())
+    slips: list[SlipDuringTransfer] = []
 
     first = json.dumps(_session(scene, _pick_and_drop()), indent=2)
     again = json.dumps(_session(scene, _pick_and_drop()), indent=2)
     scenarios = {
         "success": json.loads(first),
         "unconfirmed_release": _session(scene, _pick_and_drop({"open_opening": 0.5})),
+        "slipped": _session(scene, _slipped(slips), wrap=_wrapping(slips)),
     }
     report = {
         "environment": _environment(),
@@ -168,3 +228,13 @@ def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> No
     assert unconfirmed["stages"][-1]["name"] == "release"
     assert unconfirmed["stages"][-1]["held"] is None
     assert unconfirmed["attachment"] is not None
+
+    slipped = scenarios["slipped"]["drop"]
+    assert slipped["state"] == SkillState.FAILED, slipped["stages"]
+    assert [(s["name"], s["succeeded"]) for s in slipped["stages"]][-2:] == [
+        ("transfer", True), ("release", False),
+    ]  # fmt: skip
+    assert slipped["stages"][-1]["evidence"] == "privileged"
+    assert slipped["stages"][-1]["held"] is True  # conservative: it may still be in hand
+    assert "released_opening" not in slipped["values"]  # the gripper was never opened
+    assert slipped["attachment"] is not None and slipped["attachment"]["held"] is False

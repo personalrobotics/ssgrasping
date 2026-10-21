@@ -93,8 +93,15 @@ SWING_TOLERANCE_RAD = 0.2
 # the arm decelerates toward the line's end 3-6 mm above the surface, is 6-18 N on the
 # first tick of contact, crosses 8 N within one tick of touching, and presses at 31-53 N.
 # 8 N is 2.9 N (1.58x) above the free-motion peak; that peak scales with descent speed.
+# Re-measured at ssrobot 640b9a4 with sscbirrt 3.11, which retimes the descent: the
+# free-motion peak is 4.4-5.1 N over the three of those placements whose transfer keeps the
+# can, so the margin stands.
 CONTACT_N = 8.0
 DRIFT_TOLERANCE_M = 1e-4  # below the ~0.3 mm the can drifts in the fingers on the lift
+# Held transfers are planned at this fraction of the joints' velocity and acceleration
+# limits. At sscbirrt 3.11's full-limit timing, the drop proof's transfer swings the wrist
+# at 3.5 rad/s and throws the 50 g can from the fingers; at 0.7 it stays held (+0.4 s).
+CARRY_SCALING = 0.7
 
 
 def _scene() -> str:
@@ -201,6 +208,7 @@ def _place_spec(**changes: Any) -> PlaceSpec:
             channel="right_wrist_wrench", part=WrenchPart.FORCE, threshold=CONTACT_N, tare=True
         ),
         retreat_m=0.08,
+        carry_scaling=CARRY_SCALING,
     )
     return dataclasses.replace(spec, **changes)
 
@@ -293,6 +301,7 @@ def _session(
     external: bool = False,
     strip: bool = False,
     runtime_options: dict[str, Any] | None = None,
+    wrap: Callable[[Any], Any] | None = None,
 ) -> Any:
     package = load_installed_package("geodude_assets")
     planner, checker = _planners(package)
@@ -302,6 +311,8 @@ def _session(
     runtime: Any = MujocoRuntime(package, scene=scene, **options)
     if external:
         runtime = ExternalClock(runtime)
+    if wrap is not None:
+        runtime = wrap(runtime)
     with RobotContext(package.description, runtime) as ctx:
         can = next(o.pose for o in ctx.snapshot().objects if o.name == "can")
         return run(ctx, planner, checker, can)
