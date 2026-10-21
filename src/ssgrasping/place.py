@@ -6,7 +6,8 @@ outward ``normal``: away from it to pre-place and retreat, toward it to descend.
 1. ``preflight``: every reference resolves, and every command, channel, and the guard
    the placement uses is available. Nothing is commanded before it passes.
 2. ``transfer``: plan the end effector into the placement regions moved ``preplace_m``
-   along the normal, with the hand alone allowed, and execute. A plan is kept only if
+   along the normal, with the hand alone allowed, at ``carry_scaling`` of the joints'
+   velocity and acceleration limits, and execute. A plan is kept only if
    the descent, with the target allowed, also plans from where it ends; up to
    ``transfer_attempts`` seeds are tried. The regions are given for the object; the
    held object's attachment transform turns them into regions for the end effector.
@@ -92,6 +93,10 @@ class PlaceSpec:
     settle_ns: int = 1_000_000_000
     """How long the fingers, or the arm before the guarded descent, settle."""
     line_tolerance_m: float = 1e-3
+    carry_scaling: float = 1.0
+    """The fraction of the joints' velocity and acceleration limits the transfer, made
+    while holding the object, is planned at: a held object can slip from a grasp that
+    holds it by friction alone."""
     transfer_attempts: int = 8
     """How many seeds to try for a transfer whose descent also plans."""
 
@@ -108,6 +113,7 @@ class PlaceSpec:
         for name in ("open_opening", "released_opening"):
             check_spec(0.0 <= getattr(self, name) <= 1.0, "between 0 and 1", name)
         check_spec(self.transfer_attempts >= 1, "at least 1", "transfer_attempts")
+        check_spec(0.0 < self.carry_scaling <= 1.0, "in (0, 1]", "carry_scaling")
 
 
 def place(
@@ -149,7 +155,12 @@ def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Bod
         "transfer",
         "descend",
         lambda snapshot, seed: arm.plan_to_tsr(
-            raised, snapshot=snapshot, planner=planner, seed=seed
+            raised,
+            snapshot=snapshot,
+            planner=planner,
+            seed=seed,
+            velocity_scaling=spec.carry_scaling,
+            acceleration_scaling=spec.carry_scaling,
         ),
         lambda start: _toward(ctx, _allowing(start, spec), checker, spec),
         spec.transfer_attempts,

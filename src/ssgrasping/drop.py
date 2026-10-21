@@ -7,13 +7,16 @@ falls.
 1. ``preflight``: every reference resolves, and every command and channel the drop uses
    is available. Nothing is commanded before it passes.
 2. ``transfer``: plan the end effector into the drop regions, with the hand alone
-   allowed, and execute. A plan is kept only if the retreat also plans from where it
+   allowed, at ``carry_scaling`` of the joints' velocity and acceleration limits, and
+   execute. A plan is kept only if the retreat also plans from where it
    ends; up to ``transfer_attempts`` seeds are tried. The regions are given for the end
    effector, as a container's drop zone usually is: the hand over the opening, pointing
    in.
-3. ``release``: open the gripper, require the command to succeed and the opening to
-   reach ``released_opening``, then detach. An unconfirmed release keeps the attachment
-   and reports the object's held state as unknown.
+3. ``release``: first, the attachment monitor must still report the object held: one
+   that left the grasp during the transfer fails here, with the attachment kept and
+   the object conservatively reported held. Then open the gripper, require the command
+   to succeed and the opening to reach ``released_opening``, and detach. An unconfirmed
+   release keeps the attachment and reports the object's held state as unknown.
 4. ``retreat``: move straight along the container's outward ``normal`` by
    ``retreat_m``.
 5. ``dropped``, only if ``inside`` is given: after ``land_ns``, the object rests in one of
@@ -71,6 +74,10 @@ class DropSpec:
     """How long after the retreat the object is given to come to rest before
     ``dropped``."""
     line_tolerance_m: float = 1e-3
+    carry_scaling: float = 1.0
+    """The fraction of the joints' velocity and acceleration limits the transfer, made
+    while holding the object, is planned at: a held object can slip from a grasp that
+    holds it by friction alone."""
     transfer_attempts: int = 8
     """How many seeds to try for a transfer whose retreat also plans."""
 
@@ -86,6 +93,7 @@ class DropSpec:
         for name in ("open_opening", "released_opening"):
             check_spec(0.0 <= getattr(self, name) <= 1.0, "between 0 and 1", name)
         check_spec(self.transfer_attempts >= 1, "at least 1", "transfer_attempts")
+        check_spec(0.0 < self.carry_scaling <= 1.0, "in (0, 1]", "carry_scaling")
 
 
 def drop(
@@ -120,13 +128,27 @@ def _drop(run: Run, planner: Planner, checker: Planner, spec: DropSpec) -> Body:
         "transfer",
         "retreat",
         lambda snapshot, seed: arm.plan_to_tsr(
-            spec.regions, snapshot=snapshot, planner=planner, seed=seed
+            spec.regions,
+            snapshot=snapshot,
+            planner=planner,
+            seed=seed,
+            velocity_scaling=spec.carry_scaling,
+            acceleration_scaling=spec.carry_scaling,
         ),
         lambda start: _away(ctx, start, checker, spec),
         spec.transfer_attempts,
     )
     yield from run.move("transfer", transfer, planner)
 
+    run.begin("release")
+    carried = ctx.scene.attachment(spec.object)
+    if carried is None or not carried.held:
+        run.record(
+            "release",
+            False,
+            "attachment monitor: the object left its declared transform during the transfer",
+            Evidence.PRIVILEGED,
+        )
     yield from run.grip("release", spec.gripper, spec.open_opening, spec.settle_ns)
     opening = float(run.observe(spec.opening_channel)[0])
     run.values["released_opening"] = opening
