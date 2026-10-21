@@ -7,7 +7,8 @@ prefix: every motion that can be planned before the first outcome not yet known 
 the fingers hold the object), with the follow-on checks the skills make:
 
 1. ``pregrasp``: into the pregrasp regions, kept only if the straight ``approach`` from
-   where it ends, and the ``lift`` from where that ends, also plan; up to the spec's
+   where it ends, and the ``lift`` from where that ends, holding the object as the grasp
+   would (below) with the support allowed, also plan; up to the spec's
    ``pregrasp_attempts`` seeds.
 2. With a drop, ``transfer``: from the lifted configuration, holding the object as the
    grasp would (at its pose relative to the hand at the end of the approach, allowed to
@@ -250,6 +251,7 @@ class Candidates:
             if not approach.succeeded:
                 continue
             grasped = _at(state, *_end(approach))
+            gripping = self._holding(arm, g, grasped, grasped, (g.support,))
             lift = yield from self._plan(
                 race,
                 "lift",
@@ -261,10 +263,10 @@ class Candidates:
                         position_tolerance=g.line_tolerance_m,
                         rotation_tolerance=1e-2,
                     ),
-                    snapshot=grasped,
+                    snapshot=gripping,
                 ),
                 c.checker,
-                grasped,
+                gripping,
             )
             if lift is None:
                 return
@@ -343,11 +345,16 @@ class Candidates:
         return False
 
     def _holding(
-        self, arm: Any, g: GraspSpec, grasped: SceneSnapshot, lifted: SceneSnapshot
+        self,
+        arm: Any,
+        g: GraspSpec,
+        grasped: SceneSnapshot,
+        lifted: SceneSnapshot,
+        also: Sequence[str] = (),
     ) -> SceneSnapshot:
         """``lifted`` with the object held as the grasp would hold it: at its pose relative
         to the hand where the approach ends, allowed to touch the hand's frames (ssrobot's
-        default allowance)."""
+        default allowance) and ``also``, as the grasp allows its support for the lift."""
         ctx = self._ctx
         frame = ctx.description.end_effector(g.end_effector).frame
         joints = ctx.description.group(arm.group).joints
@@ -362,7 +369,7 @@ class Candidates:
             object=g.object,
             end_effector=g.end_effector,
             transform=transform,
-            allow=_hand_frames(ctx, g.end_effector),
+            allow=tuple(sorted({*_hand_frames(ctx, g.end_effector), *also})),
         )
         carried = compose(hand(lifted), transform)
         objects = tuple(
