@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from ssrobot import Planner, PlanResult, RobotContext, SceneSnapshot, Tsr
 
 from ssgrasping._poses import inside
-from ssgrasping._skill import Body, Run, Wait, check_spec, preflight, unit
+from ssgrasping._skill import Body, Lookahead, Run, Wait, check_spec, preflight, unit
 from ssgrasping.execution import SkillExecution
 from ssgrasping.outcomes import Evidence
 
@@ -102,15 +102,18 @@ def drop(
     spec: DropSpec,
     *,
     check_planner: Planner | None = None,
-    lookahead: bool = False,
-    unsettled: Sequence[str] = (),
+    lookahead: Lookahead | None = None,
 ) -> SkillExecution:
     """A pending drop of the held ``spec.object`` into ``spec.container``; see the
     module. Advance it, or drive it with ``run_skill``.
 
     ``check_planner`` plans the retreat checks from candidate transfers, as in
-    ``grasp``."""
-    run = Run(ctx, "drop", spec.object, lookahead=lookahead, unsettled=unsettled)
+    ``grasp``.
+
+    With ``lookahead``, the boundaries where the drop cannot look ahead are logged in
+    ``values["lookahead"]``: its stages after the transfer depend on outcomes not yet
+    known."""
+    run = Run(ctx, "drop", spec.object, lookahead=lookahead)
     checker = planner if check_planner is None else check_planner
     return SkillExecution(run, _drop(run, planner, checker, spec))
 

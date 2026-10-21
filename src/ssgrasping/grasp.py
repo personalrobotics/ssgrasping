@@ -53,7 +53,7 @@ from ssrobot import (
 )
 
 from ssgrasping._poses import axis
-from ssgrasping._skill import Ahead, Body, Run, check_spec, preflight, unit
+from ssgrasping._skill import Ahead, Body, Lookahead, Run, check_spec, preflight, unit
 from ssgrasping.execution import SkillExecution
 from ssgrasping.outcomes import Evidence
 
@@ -111,8 +111,7 @@ def grasp(
     spec: GraspSpec,
     *,
     check_planner: Planner | None = None,
-    lookahead: bool = False,
-    unsettled: Sequence[str] = (),
+    lookahead: Lookahead | None = None,
     pregrasp: PlanResult | Ahead | None = None,
 ) -> SkillExecution:
     """A pending grasp of ``spec.object`` that lifts it clear of its support; see the
@@ -121,8 +120,13 @@ def grasp(
     ``check_planner`` plans the approach checks from candidate pregrasps (``planner``
     when None). A feasible short line plans in few iterations, so a planner with a small
     iteration budget rejects an infeasible one quickly, and deterministically, where
-    ``planner`` would spend its whole budget first."""
-    run = Run(ctx, "grasp", spec.object, lookahead=lookahead, unsettled=unsettled)
+    ``planner`` would spend its whole budget first.
+
+    With ``lookahead``, the approach is planned while the pregrasp executes. ``pregrasp``
+    is a pregrasp planned beforehand (``Selection.pregrasp``), executed in place of
+    choosing one. Neither changes any stage's meaning or evidence kind; a stage that ran
+    from a plan made ahead says so in its detail."""
+    run = Run(ctx, "grasp", spec.object, lookahead=lookahead)
     checker = planner if check_planner is None else check_planner
     return SkillExecution(run, _grasp(run, planner, checker, spec, pregrasp))
 

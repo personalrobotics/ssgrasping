@@ -5,7 +5,7 @@ on planning running on a worker; the helpers here that wait are generators too, 
 with ``yield from``. Every motion goes through ssrobot's public planning and execution
 calls. Nothing here plans, solves IK, retimes, advances a clock, or touches MuJoCo.
 
-With lookahead on, a stage whose successor's request is fully determined plans that
+Given a ``Lookahead``, a stage whose successor's request is fully determined plans that
 successor while its own motion executes, on ``ctx.predict`` of it (``Run.ahead``), and
 the successor runs as a continuation (``Run.move`` given an ``Ahead``). Every lookahead,
 and every boundary where a skill stops looking ahead because the next request depends
@@ -17,7 +17,7 @@ from __future__ import annotations
 import math
 import threading
 from collections.abc import Callable, Generator, Sequence
-from concurrent.futures import Future
+from concurrent.futures import Future, wait
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -77,6 +77,22 @@ other refusal (still moving, a small arrival mismatch, a rebase the planner cann
 or that is invalid in the actual scene) is replanned from the actual state."""
 
 
+@dataclass(frozen=True, slots=True)
+class Lookahead:
+    """How a skill looks ahead: pass one to plan each stage whose request is fully
+    determined while the motion before it runs."""
+
+    unsettled: tuple[str, ...] = ()
+    """Objects every prediction makes no claim about, such as ones still settling."""
+    arrival_tolerance: float = ARRIVAL_TOLERANCE
+    """How far, per joint, the arrival may be from a continuation's start before the stage
+    is replanned from where the arm is."""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "unsettled", tuple(self.unsettled))
+        check_spec(self.arrival_tolerance >= 0, "must be non-negative", "arrival_tolerance")
+
+
 @dataclass(slots=True)
 class Ahead:
     """A stage's motion being planned on a prediction while the motion before it runs."""
@@ -123,8 +139,7 @@ class Run:
         skill: str,
         obj: str,
         *,
-        lookahead: bool = False,
-        unsettled: Sequence[str] = (),
+        lookahead: Lookahead | None = None,
     ) -> None:
         self.ctx = ctx
         self.skill = skill
@@ -134,10 +149,6 @@ class Run:
         self.values: dict[str, object] = {}
         self.held: bool | None = None
         self.lookahead = lookahead
-        self.unsettled = tuple(unsettled)
-        """Objects every prediction makes no claim about, such as ones still settling."""
-        self.arrival_tolerance = ARRIVAL_TOLERANCE
-        """How far a continuation's start may be from where the arm arrives."""
         self._aheads: list[Ahead] = []
 
     def _log(self) -> list[dict[str, object]]:
@@ -147,8 +158,8 @@ class Run:
 
     def boundary(self, stage: str, reason: str) -> None:
         """Log that ``stage`` is not planned ahead, and why: its request depends on an
-        outcome not yet known. Only with lookahead on."""
-        if self.lookahead:
+        outcome not yet known. Only when looking ahead."""
+        if self.lookahead is not None:
             self._log().append({"stage": stage, "boundary": reason})
 
     def ahead(
@@ -158,13 +169,13 @@ class Run:
         request: Callable[[PredictedSnapshot], PlanningRequest],
         planner: Planner,
     ) -> Ahead | None:
-        """Plan ``stage`` on ``ctx.predict(source)``, on a worker, while ``source`` runs;
-        None, and logged, if lookahead is off for it. ``planner`` must not be used for
-        anything else until the plan is ready."""
-        if not self.lookahead:
+        """Plan ``stage`` on ``ctx.predict(source)``, on a worker, while ``source`` runs.
+        None if the skill does not look ahead, or, logged, if ``source`` is unpredictable.
+        ``planner`` must not be used for anything else until the plan is ready."""
+        if self.lookahead is None:
             return None
         try:
-            prediction = self.ctx.predict(source, unsettled=self.unsettled)
+            prediction = self.ctx.predict(source, unsettled=self.lookahead.unsettled)
             built = request(prediction)
         except SsrobotError as e:
             self._log().append({"stage": stage, "boundary": f"unpredictable: {e.code}"})
@@ -179,16 +190,18 @@ class Run:
 
     def adopt(self, ahead: Ahead) -> None:
         """Log a lookahead made before the skill began, such as by ``Candidates``."""
-        self.lookahead = True
+        if self.lookahead is None:
+            self.lookahead = Lookahead()
         self._log().append(ahead.log)
         self._aheads.append(ahead)
 
     def close(self) -> None:
-        """Stop every lookahead still planning; the skill has ended."""
+        """Stop every lookahead not used, and wait for it to stop; the skill has ended."""
         for ahead in self._aheads:
-            if not ahead.future.done():
+            if "decision" not in ahead.log:
                 ahead.cancel()
-                ahead.log.setdefault("decision", "abandoned: the skill ended first")
+                wait([ahead.future])  # its planner is free again once this returns
+                ahead.log["decision"] = "abandoned: the skill ended first"
 
     def attached(self) -> bool:
         return self.ctx.scene.attachment(self.obj) is not None
@@ -287,7 +300,6 @@ class Run:
     ) -> Generator[Wait, None, tuple[Execution, str]]:
         ctx, log = self.ctx, ahead.log
         if not ahead.future.done():
-            log["waited_for_plan"] = True
             yield Wait(future=ahead.future)
         plan = ahead.future.result()
         if not plan.succeeded:
@@ -297,7 +309,8 @@ class Run:
         since = ctx.now.time_ns
         while True:
             result = ctx.execute_continuation(
-                continuation, arrival_tolerance=self.arrival_tolerance
+                continuation,
+                arrival_tolerance=(self.lookahead or Lookahead()).arrival_tolerance,
             )
             report = result.report
             if report.refusal != "not_at_rest" or ctx.now.time_ns - since >= REST_WAIT_NS:

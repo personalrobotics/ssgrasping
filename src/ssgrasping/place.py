@@ -51,7 +51,7 @@ from ssrobot import (
 )
 
 from ssgrasping._poses import compose, inside, invert, offset_interval
-from ssgrasping._skill import Body, Run, Wait, check_spec, preflight, unit
+from ssgrasping._skill import Body, Lookahead, Run, Wait, check_spec, preflight, unit
 from ssgrasping.execution import SkillExecution
 from ssgrasping.outcomes import Evidence
 
@@ -122,15 +122,18 @@ def place(
     spec: PlaceSpec,
     *,
     check_planner: Planner | None = None,
-    lookahead: bool = False,
-    unsettled: Sequence[str] = (),
+    lookahead: Lookahead | None = None,
 ) -> SkillExecution:
     """A pending placement of the held ``spec.object`` on ``spec.target``; see the
     module. Advance it, or drive it with ``run_skill``.
 
     ``check_planner`` plans the descent checks from candidate transfers, as in
-    ``grasp``."""
-    run = Run(ctx, "place", spec.object, lookahead=lookahead, unsettled=unsettled)
+    ``grasp``.
+
+    With ``lookahead``, the boundaries where the placement cannot look ahead are logged in
+    ``values["lookahead"]``: its stages after the transfer depend on outcomes not yet
+    known."""
+    run = Run(ctx, "place", spec.object, lookahead=lookahead)
     checker = planner if check_planner is None else check_planner
     return SkillExecution(run, _place(run, planner, checker, spec))
 
