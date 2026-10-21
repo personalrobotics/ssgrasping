@@ -12,10 +12,10 @@ the fingers hold the object), with the follow-on checks the skills make:
    ``pregrasp_attempts`` seeds.
 2. With a drop, ``transfer``: from the lifted configuration, holding the object as the
    grasp would (at its pose relative to the hand at the end of the approach, allowed to
-   touch the hand), into the drop regions at the drop's ``carry_scaling``, kept only if
-   the ``retreat`` also plans from where it ends; up to the drop's ``transfer_attempts``
-   seeds. A candidate whose container is out of reach fails here, however short its
-   approach.
+   touch the hand), into the drop regions at the drop's ``carry_scaling``, kept, when
+   the drop retreats, only if the ``retreat`` also plans from where it ends; up to the
+   drop's ``transfer_attempts`` seeds. A candidate whose container is out of reach fails
+   here, however short its approach.
 
 All candidates plan at once, each on its own worker, with its own planners. A
 candidate's cost is the total duration of its prefix's plans. The selection is by
@@ -24,7 +24,10 @@ candidate of strictly lower priority is stopped (``canceled_by_priority``); equa
 priorities finish. Nothing is commanded.
 
 Given ``after``, a motion executing now, the prefix is planned on ``ctx.predict(after)``
-(``unsettled`` names objects it makes no claim about, such as one just dropped): the
+(``unsettled`` names objects it makes no claim about, such as one just dropped;
+``releases``, held objects to be released when ``after`` ends, such as one dropped from
+where a transfer ends, each at the pose it is expected to rest at; ``joints``, other
+joints as they are expected then, such as the gripper opened to release it): the
 selected pregrasp is then an ``Ahead``, which ``grasp`` continues once ``after`` ends.
 Otherwise it is planned on a snapshot captured now.
 
@@ -37,7 +40,7 @@ from __future__ import annotations
 
 import threading
 import time
-from collections.abc import Generator, Sequence
+from collections.abc import Generator, Mapping, Sequence
 from concurrent.futures import Future
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -49,6 +52,7 @@ from ssrobot import (
     Planner,
     PlanningRequest,
     PlanResult,
+    Pose,
     PredictedSnapshot,
     RobotContext,
     SceneSnapshot,
@@ -111,6 +115,8 @@ class Candidates:
         *,
         after: Execution | None = None,
         unsettled: Sequence[str] = (),
+        releases: Mapping[str, Pose] | None = None,
+        joints: Mapping[str, float] | None = None,
     ) -> None:
         if not candidates:
             raise ValueError("at least one candidate")
@@ -120,7 +126,9 @@ class Candidates:
         self._ctx = ctx
         self._prediction: PredictedSnapshot | None = None
         if after is not None and not after.done:
-            self._prediction = ctx.predict(after, unsettled=unsettled)
+            self._prediction = ctx.predict(
+                after, unsettled=unsettled, releases=releases, joints=joints
+            )
             self._basis: SceneSnapshot | PredictedSnapshot = self._prediction
         else:
             self._basis = ctx.snapshot()
@@ -316,6 +324,8 @@ class Candidates:
                 return False
             if not transfer.succeeded:
                 continue
+            if drop.retreat_m == 0:
+                return True
             over = _at(holding, *_end(transfer))
             retreat = yield from self._plan(
                 race,
@@ -339,8 +349,8 @@ class Candidates:
                 return True
         race.record.update(
             outcome="failed",
-            detail=f"no transfer to {drop.container!r} in {drop.transfer_attempts} seeds "
-            "from which the retreat plans",
+            detail=f"no transfer to {drop.container!r} in {drop.transfer_attempts} seeds"
+            + (" from which the retreat plans" if drop.retreat_m > 0 else ""),
         )
         return False
 

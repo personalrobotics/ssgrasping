@@ -8,7 +8,7 @@ falls.
    is available. Nothing is commanded before it passes.
 2. ``transfer``: plan the end effector into the drop regions, with the hand alone
    allowed, at ``carry_scaling`` of the joints' velocity and acceleration limits, and
-   execute. A plan is kept only if the retreat also plans from where it
+   execute. With a retreat, a plan is kept only if the retreat also plans from where it
    ends; up to ``transfer_attempts`` seeds are tried. The regions are given for the end
    effector, as a container's drop zone usually is: the hand over the opening, pointing
    in.
@@ -18,7 +18,8 @@ falls.
    to succeed and the opening to reach ``released_opening``, and detach. An unconfirmed
    release keeps the attachment and reports the object's held state as unknown.
 4. ``retreat``: move straight along the container's outward ``normal`` by
-   ``retreat_m``.
+   ``retreat_m``; none when ``retreat_m`` is 0, so the next motion can start, and be
+   planned ahead, from where the transfer ends.
 5. ``dropped``, only if ``inside`` is given: after ``land_ns``, the object rests in one of
    the ``inside`` regions, within ``region_tolerance`` of all six bounds, by its
    privileged pose.
@@ -84,8 +85,8 @@ class DropSpec:
     def __post_init__(self) -> None:
         object.__setattr__(self, "normal", unit(self.normal, "normal"))
         check_spec(len(self.regions) > 0, "at least one region", "regions")
-        for name in ("retreat_m", "line_tolerance_m"):
-            check_spec(getattr(self, name) > 0, "must be positive", name)
+        check_spec(self.retreat_m >= 0, "must be non-negative", "retreat_m")
+        check_spec(self.line_tolerance_m > 0, "must be positive", "line_tolerance_m")
         for name in ("settle_ns", "land_ns"):
             check_spec(getattr(self, name) >= 0, "must be non-negative", name)
         metres, radians = self.region_tolerance
@@ -133,9 +134,10 @@ def _drop(run: Run, planner: Planner, checker: Planner, spec: DropSpec) -> Body:
     if attachment is None:
         run.record("transfer", False, f"{spec.object!r} is not attached", Evidence.PLANNED)
     arm = ctx.manipulator(spec.manipulator)
+    retreats = spec.retreat_m > 0
     transfer = run.choose(
         "transfer",
-        "retreat",
+        "retreat" if retreats else None,
         lambda snapshot, seed: arm.plan_to_tsr(
             spec.regions,
             snapshot=snapshot,
@@ -144,7 +146,7 @@ def _drop(run: Run, planner: Planner, checker: Planner, spec: DropSpec) -> Body:
             velocity_scaling=spec.carry_scaling,
             acceleration_scaling=spec.carry_scaling,
         ),
-        lambda start: _away(ctx, start, checker, spec),
+        (lambda start: _away(ctx, start, checker, spec)) if retreats else None,
         spec.transfer_attempts,
     )
     yield from run.move("transfer", transfer, planner)
@@ -176,8 +178,9 @@ def _drop(run: Run, planner: Planner, checker: Planner, spec: DropSpec) -> Body:
     run.held = False
     run.record("release", True, f"opening {opening:.3f}; detached", Evidence.PORTABLE)
 
-    run.begin("retreat")
-    yield from run.move("retreat", _away(ctx, ctx.snapshot(), planner, spec), planner)
+    if retreats:
+        run.begin("retreat")
+        yield from run.move("retreat", _away(ctx, ctx.snapshot(), planner, spec), planner)
 
     if not spec.inside:
         return

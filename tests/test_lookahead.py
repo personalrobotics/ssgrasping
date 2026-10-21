@@ -21,11 +21,13 @@ Each scenario is one contract case, recorded in ``lookahead.json``:
   into the right bin, which it cannot reach, so its prefix fails at ``transfer`` after
   its pregrasp, approach, and lift planned, and the right arm is selected. Nothing moves
   before the selection. The right arm then grasps with the raced pregrasp and drops
-  ``can``. While that drop retreats, the race for ``can_b``, each arm into its own bin
-  with the right arm, on its side, preferred, is planned on the retreat's prediction
-  with ``can`` unsettled; the selection follows the rule, and its pregrasp continues from
-  where the retreat ends. Whether the left arm was stopped by priority or finished
-  depends on timing, so that one field of ``race_b`` may differ between runs.
+  ``can`` without a retreat. While its transfer carries ``can`` to the bin, the race for
+  ``can_b``, each arm into its own bin with the right arm, on its side, preferred, is
+  planned on the transfer's prediction, which expects ``can`` to be released where the
+  transfer ends; the selection follows the rule, and its pregrasp continues from there
+  once ``can`` has been released and has landed. Whether the left arm was stopped by
+  priority or finished depends on timing, so that one field of ``race_b`` may differ
+  between runs.
 
 ``timing.json``, outside the claim, records how long each scenario planned on the
 context's thread and on workers. Reproduce with ``uv run pytest tests/test_lookahead.py``.
@@ -54,7 +56,7 @@ from ssgrasping import (
     grasp,
     run_together,
 )
-from tests.test_drop import BIN, _drop_spec
+from tests.test_drop import BIN, BIN_FLOOR, _drop_spec
 from tests.test_drop import _scene as _can_and_bin
 from tests.test_grasp_place import (
     CHECK_ITERATIONS,
@@ -69,7 +71,7 @@ from tests.test_grasp_place import (
     _report,
 )
 
-CAN_B = (0.15, -0.30)
+CAN_B = (0.10, -0.55)
 LEFT_BIN = (-BIN[0], BIN[1], BIN[2])
 calls: list[dict[str, Any]] = []
 
@@ -212,6 +214,8 @@ def _moved(ctx: RobotContext, before: Any) -> float:
 def _raced(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
     # can: the left arm preferred, but into the right bin, out of its reach.
     before = ctx.snapshot()
+    gripper = ctx.description.gripper("right_gripper").joints
+    opened = {j: before.position(j) for j in gripper}  # the gripper starts open
     race = Candidates(
         ctx,
         [
@@ -254,15 +258,20 @@ def _raced(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
     )
     out["grasp"] = _report(picked)
     assert picked.succeeded, out["grasp"]["stages"]
-    dropping = drop(ctx, planner, selection.candidate.drop, check_planner=checker, lookahead=look)
+    no_retreat = dataclasses.replace(selection.candidate.drop, retreat_m=0.0)
+    dropping = drop(ctx, planner, no_retreat, check_planner=checker, lookahead=look)
 
-    # can_b: raced, each arm into its own bin, while the drop retreats.
+    # can_b: raced, each arm into its own bin, while the transfer carries can to the bin,
+    # where it is expected to land upright on the floor.
+    landed = Pose(
+        position=(BIN[0], BIN[1], BIN[2] + BIN_FLOOR + HEIGHT / 2), quat_wxyz=(1, 0, 0, 0)
+    )
     following: Candidates | None = None
 
     def start_next() -> None:
         nonlocal following
-        if following is None and dropping.stage == "retreat" and dropping.active is not None:
-            out["retreat"] = dropping.active.id
+        if following is None and dropping.stage == "transfer" and dropping.active is not None:
+            out["transfer"] = dropping.active.id
             following = Candidates(
                 ctx,
                 [
@@ -277,7 +286,8 @@ def _raced(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
                     for side in ("right", "left")
                 ],
                 after=dropping.active,
-                unsettled=("can",),
+                releases={"can": landed},
+                joints=opened,
             )
 
     run_together(ctx, [dropping], max_ticks=MAX_TICKS, tick=start_next)
@@ -391,12 +401,16 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
 
     race_b = raced["race_b"]
     assert race_b["basis"]["on"] == "prediction"
-    assert race_b["basis"]["prediction"]["unsettled"] == ["can"]
+    assert race_b["basis"]["prediction"]["held"] == []  # released, not carried on
+    assert race_b["basis"]["prediction"]["releases"] == ["can"]
+    assert [s["name"] for s in raced["drop"]["stages"]] == [
+        "preflight", "transfer", "release", "dropped",
+    ]  # fmt: skip
     feasible = [c for c in race_b["candidates"] if c["outcome"] == "succeeded"]
     rule = min(feasible, key=lambda c: (-c["priority"], c["cost_s"]))
     assert race_b["selected"] == rule["label"] == "right"
     pregrasp = _entry(raced["grasp_b"], "pregrasp")
-    assert pregrasp["during"] == raced["retreat"]  # planned while the drop retreated
+    assert pregrasp["during"] == raced["transfer"]  # planned while the can was carried
     assert pregrasp["decision"] == "continued", pregrasp
     assert raced["grasp_b"]["state"] == SkillState.SUCCEEDED
     assert raced["drop_b"]["state"] == SkillState.SUCCEEDED

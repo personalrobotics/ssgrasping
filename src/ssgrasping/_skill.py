@@ -121,6 +121,7 @@ def lookahead_entry(stage: str, prediction: PredictedSnapshot, **more: object) -
             "moved": list(prediction.moved),
             "held": [o.name for o in prediction.held],
             "unsettled": list(prediction.unsettled),
+            "releases": list(prediction.releases),
         },
         **more,
     }
@@ -406,9 +407,9 @@ class Run:
     def choose(
         self,
         name: str,
-        then: str,
+        then: str | None,
         plan: Callable[[SceneSnapshot, int], PlanResult],
-        follow: Callable[[SceneSnapshot], PlanResult],
+        follow: Callable[[SceneSnapshot], PlanResult] | None,
         attempts: int,
     ) -> PlanResult:
         """A plan for ``name`` from which the straight motion ``then`` also plans.
@@ -427,14 +428,18 @@ class Run:
             if not result.succeeded:
                 tried.append({"seed": seed, name: result.status.value})
                 continue
+            if follow is None or then is None:  # nothing follows: the first plan will do
+                tried.append({"seed": seed, name: "succeeded"})
+                return result
             joints, q = _end(result)
             check = follow(_at(snapshot, joints, q))
             tried.append({"seed": seed, name: "succeeded", then: check.status.value})
             if check.succeeded:
                 return result
-        self.record(
-            name, False, f"no plan in {attempts} seeds from which {then} plans", Evidence.PLANNED
+        detail = f"no plan in {attempts} seeds" + (
+            "" if then is None else f" from which {then} plans"
         )
+        self.record(name, False, detail, Evidence.PLANNED)
         raise AssertionError  # unreachable: record raised
 
 
