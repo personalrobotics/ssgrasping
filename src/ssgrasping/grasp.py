@@ -112,6 +112,7 @@ def grasp(
     *,
     check_planner: Planner | None = None,
     lookahead: bool = False,
+    unsettled: Sequence[str] = (),
     pregrasp: PlanResult | Ahead | None = None,
 ) -> SkillExecution:
     """A pending grasp of ``spec.object`` that lifts it clear of its support; see the
@@ -121,7 +122,7 @@ def grasp(
     when None). A feasible short line plans in few iterations, so a planner with a small
     iteration budget rejects an infeasible one quickly, and deterministically, where
     ``planner`` would spend its whole budget first."""
-    run = Run(ctx, "grasp", spec.object, lookahead=lookahead)
+    run = Run(ctx, "grasp", spec.object, lookahead=lookahead, unsettled=unsettled)
     checker = planner if check_planner is None else check_planner
     return SkillExecution(run, _grasp(run, planner, checker, spec, pregrasp))
 

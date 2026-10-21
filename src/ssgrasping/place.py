@@ -123,13 +123,14 @@ def place(
     *,
     check_planner: Planner | None = None,
     lookahead: bool = False,
+    unsettled: Sequence[str] = (),
 ) -> SkillExecution:
     """A pending placement of the held ``spec.object`` on ``spec.target``; see the
     module. Advance it, or drive it with ``run_skill``.
 
     ``check_planner`` plans the descent checks from candidate transfers, as in
     ``grasp``."""
-    run = Run(ctx, "place", spec.object, lookahead=lookahead)
+    run = Run(ctx, "place", spec.object, lookahead=lookahead, unsettled=unsettled)
     checker = planner if check_planner is None else check_planner
     return SkillExecution(run, _place(run, planner, checker, spec))
 

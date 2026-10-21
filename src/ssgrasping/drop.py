@@ -103,13 +103,14 @@ def drop(
     *,
     check_planner: Planner | None = None,
     lookahead: bool = False,
+    unsettled: Sequence[str] = (),
 ) -> SkillExecution:
     """A pending drop of the held ``spec.object`` into ``spec.container``; see the
     module. Advance it, or drive it with ``run_skill``.
 
     ``check_planner`` plans the retreat checks from candidate transfers, as in
     ``grasp``."""
-    run = Run(ctx, "drop", spec.object, lookahead=lookahead)
+    run = Run(ctx, "drop", spec.object, lookahead=lookahead, unsettled=unsettled)
     checker = planner if check_planner is None else check_planner
     return SkillExecution(run, _drop(run, planner, checker, spec))
 

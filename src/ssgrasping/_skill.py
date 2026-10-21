@@ -117,7 +117,15 @@ class Failed(Exception):
 class Run:
     """One skill's progress: its stages, the stage in progress, and measured values."""
 
-    def __init__(self, ctx: RobotContext, skill: str, obj: str, *, lookahead: bool = False) -> None:
+    def __init__(
+        self,
+        ctx: RobotContext,
+        skill: str,
+        obj: str,
+        *,
+        lookahead: bool = False,
+        unsettled: Sequence[str] = (),
+    ) -> None:
         self.ctx = ctx
         self.skill = skill
         self.obj = obj
@@ -126,6 +134,8 @@ class Run:
         self.values: dict[str, object] = {}
         self.held: bool | None = None
         self.lookahead = lookahead
+        self.unsettled = tuple(unsettled)
+        """Objects every prediction makes no claim about, such as ones still settling."""
         self.arrival_tolerance = ARRIVAL_TOLERANCE
         """How far a continuation's start may be from where the arm arrives."""
         self._aheads: list[Ahead] = []
@@ -154,7 +164,7 @@ class Run:
         if not self.lookahead:
             return None
         try:
-            prediction = self.ctx.predict(source)
+            prediction = self.ctx.predict(source, unsettled=self.unsettled)
             built = request(prediction)
         except SsrobotError as e:
             self._log().append({"stage": stage, "boundary": f"unpredictable: {e.code}"})
