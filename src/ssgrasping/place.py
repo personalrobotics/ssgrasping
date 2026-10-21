@@ -117,14 +117,19 @@ class PlaceSpec:
 
 
 def place(
-    ctx: RobotContext, planner: Planner, spec: PlaceSpec, *, check_planner: Planner | None = None
+    ctx: RobotContext,
+    planner: Planner,
+    spec: PlaceSpec,
+    *,
+    check_planner: Planner | None = None,
+    lookahead: bool = False,
 ) -> SkillExecution:
     """A pending placement of the held ``spec.object`` on ``spec.target``; see the
     module. Advance it, or drive it with ``run_skill``.
 
     ``check_planner`` plans the descent checks from candidate transfers, as in
     ``grasp``."""
-    run = Run(ctx, "place", spec.object)
+    run = Run(ctx, "place", spec.object, lookahead=lookahead)
     checker = planner if check_planner is None else check_planner
     return SkillExecution(run, _place(run, planner, checker, spec))
 
@@ -167,6 +172,7 @@ def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Bod
     )
     yield from run.move("transfer", transfer, planner)
 
+    run.boundary("allow_target", "allows the target: a scene change; the descent is guarded")
     run.begin("allow_target")
     run.replace_allowance("allow_target", spec.end_effector, (*hand, spec.target))
     run.record("allow_target", True, f"allowed {', '.join((*hand, spec.target))}", Evidence.PLANNED)

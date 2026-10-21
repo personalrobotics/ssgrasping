@@ -11,7 +11,8 @@ these stages, recording each:
    to ``pregrasp_attempts``. The pregrasp alone is checked only for collision, so a
    region can be reachable while its approach is not. Then execute it.
 4. ``approach``: move straight along the hand's approach axis, by ``approach_m``,
-   planned again from where the arm actually is.
+   planned again from where the arm actually is; with lookahead, planned while the
+   pregrasp executes, on its prediction, and continued on arrival.
 5. ``close``: close the gripper. The command must succeed.
 6. ``acquired``: classify the opening as held, missed, or indeterminate. This is
    portable evidence, read before anything is attached. Only ``held`` continues; a miss
@@ -28,6 +29,11 @@ these stages, recording each:
 After ``attach``, a failure or cancellation leaves the attachment declared and reports
 the object as held: the physically conservative state. Retrying or recovering is the
 application's.
+
+Lookahead stops at ``close``: whether the object is held decides what follows. The
+stages after it plan from the actual state: ``attach`` and ``restrict`` change the scene.
+A ``pregrasp`` made beforehand, such as by ``Candidates`` while another motion ran, is
+executed in place of choosing one; if it cannot continue, one is chosen as usual.
 """
 
 from __future__ import annotations
@@ -35,10 +41,19 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from ssrobot import ManipulatorView, Planner, PlanResult, RobotContext, SceneSnapshot, Tsr
+from ssrobot import (
+    ManipulatorView,
+    OffsetGoal,
+    Planner,
+    PlanResult,
+    PredictedSnapshot,
+    RobotContext,
+    SceneSnapshot,
+    Tsr,
+)
 
 from ssgrasping._poses import axis
-from ssgrasping._skill import Body, Run, check_spec, preflight, unit
+from ssgrasping._skill import Ahead, Body, Run, check_spec, preflight, unit
 from ssgrasping.execution import SkillExecution
 from ssgrasping.outcomes import Evidence
 
@@ -91,7 +106,13 @@ class GraspSpec:
 
 
 def grasp(
-    ctx: RobotContext, planner: Planner, spec: GraspSpec, *, check_planner: Planner | None = None
+    ctx: RobotContext,
+    planner: Planner,
+    spec: GraspSpec,
+    *,
+    check_planner: Planner | None = None,
+    lookahead: bool = False,
+    pregrasp: PlanResult | Ahead | None = None,
 ) -> SkillExecution:
     """A pending grasp of ``spec.object`` that lifts it clear of its support; see the
     module. Advance it, or drive it with ``run_skill``.
@@ -100,12 +121,18 @@ def grasp(
     when None). A feasible short line plans in few iterations, so a planner with a small
     iteration budget rejects an infeasible one quickly, and deterministically, where
     ``planner`` would spend its whole budget first."""
-    run = Run(ctx, "grasp", spec.object)
+    run = Run(ctx, "grasp", spec.object, lookahead=lookahead)
     checker = planner if check_planner is None else check_planner
-    return SkillExecution(run, _grasp(run, planner, checker, spec))
+    return SkillExecution(run, _grasp(run, planner, checker, spec, pregrasp))
 
 
-def _grasp(run: Run, planner: Planner, checker: Planner, spec: GraspSpec) -> Body:
+def _grasp(
+    run: Run,
+    planner: Planner,
+    checker: Planner,
+    spec: GraspSpec,
+    planned: PlanResult | Ahead | None,
+) -> Body:
     ctx = run.ctx
     preflight(
         run,
@@ -122,19 +149,41 @@ def _grasp(run: Run, planner: Planner, checker: Planner, spec: GraspSpec) -> Bod
         "open", True, f"opening {run.observe(spec.opening_channel)[0]:.3f}", Evidence.PORTABLE
     )
 
-    pregrasp = run.choose(
+    def choose() -> PlanResult:
+        return run.choose(
+            "pregrasp",
+            "approach",
+            lambda snapshot, seed: arm.plan_to_tsr(
+                list(spec.pregrasps), snapshot=snapshot, planner=planner, seed=seed
+            ),
+            lambda start: _approach(arm, ctx, start, checker, spec),
+            spec.pregrasp_attempts,
+        )
+
+    def replan_approach() -> PlanResult:
+        return _approach(arm, ctx, ctx.snapshot(), planner, spec)
+
+    if isinstance(planned, Ahead):
+        run.adopt(planned)
+    upcoming = yield from run.move(
         "pregrasp",
-        "approach",
-        lambda snapshot, seed: arm.plan_to_tsr(
-            list(spec.pregrasps), snapshot=snapshot, planner=planner, seed=seed
+        choose() if planned is None else planned,
+        planner,
+        replan=choose,
+        then=lambda execution: run.ahead(
+            "approach",
+            execution,
+            lambda prediction: arm.request(
+                _approach_goal(arm, ctx, prediction, spec), snapshot=prediction
+            ),
+            planner,
         ),
-        lambda start: _approach(arm, ctx, start, checker, spec),
-        spec.pregrasp_attempts,
     )
-    yield from run.move("pregrasp", pregrasp, planner)
 
     run.begin("approach")
-    yield from run.move("approach", _approach(arm, ctx, ctx.snapshot(), planner, spec), planner)
+    approach = replan_approach() if upcoming is None else upcoming
+    yield from run.move("approach", approach, planner, replan=replan_approach)
+    run.boundary("close", "grasp verification: the closed opening decides what follows")
 
     yield from run.grip("close", spec.gripper, spec.close_opening, spec.settle_ns)
     opening = float(run.observe(spec.opening_channel)[0])
@@ -176,6 +225,7 @@ def _grasp(run: Run, planner: Planner, checker: Planner, spec: GraspSpec) -> Bod
     )
     yield from run.move("lift", lift, planner)
 
+    run.boundary("restrict", "re-declares the attachment's allowance: a scene change")
     run.replace_allowance("restrict", spec.end_effector, hand)
     run.record("restrict", True, f"allowed {', '.join(hand)}", Evidence.PLANNED)
 
@@ -211,16 +261,28 @@ def _approach(
     spec: GraspSpec,
 ) -> PlanResult:
     """The straight approach along the end effector's z axis, from ``snapshot``."""
+    return arm.plan(_approach_goal(arm, ctx, snapshot, spec), snapshot=snapshot, planner=planner)
+
+
+def _approach_goal(
+    arm: ManipulatorView,
+    ctx: RobotContext,
+    snapshot: SceneSnapshot | PredictedSnapshot,
+    spec: GraspSpec,
+) -> OffsetGoal:
+    """The approach: ``approach_m`` along the end effector's z axis where it is in
+    ``snapshot``, keeping its orientation."""
     frame = arm.frame
     assert frame is not None  # the end effector's frame
-    q = tuple(snapshot.position(j) for j in ctx.description.group(arm.group).joints)
+    state = snapshot.state if isinstance(snapshot, PredictedSnapshot) else snapshot
+    q = tuple(state.position(j) for j in ctx.description.group(arm.group).joints)
     pose = ctx.planning_scene(snapshot, arm.group).forward_kinematics(q, frame)
-    return arm.plan_to_end_effector_offset(
-        axis(pose, 2),
-        spec.approach_m,
-        snapshot=snapshot,
-        planner=planner,
+    x, y, z = axis(pose, 2)
+    return OffsetGoal(
+        direction=(x, y, z),
+        distance=spec.approach_m,
         position_tolerance=spec.line_tolerance_m,
+        rotation_tolerance=1e-2,
     )
 
 

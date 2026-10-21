@@ -1,16 +1,24 @@
 """What the staged skills share: recording stages, and waiting on ssrobot calls.
 
-A skill body is a generator that yields a ``Wait`` wherever it waits on the runtime; the
-helpers here that wait are generators too, used with ``yield from``. Every motion goes
-through ssrobot's public planning and execution calls. Nothing here plans, solves IK,
-retimes, advances a clock, or touches MuJoCo.
+A skill body is a generator that yields a ``Wait`` wherever it waits on the runtime, or
+on planning running on a worker; the helpers here that wait are generators too, used
+with ``yield from``. Every motion goes through ssrobot's public planning and execution
+calls. Nothing here plans, solves IK, retimes, advances a clock, or touches MuJoCo.
+
+With lookahead on, a stage whose successor's request is fully determined plans that
+successor while its own motion executes, on ``ctx.predict`` of it (``Run.ahead``), and
+the successor runs as a continuation (``Run.move`` given an ``Ahead``). Every lookahead,
+and every boundary where a skill stops looking ahead because the next request depends
+on an outcome not yet known, is logged in ``values["lookahead"]``.
 """
 
 from __future__ import annotations
 
 import math
+import threading
 from collections.abc import Callable, Generator, Sequence
-from dataclasses import dataclass, replace
+from concurrent.futures import Future
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from ssrobot import (
@@ -20,25 +28,37 @@ from ssrobot import (
     GripperCommand,
     ObservationRequest,
     Planner,
+    PlanningRequest,
     PlanResult,
+    PredictedSnapshot,
     RobotContext,
     SceneSnapshot,
     SsrobotError,
     ValidationError,
     WrenchGuard,
 )
+from ssrobot.continuation import ARRIVAL_TOLERANCE
 
 from ssgrasping.outcomes import Evidence, SkillResult, SkillState, Stage
 
 
 @dataclass(frozen=True, slots=True)
 class Wait:
-    """What a skill waits for: an execution to finish, or the clock to reach a time."""
+    """What a skill waits for: an execution to finish, the clock to reach a time, or a
+    plan being made on a worker. Waiting on a plan alone needs no time to pass: a driver
+    may block on it instead of stepping (``planning``)."""
 
     execution: Execution | None = None
     until_ns: int | None = None
+    future: Future[Any] | None = None
+
+    @property
+    def planning(self) -> bool:
+        return self.future is not None
 
     def satisfied(self, ctx: RobotContext) -> bool:
+        if self.future is not None:
+            return self.future.done()
         if self.execution is not None:
             return self.execution.done
         assert self.until_ns is not None
@@ -46,6 +66,48 @@ class Wait:
 
 
 Body = Generator[Wait, None, None]
+
+REST_WAIT_NS = 500_000_000
+"""How long a continuation waits, after its source succeeds, for the joints to come to
+rest before it is replanned from where they are instead."""
+RECOVER = ("source_not_succeeded", "unpredicted_scene_change")
+"""Continuation refusals that fail the stage, for the application's recovery: the motion
+before it failed, or the scene changed in a way the prediction did not record. Every
+other refusal (still moving, a small arrival mismatch, a rebase the planner cannot make
+or that is invalid in the actual scene) is replanned from the actual state."""
+
+
+@dataclass(slots=True)
+class Ahead:
+    """A stage's motion being planned on a prediction while the motion before it runs."""
+
+    stage: str
+    prediction: PredictedSnapshot
+    planner: Planner
+    future: Future[PlanResult]
+    log: dict[str, object]
+    """This lookahead's entry in ``values["lookahead"]``."""
+    stop: threading.Event = field(default_factory=threading.Event)
+
+    def cancel(self) -> None:
+        """Ask the planner to stop: the prediction will not be used."""
+        self.stop.set()
+
+
+def lookahead_entry(stage: str, prediction: PredictedSnapshot, **more: object) -> dict[str, object]:
+    """A lookahead's log entry: what was planned ahead, on which prediction."""
+    return {
+        "stage": stage,
+        "during": prediction.source,
+        "prediction": {
+            "base": prediction.base,
+            "lineage": list(prediction.lineage),
+            "moved": list(prediction.moved),
+            "held": [o.name for o in prediction.held],
+            "unsettled": list(prediction.unsettled),
+        },
+        **more,
+    }
 
 
 class Failed(Exception):
@@ -55,7 +117,7 @@ class Failed(Exception):
 class Run:
     """One skill's progress: its stages, the stage in progress, and measured values."""
 
-    def __init__(self, ctx: RobotContext, skill: str, obj: str) -> None:
+    def __init__(self, ctx: RobotContext, skill: str, obj: str, *, lookahead: bool = False) -> None:
         self.ctx = ctx
         self.skill = skill
         self.obj = obj
@@ -63,6 +125,60 @@ class Run:
         self.stages: list[Stage] = []
         self.values: dict[str, object] = {}
         self.held: bool | None = None
+        self.lookahead = lookahead
+        self.arrival_tolerance = ARRIVAL_TOLERANCE
+        """How far a continuation's start may be from where the arm arrives."""
+        self._aheads: list[Ahead] = []
+
+    def _log(self) -> list[dict[str, object]]:
+        log = self.values.setdefault("lookahead", [])
+        assert isinstance(log, list)
+        return log
+
+    def boundary(self, stage: str, reason: str) -> None:
+        """Log that ``stage`` is not planned ahead, and why: its request depends on an
+        outcome not yet known. Only with lookahead on."""
+        if self.lookahead:
+            self._log().append({"stage": stage, "boundary": reason})
+
+    def ahead(
+        self,
+        stage: str,
+        source: Execution,
+        request: Callable[[PredictedSnapshot], PlanningRequest],
+        planner: Planner,
+    ) -> Ahead | None:
+        """Plan ``stage`` on ``ctx.predict(source)``, on a worker, while ``source`` runs;
+        None, and logged, if lookahead is off for it. ``planner`` must not be used for
+        anything else until the plan is ready."""
+        if not self.lookahead:
+            return None
+        try:
+            prediction = self.ctx.predict(source)
+            built = request(prediction)
+        except SsrobotError as e:
+            self._log().append({"stage": stage, "boundary": f"unpredictable: {e.code}"})
+            return None
+        log = lookahead_entry(stage, prediction)
+        self._log().append(log)
+        stop = threading.Event()
+        future = self.ctx.plan_async(built, snapshot=prediction, planner=planner, abort=stop.is_set)
+        ahead = Ahead(stage, prediction, planner, future, log, stop)
+        self._aheads.append(ahead)
+        return ahead
+
+    def adopt(self, ahead: Ahead) -> None:
+        """Log a lookahead made before the skill began, such as by ``Candidates``."""
+        self.lookahead = True
+        self._log().append(ahead.log)
+        self._aheads.append(ahead)
+
+    def close(self) -> None:
+        """Stop every lookahead still planning; the skill has ended."""
+        for ahead in self._aheads:
+            if not ahead.future.done():
+                ahead.cancel()
+                ahead.log.setdefault("decision", "abandoned: the skill ended first")
 
     def attached(self) -> bool:
         return self.ctx.scene.attachment(self.obj) is not None
@@ -112,19 +228,104 @@ class Run:
             )
         )
 
-    def move(self, name: str, plan: PlanResult, planner: Planner) -> Body:
-        """Execute ``plan`` with ``ctx.execute`` and wait for it to finish."""
+    def move(
+        self,
+        name: str,
+        plan: PlanResult | Ahead,
+        planner: Planner,
+        *,
+        replan: Callable[[], PlanResult] | None = None,
+        then: Callable[[Execution], Ahead | None] | None = None,
+    ) -> Generator[Wait, None, Ahead | None]:
+        """Execute ``plan`` and wait for it to finish.
+
+        A ``PlanResult`` is executed with ``ctx.execute``. An ``Ahead`` (a plan made on a
+        prediction) runs as a continuation once its source has finished: refusals in
+        ``RECOVER`` fail the stage; any other refusal, or a failed plan on the prediction,
+        is replanned with ``replan`` from the actual state, and recorded so.
+
+        ``then``, called once this motion is submitted, may start planning the next
+        stage ahead; its ``Ahead`` is returned."""
         self.begin(name)
+        detail = "succeeded"
+        if isinstance(plan, Ahead):
+            execution, detail = yield from self._continue(name, plan, planner, replan)
+        else:
+            execution = self._execute(name, plan, planner)
+        upcoming = None if then is None else then(execution)
+        yield Wait(execution=execution)
+        self.finished(name, execution)
+        self.record(name, True, detail, Evidence.COMMANDED)
+        return upcoming
+
+    def _execute(self, name: str, plan: PlanResult, planner: Planner) -> Execution:
         if not plan.succeeded:
             reason = "; ".join(d.message for d in plan.diagnostics) or plan.status.value
             self.record(name, False, f"planning {plan.status.value}: {reason}", Evidence.PLANNED)
         try:
-            execution = self.ctx.execute(plan, planner=planner)
+            return self.ctx.execute(plan, planner=planner)
         except SsrobotError as e:
             self.record(name, False, f"{e.code}: {e.message}", Evidence.PLANNED)
-        yield Wait(execution=execution)
-        self.finished(name, execution)
-        self.record(name, True, "succeeded", Evidence.COMMANDED)
+        raise AssertionError  # unreachable: record raised
+
+    def _continue(
+        self,
+        name: str,
+        ahead: Ahead,
+        planner: Planner,
+        replan: Callable[[], PlanResult] | None,
+    ) -> Generator[Wait, None, tuple[Execution, str]]:
+        ctx, log = self.ctx, ahead.log
+        if not ahead.future.done():
+            log["waited_for_plan"] = True
+            yield Wait(future=ahead.future)
+        plan = ahead.future.result()
+        if not plan.succeeded:
+            log["decision"] = f"replanned: planning on the prediction {plan.status.value}"
+            return self._replanned(name, replan, planner, log["decision"])
+        continuation = ctx.continuation(plan, planner=ahead.planner, prediction=ahead.prediction)
+        since = ctx.now.time_ns
+        while True:
+            result = ctx.execute_continuation(
+                continuation, arrival_tolerance=self.arrival_tolerance
+            )
+            report = result.report
+            if report.refusal != "not_at_rest" or ctx.now.time_ns - since >= REST_WAIT_NS:
+                break
+            yield Wait(until_ns=ctx.now.time_ns + 1)  # the next tick
+        log.update(
+            refusal=report.refusal,
+            detail=report.detail,
+            max_start_gap=report.max_start_gap,
+            rest=report.rest,
+            rebase=report.rebase,
+            waited_for_rest_ns=ctx.now.time_ns - since,
+        )
+        if result.execution is not None:
+            log["decision"] = "continued"
+            return result.execution, "succeeded (planned ahead, continued)"
+        if report.refusal in RECOVER:
+            log["decision"] = "failed: for recovery"
+            evidence = (
+                Evidence.PRIVILEGED
+                if any(d.what.startswith("object ") for d in report.discrepancies)
+                else Evidence.PLANNED
+            )
+            refused = f"continuation refused, {report.refusal}: {report.detail}"
+            self.record(name, False, refused, evidence)
+        log["decision"] = f"replanned: {report.refusal}"
+        return self._replanned(name, replan, planner, log["decision"])
+
+    def _replanned(
+        self, name: str, replan: Callable[[], PlanResult] | None, planner: Planner, why: object
+    ) -> tuple[Execution, str]:
+        """Plan ``name`` again from the actual state, with ``replan``, and execute it."""
+        if replan is None:
+            self.record(name, False, f"{why}, and nothing to replan with", Evidence.PLANNED)
+        assert replan is not None
+        plan = replan()
+        self.begin(name)
+        return self._execute(name, plan, planner), f"succeeded ({why})"
 
     def finished(self, name: str, execution: Execution) -> None:
         """Fail ``name`` unless ``execution`` succeeded."""

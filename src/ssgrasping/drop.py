@@ -97,14 +97,19 @@ class DropSpec:
 
 
 def drop(
-    ctx: RobotContext, planner: Planner, spec: DropSpec, *, check_planner: Planner | None = None
+    ctx: RobotContext,
+    planner: Planner,
+    spec: DropSpec,
+    *,
+    check_planner: Planner | None = None,
+    lookahead: bool = False,
 ) -> SkillExecution:
     """A pending drop of the held ``spec.object`` into ``spec.container``; see the
     module. Advance it, or drive it with ``run_skill``.
 
     ``check_planner`` plans the retreat checks from candidate transfers, as in
     ``grasp``."""
-    run = Run(ctx, "drop", spec.object)
+    run = Run(ctx, "drop", spec.object, lookahead=lookahead)
     checker = planner if check_planner is None else check_planner
     return SkillExecution(run, _drop(run, planner, checker, spec))
 
@@ -140,6 +145,9 @@ def _drop(run: Run, planner: Planner, checker: Planner, spec: DropSpec) -> Body:
     )
     yield from run.move("transfer", transfer, planner)
 
+    run.boundary(
+        "release", "whether the fingers let go decides what follows; detaching changes the scene"
+    )
     run.begin("release")
     carried = ctx.scene.attachment(spec.object)
     if carried is None or not carried.held:
