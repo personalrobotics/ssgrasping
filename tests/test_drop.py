@@ -154,7 +154,16 @@ class SlipDuringTransfer:
 
     def poll(self) -> RuntimeUpdate:
         update: RuntimeUpdate = self._inner.poll()
-        if not self.slip or self._reported:
+        if self._reported:
+            # A monitor reports an object leaving the fingers once. MuJoCo, which never
+            # saw the injected slip, may still report the can's own swing in hand.
+            events = tuple(
+                e
+                for e in update.events
+                if not (isinstance(e, AttachmentViolation) and e.object == "can")
+            )
+            return dataclasses.replace(update, events=events)
+        if not self.slip:
             return update
         self._reported = True
         left = AttachmentViolation(
