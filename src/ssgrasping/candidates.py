@@ -237,7 +237,12 @@ class Candidates:
                 race,
                 "pregrasp",
                 seed,
-                arm.request(TsrGoal(tsrs=tuple(g.pregrasps)), snapshot=basis, seed=seed),
+                arm.request(
+                    TsrGoal(tsrs=tuple(g.pregrasps)),
+                    snapshot=basis,
+                    seed=seed,
+                    clearance_m=g.clearance_m,
+                ),
                 c.planner,
                 basis,
             )
@@ -316,6 +321,7 @@ class Candidates:
                     seed=seed,
                     velocity_scaling=drop.carry_scaling,
                     acceleration_scaling=drop.carry_scaling,
+                    clearance_m=drop.clearance_m,
                 ),
                 c.planner,
                 holding,

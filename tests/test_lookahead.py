@@ -17,6 +17,10 @@ Each scenario is one contract case, recorded in ``lookahead.json``:
   replanned from the actual state; the stage still succeeds, and says it was replanned.
 - ``scene_change``: a scene change the prediction did not record (``can_b`` declared
   attached while the pregrasp runs) fails the approach for recovery instead.
+- ``clearance``: both arms race for ``can`` with a 5 mm clearance on the grasp's and
+  the drop's free-space stages, and the selected arm grasps, looking ahead, and drops it.
+  Every command compiled keeps exactly its stage's clearance: the raced pregrasp and the
+  transfer 5 mm, the approach (planned ahead and continued) and the lift none.
 - ``race``: both arms race for ``can``; the left arm is preferred (priority 1) but drops
   into the right bin, which it cannot reach, so its prefix fails at ``transfer`` after
   its pregrasp, approach, and lift planned, and the right arm is selected. Nothing moves
@@ -43,7 +47,7 @@ from pathlib import Path
 from typing import Any
 
 from sscbirrt import CBiRRTConfig
-from ssrobot import Planner, Pose, RobotContext, load_installed_package
+from ssrobot import Planner, PlanResult, Pose, RobotContext, TraceKind, load_installed_package
 from ssrobot.mujoco import MujocoRuntime
 from ssrobot.planning import CBiRRT
 
@@ -157,12 +161,12 @@ def _planners(package: Any, side: str, scenario: list[str]) -> tuple[Planner, Pl
     return make(), make(max_iterations=CHECK_ITERATIONS)
 
 
-def _session(scene: Path, name: str, run: Any) -> Any:
+def _session(scene: Path, name: str, run: Any, sinks: Any = ()) -> Any:
     package = load_installed_package("geodude_assets")
     scenario = [name]
     arms = {side: _planners(package, side, scenario) for side in ("right", "left")}
     runtime = MujocoRuntime(package, scene=scene, attach_tolerance_rad=SWING_TOLERANCE_RAD)
-    with RobotContext(package.description, runtime) as ctx:
+    with RobotContext(package.description, runtime, sinks=sinks) as ctx:
         poses = {o.name: o.pose for o in ctx.snapshot().objects}
         return run(ctx, arms, poses)
 
@@ -319,6 +323,62 @@ def _raced(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
     return out
 
 
+CLEARANCE_M = 0.005
+
+
+def _cleared(compiled: list[float]) -> Any:
+    """Both arms race for ``can`` with a clearance on their grasps' and drops' free-space
+    stages; the selected arm grasps, looking ahead, and drops it. ``compiled`` collects
+    the clearance of every command compiled, in order."""
+
+    def run(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
+        def spec(side: str) -> Candidate:
+            return Candidate(
+                label=side,
+                grasp=dataclasses.replace(
+                    _grasp(poses["can"], "can", side), clearance_m=CLEARANCE_M
+                ),
+                planner=arms[side][0],
+                checker=arms[side][1],
+                drop=dataclasses.replace(
+                    _drop("can", side, "right"), clearance_m=CLEARANCE_M, retreat_m=0.0
+                ),
+            )
+
+        race = Candidates(ctx, [spec("right"), spec("left")])
+        run_together(ctx, [race], max_ticks=MAX_TICKS)
+        selection = race.selection
+        assert selection is not None and selection.candidate.drop is not None
+        assert isinstance(selection.pregrasp, PlanResult)
+        planner, checker = arms[selection.candidate.label]
+        look = Lookahead()
+        picked = _drive(
+            ctx,
+            grasp(
+                ctx,
+                planner,
+                selection.candidate.grasp,
+                check_planner=checker,
+                lookahead=look,
+                pregrasp=selection.pregrasp,
+            ),
+        )
+        out: dict[str, Any] = {
+            "selected": selection.candidate.label,
+            "raced_pregrasp_clearance_m": selection.pregrasp.request.clearance_m,
+            "grasp": _report(picked),
+        }
+        if picked.succeeded:
+            dropping = drop(
+                ctx, planner, selection.candidate.drop, check_planner=checker, lookahead=look
+            )
+            out["drop"] = _report(_drive(ctx, dropping))
+        out["compiled_clearance_m"] = list(compiled)
+        return out
+
+    return run
+
+
 def _kinds(report: dict[str, Any]) -> list[tuple[str, bool, str]]:
     return [(s["name"], s["succeeded"], s["evidence"]) for s in report["stages"]]
 
@@ -341,6 +401,18 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
         "mismatch": _session(scene, "mismatch", _pick_and_drop(Lookahead(arrival_tolerance=1e-9))),
         "scene_change": _session(scene, "scene_change", _scene_changed),
         "race": _session(scene, "race", _raced),
+        "clearance": _session(
+            scene,
+            "clearance",
+            _cleared(compiled := []),
+            sinks=[
+                lambda r: (
+                    compiled.append(r.payload.request.clearance_m)
+                    if r.kind is TraceKind.COMPILED
+                    else None
+                )
+            ],
+        ),
     }
     report = {
         "environment": _environment(),
@@ -414,3 +486,10 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     assert pregrasp["decision"] == "continued", pregrasp
     assert raced["grasp_b"]["state"] == SkillState.SUCCEEDED
     assert raced["drop_b"]["state"] == SkillState.SUCCEEDED
+
+    # Only the free-space stages keep the clearance, whichever path planned them: the
+    # race's pregrasp, the approach planned ahead and continued, the lift, the transfer.
+    cleared = scenarios["clearance"]
+    assert cleared["raced_pregrasp_clearance_m"] == CLEARANCE_M
+    assert cleared["grasp"]["state"] == cleared["drop"]["state"] == SkillState.SUCCEEDED
+    assert cleared["compiled_clearance_m"] == [CLEARANCE_M, 0.0, 0.0, CLEARANCE_M]

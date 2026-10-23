@@ -34,6 +34,7 @@ A failure before ``release`` leaves the object attached and held.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
@@ -100,6 +101,11 @@ class PlaceSpec:
     transfer_attempts: int = 8
     """How many seeds to try for a transfer whose descent also plans."""
 
+    clearance_m: float = 0.0
+    """The clearance the transfer, a move through free space carrying the object, keeps
+    from the environment (``PlanningRequest.clearance_m``). The guarded descent and the
+    retreat, which must come close to the target, keep none."""
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "normal", unit(self.normal, "normal"))
         check_spec(len(self.regions) > 0, "at least one region", "regions")
@@ -114,6 +120,11 @@ class PlaceSpec:
             check_spec(0.0 <= getattr(self, name) <= 1.0, "between 0 and 1", name)
         check_spec(self.transfer_attempts >= 1, "at least 1", "transfer_attempts")
         check_spec(0.0 < self.carry_scaling <= 1.0, "in (0, 1]", "carry_scaling")
+        check_spec(
+            math.isfinite(self.clearance_m) and self.clearance_m >= 0,
+            "must be finite and non-negative",
+            "clearance_m",
+        )
 
 
 def place(
@@ -170,6 +181,7 @@ def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Bod
             seed=seed,
             velocity_scaling=spec.carry_scaling,
             acceleration_scaling=spec.carry_scaling,
+            clearance_m=spec.clearance_m,
         ),
         lambda start: _toward(ctx, _allowing(start, spec), checker, spec),
         spec.transfer_attempts,

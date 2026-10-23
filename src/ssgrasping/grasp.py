@@ -42,6 +42,7 @@ executed in place of choosing one; if it cannot continue, one is chosen as usual
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -106,6 +107,10 @@ class GraspSpec:
     approach_tries: int = 4
     """With ``deepest``, how many approach lengths to try, evenly from the deepest down
     to ``approach_m``."""
+    clearance_m: float = 0.0
+    """The clearance the pregrasp, a move through free space, keeps from the
+    environment (``PlanningRequest.clearance_m``). The approach and the lift, which must
+    come close to the object and its support, keep none."""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "normal", unit(self.normal, "normal"))
@@ -119,6 +124,11 @@ class GraspSpec:
         check_spec(self.settle_ns >= 0, "must be non-negative", "settle_ns")
         check_spec(self.pregrasp_attempts >= 1, "at least 1", "pregrasp_attempts")
         check_spec(self.approach_tries >= 2, "at least 2", "approach_tries")
+        check_spec(
+            math.isfinite(self.clearance_m) and self.clearance_m >= 0,
+            "must be finite and non-negative",
+            "clearance_m",
+        )
 
 
 def grasp(
@@ -175,7 +185,11 @@ def _grasp(
             "pregrasp",
             "approach",
             lambda snapshot, seed: arm.plan_to_tsr(
-                list(spec.pregrasps), snapshot=snapshot, planner=planner, seed=seed
+                list(spec.pregrasps),
+                snapshot=snapshot,
+                planner=planner,
+                seed=seed,
+                clearance_m=spec.clearance_m,
             ),
             lambda start: _approach(arm, ctx, start, checker, spec),
             spec.pregrasp_attempts,
