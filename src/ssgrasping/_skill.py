@@ -37,7 +37,6 @@ from ssrobot import (
     ValidationError,
     WrenchGuard,
 )
-from ssrobot.continuation import ARRIVAL_TOLERANCE
 
 from ssgrasping.outcomes import Evidence, SkillResult, SkillState, Stage
 
@@ -84,13 +83,18 @@ class Lookahead:
 
     unsettled: tuple[str, ...] = ()
     """Objects every prediction makes no claim about, such as ones still settling."""
-    arrival_tolerance: float = ARRIVAL_TOLERANCE
+    arrival_tolerance: float | None = None
     """How far, per joint, the arrival may be from a continuation's start before the stage
-    is replanned from where the arm is."""
+    is replanned from where the arm is; None for the runtime's declared goal tolerance."""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "unsettled", tuple(self.unsettled))
-        check_spec(self.arrival_tolerance >= 0, "must be non-negative", "arrival_tolerance")
+        if self.arrival_tolerance is not None:
+            check_spec(
+                math.isfinite(self.arrival_tolerance) and self.arrival_tolerance >= 0,
+                "must be finite and non-negative",
+                "arrival_tolerance",
+            )
 
 
 @dataclass(slots=True)
