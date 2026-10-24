@@ -8,7 +8,7 @@ falls.
    is available. Nothing is commanded before it passes.
 2. ``transfer``: plan the end effector into the drop regions, with the hand alone
    allowed, at ``carry_scaling`` of the joints' velocity and acceleration limits, and
-   execute. A plan is kept only if the retreat also plans from where it
+   execute. With a retreat, a plan is kept only if the retreat also plans from where it
    ends; up to ``transfer_attempts`` seeds are tried. The regions are given for the end
    effector, as a container's drop zone usually is: the hand over the opening, pointing
    in.
@@ -18,7 +18,8 @@ falls.
    to succeed and the opening to reach ``released_opening``, and detach. An unconfirmed
    release keeps the attachment and reports the object's held state as unknown.
 4. ``retreat``: move straight along the container's outward ``normal`` by
-   ``retreat_m``.
+   ``retreat_m``; none when ``retreat_m`` is 0, so the next motion can start, and be
+   planned ahead, from where the transfer ends.
 5. ``dropped``, only if ``inside`` is given: after ``land_ns``, the object rests in one of
    the ``inside`` regions, within ``region_tolerance`` of all six bounds, by its
    privileged pose.
@@ -28,13 +29,14 @@ A failure before ``release`` leaves the object attached and held.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ssrobot import Planner, PlanResult, RobotContext, SceneSnapshot, Tsr
 
 from ssgrasping._poses import inside
-from ssgrasping._skill import Body, Run, Wait, check_spec, preflight, unit
+from ssgrasping._skill import Body, Lookahead, Run, Wait, check_spec, preflight, unit
 from ssgrasping.execution import SkillExecution
 from ssgrasping.outcomes import Evidence
 
@@ -80,12 +82,16 @@ class DropSpec:
     holds it by friction alone."""
     transfer_attempts: int = 8
     """How many seeds to try for a transfer whose retreat also plans."""
+    clearance_m: float = 0.0
+    """The clearance the transfer, a move through free space carrying the object, keeps
+    from the environment (``PlanningRequest.clearance_m``). The retreat, which starts
+    over the container, keeps none."""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "normal", unit(self.normal, "normal"))
         check_spec(len(self.regions) > 0, "at least one region", "regions")
-        for name in ("retreat_m", "line_tolerance_m"):
-            check_spec(getattr(self, name) > 0, "must be positive", name)
+        check_spec(self.retreat_m >= 0, "must be non-negative", "retreat_m")
+        check_spec(self.line_tolerance_m > 0, "must be positive", "line_tolerance_m")
         for name in ("settle_ns", "land_ns"):
             check_spec(getattr(self, name) >= 0, "must be non-negative", name)
         metres, radians = self.region_tolerance
@@ -94,17 +100,31 @@ class DropSpec:
             check_spec(0.0 <= getattr(self, name) <= 1.0, "between 0 and 1", name)
         check_spec(self.transfer_attempts >= 1, "at least 1", "transfer_attempts")
         check_spec(0.0 < self.carry_scaling <= 1.0, "in (0, 1]", "carry_scaling")
+        check_spec(
+            math.isfinite(self.clearance_m) and self.clearance_m >= 0,
+            "must be finite and non-negative",
+            "clearance_m",
+        )
 
 
 def drop(
-    ctx: RobotContext, planner: Planner, spec: DropSpec, *, check_planner: Planner | None = None
+    ctx: RobotContext,
+    planner: Planner,
+    spec: DropSpec,
+    *,
+    check_planner: Planner | None = None,
+    lookahead: Lookahead | None = None,
 ) -> SkillExecution:
     """A pending drop of the held ``spec.object`` into ``spec.container``; see the
     module. Advance it, or drive it with ``run_skill``.
 
     ``check_planner`` plans the retreat checks from candidate transfers, as in
-    ``grasp``."""
-    run = Run(ctx, "drop", spec.object)
+    ``grasp``.
+
+    With ``lookahead``, the boundaries where the drop cannot look ahead are logged in
+    ``values["lookahead"]``: its stages after the transfer depend on outcomes not yet
+    known."""
+    run = Run(ctx, "drop", spec.object, lookahead=lookahead)
     checker = planner if check_planner is None else check_planner
     return SkillExecution(run, _drop(run, planner, checker, spec))
 
@@ -124,9 +144,10 @@ def _drop(run: Run, planner: Planner, checker: Planner, spec: DropSpec) -> Body:
     if attachment is None:
         run.record("transfer", False, f"{spec.object!r} is not attached", Evidence.PLANNED)
     arm = ctx.manipulator(spec.manipulator)
+    retreats = spec.retreat_m > 0
     transfer = run.choose(
         "transfer",
-        "retreat",
+        "retreat" if retreats else None,
         lambda snapshot, seed: arm.plan_to_tsr(
             spec.regions,
             snapshot=snapshot,
@@ -134,12 +155,16 @@ def _drop(run: Run, planner: Planner, checker: Planner, spec: DropSpec) -> Body:
             seed=seed,
             velocity_scaling=spec.carry_scaling,
             acceleration_scaling=spec.carry_scaling,
+            clearance_m=spec.clearance_m,
         ),
-        lambda start: _away(ctx, start, checker, spec),
+        (lambda start: _away(ctx, start, checker, spec)) if retreats else None,
         spec.transfer_attempts,
     )
     yield from run.move("transfer", transfer, planner)
 
+    run.boundary(
+        "release", "whether the fingers let go decides what follows; detaching changes the scene"
+    )
     run.begin("release")
     carried = ctx.scene.attachment(spec.object)
     if carried is None or not carried.held:
@@ -164,8 +189,9 @@ def _drop(run: Run, planner: Planner, checker: Planner, spec: DropSpec) -> Body:
     run.held = False
     run.record("release", True, f"opening {opening:.3f}; detached", Evidence.PORTABLE)
 
-    run.begin("retreat")
-    yield from run.move("retreat", _away(ctx, ctx.snapshot(), planner, spec), planner)
+    if retreats:
+        run.begin("retreat")
+        yield from run.move("retreat", _away(ctx, ctx.snapshot(), planner, spec), planner)
 
     if not spec.inside:
         return
