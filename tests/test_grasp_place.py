@@ -101,8 +101,11 @@ CONTACT_N = 8.0
 DRIFT_TOLERANCE_M = 1e-4  # below the ~0.3 mm the can drifts in the fingers on the lift
 # Held transfers are planned at this fraction of the joints' velocity and acceleration
 # limits. At sscbirrt 3.11's full-limit timing, the drop proof's transfer swings the wrist
-# at 3.5 rad/s and throws the 50 g can from the fingers; at 0.7 it stays held (+0.4 s).
-CARRY_SCALING = 0.7
+# at 3.5 rad/s and throws the 50 g can from the fingers. At 0.7 the can held in the drop
+# proof, but moving the can's start by up to 1 mm either way turned it more than the
+# monitor's 0.2 rad in the hand in 6 of 40 runs, on any machine; at 0.5, in none of 40,
+# turning at most 0.056 rad.
+CARRY_SCALING = 0.5
 
 
 def _scene() -> str:
