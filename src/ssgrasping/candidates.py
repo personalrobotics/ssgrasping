@@ -4,24 +4,34 @@
 ``run_together``. Each candidate is a grasp spec, the planners for it, and optionally the
 drop it leads to. Every candidate is evaluated on its complete planned-only feasibility
 prefix: every motion that can be planned before the first outcome not yet known (whether
-the fingers hold the object), with the follow-on checks the skills make:
+the fingers hold the object), as one ssrobot ``Chain`` of stages, each planned on where
+the stage before it would leave the robot:
 
-1. ``pregrasp``: into the pregrasp regions, kept only if the straight ``approach`` from
-   where it ends, and the ``lift`` from where that ends, holding the object as the grasp
-   would (below) with the support allowed, also plan; up to the spec's
-   ``pregrasp_attempts`` seeds.
-2. With a drop, ``transfer``: from the lifted configuration, holding the object as the
-   grasp would (at its pose relative to the hand at the end of the approach, allowed to
-   touch the hand), into the drop regions at the drop's ``carry_scaling``, kept, when
-   the drop retreats, only if the ``retreat`` also plans from where it ends; up to the
-   drop's ``transfer_attempts`` seeds. A candidate whose container is out of reach fails
-   here, however short its approach.
+1. ``pregrasp``: into the pregrasp regions, one attempt per seed, up to the spec's
+   ``pregrasp_attempts``;
+2. ``approach``: the straight approach from the pregrasp's projection, as ``grasp``
+   would plan it, with the check planner;
+3. ``lift``: from the approach's projection, holding the object as the grasp would (at
+   its pose relative to the hand there, allowed to touch the hand and the support), with
+   the check planner;
+4. with a drop, ``transfer``: from the lift's projection, holding the object allowed to
+   touch only the hand, into the drop regions at the drop's ``carry_scaling``, up to the
+   drop's ``transfer_attempts`` seeds from the same lift; and, when the drop retreats,
+   ``retreat`` from where it ends, with the check planner. A candidate whose container is
+   out of reach fails here, however short its approach.
 
-All candidates plan at once, each on its own worker, with its own planners. A
-candidate's cost is the total duration of its prefix's plans. The selection is by
-priority, then the lowest cost, then declaration order. Once a candidate succeeds, every
-candidate of strictly lower priority is stopped (``canceled_by_priority``); equal
-priorities finish. Nothing is commanded.
+The pregrasp's seeds are attempts at the whole prefix, so a pregrasp whose approach or
+lift does not plan is replaced by the next. Once every transfer seed has failed, though,
+the candidate fails: no other pregrasp is tried (``Stage.retry_prefix=False``), which
+bounds the work to one prefix and ``transfer_attempts`` transfers. That is a search
+policy, not a proof: another pregrasp, or another IK branch for it, could in principle
+make the transfer feasible.
+
+ssrobot plans the stages (``RobotContext.start_chains``), validates each on a fresh scene
+before the next is built, and selects: each candidate's first seed whose stages are all
+valid, costing the sum of their durations; then priority, then cost, then declaration
+order. A candidate's success stops every candidate of strictly lower priority. Nothing is
+commanded.
 
 Given ``after``, a motion executing now, the prefix is planned on ``ctx.predict(after)``
 (``unsettled`` names objects it makes no claim about, such as one just dropped;
@@ -31,41 +41,43 @@ joints as they are expected then, such as the gripper opened to release it): the
 selected pregrasp is then an ``Ahead``, which ``grasp`` continues once ``after`` ends.
 Otherwise it is planned on a snapshot captured now.
 
-The report records the basis (and the prediction's lineage), every candidate's outcome
-with every plan it made, and the selection; it is deterministic for deterministic
-planners. When each candidate planned, in wall time, is in ``intervals_s``, outside it.
+The selection also carries the selected attempt's approach, kept for ``grasp`` to
+continue once the pregrasp has run (``Selection.approach``); it was planned before the
+pregrasp ran, not while it runs. The report is ssrobot's ``ChainsReport``, with the
+basis and a summary per candidate; it is deterministic for deterministic planners.
 """
 
 from __future__ import annotations
 
-import threading
-import time
-from collections.abc import Generator, Mapping, Sequence
+import json
+from collections.abc import Mapping, Sequence
 from concurrent.futures import Future
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from ssrobot import (
     Attachment,
+    Chain,
+    ChainsRun,
     Execution,
     OffsetGoal,
     Planner,
-    PlanningRequest,
     PlanResult,
     Pose,
     PredictedSnapshot,
     RobotContext,
     SceneSnapshot,
-    SsrobotError,
+    Stage,
+    StageRequest,
+    StageResult,
     TsrGoal,
+    dumps,
 )
 
 from ssgrasping._poses import compose, invert
-from ssgrasping._skill import Ahead, Wait, _at, _end, lookahead_entry
+from ssgrasping._skill import Ahead, Kept, lookahead_entry
 from ssgrasping.drop import DropSpec
-from ssgrasping.grasp import GraspSpec, _approach_goal
-
-RULE = "priority, then the lowest total duration of the prefix's plans, then declaration order"
+from ssgrasping.grasp import GraspSpec, _approach_goal, _distances
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,26 +95,13 @@ class Candidate:
 
 @dataclass(frozen=True, slots=True)
 class Selection:
-    """The selected candidate, and its pregrasp: a plan on a captured snapshot, or an
-    ``Ahead`` on the prediction, for ``grasp(..., pregrasp=...)``."""
+    """The selected candidate; its pregrasp, a plan on a captured snapshot or an
+    ``Ahead`` on the prediction, for ``grasp(..., pregrasp=...)``; and its approach,
+    planned on the pregrasp's projection, for ``grasp(..., approach=...)``."""
 
     candidate: Candidate
     pregrasp: PlanResult | Ahead
-
-
-@dataclass(slots=True)
-class _Race:
-    candidate: Candidate
-    body: Generator[Wait, None, None] | None = None
-    wait: Wait | None = None
-    done: bool = False
-    stop: threading.Event = field(default_factory=threading.Event)
-    record: dict[str, Any] = field(default_factory=dict)
-    plans: list[dict[str, Any]] = field(default_factory=list)
-    pregrasp: PlanResult | None = None
-    cost: float = 0.0
-    started: float = 0.0
-    ended: float = 0.0
+    approach: Kept
 
 
 class Candidates:
@@ -120,10 +119,8 @@ class Candidates:
     ) -> None:
         if not candidates:
             raise ValueError("at least one candidate")
-        planners = [p for c in candidates for p in (c.planner, c.checker)]
-        if len({id(p) for p in planners}) != len(planners):
-            raise ValueError("each candidate plans on its own worker: give each its own planners")
         self._ctx = ctx
+        self._candidates = tuple(candidates)
         self._prediction: PredictedSnapshot | None = None
         if after is not None and not after.done:
             self._prediction = ctx.predict(
@@ -132,12 +129,9 @@ class Candidates:
             self._basis: SceneSnapshot | PredictedSnapshot = self._prediction
         else:
             self._basis = ctx.snapshot()
-        self._t0 = time.monotonic()
-        self._races = [_Race(c) for c in candidates]
-        for race in self._races:
-            race.body = self._prefix(race)
-            race.record = {"label": race.candidate.label, "priority": race.candidate.priority}
-            race.started = time.monotonic()
+        chains = [self._chain(c) for c in self._candidates]
+        # One stage of one seed of each chain plans at a time: a worker each.
+        self._run: ChainsRun = ctx.start_chains(chains, snapshot=self._basis, workers=len(chains))
         self._selection: Selection | None = None
         self._report: dict[str, Any] | None = None
 
@@ -148,11 +142,7 @@ class Candidates:
     @property
     def planning(self) -> tuple[Future[Any], ...]:
         """The plans being made now; a race never needs the runtime's time to pass."""
-        return tuple(
-            r.wait.future
-            for r in self._races
-            if not r.done and r.wait is not None and r.wait.future is not None
-        )
+        return self._run.planning
 
     @property
     def selection(self) -> Selection | None:
@@ -162,275 +152,214 @@ class Candidates:
     def report(self) -> dict[str, Any] | None:
         return self._report
 
-    @property
-    def intervals_s(self) -> list[tuple[str, float, float]]:
-        """When each candidate planned, in seconds of wall time since the race began."""
-        return [(r.candidate.label, r.started - self._t0, r.ended - self._t0) for r in self._races]
-
     def advance(self) -> bool:
-        """Resume every candidate whose plan is ready; select once all have ended."""
+        """Advance ssrobot's race; select once it is done."""
         if self.done:
             return True
-        for race in self._races:
-            while not race.done and (race.wait is None or race.wait.satisfied(self._ctx)):
-                assert race.body is not None
-                try:
-                    race.wait = next(race.body)
-                except StopIteration:
-                    race.done, race.ended = True, time.monotonic()
-                    if race.record.get("outcome") == "succeeded":
-                        self._outrank(race.candidate.priority)
-        if all(r.done for r in self._races):
+        if self._run.advance():
             self._select()
         return self.done
 
-    def _outrank(self, priority: int) -> None:
-        for race in self._races:
-            if race.candidate.priority < priority and not race.done:
-                race.stop.set()
+    def close(self) -> None:
+        """Stop the race if it has not finished, and wait for its planners; may be called
+        again."""
+        self._run.close()
+        if not self.done:
+            self._select()
 
-    def _plan(
-        self,
-        race: _Race,
-        stage: str,
-        seed: int,
-        request: PlanningRequest,
-        planner: Planner,
-        on: Any,
-    ) -> Generator[Wait, None, PlanResult | None]:
-        """Plan ``request`` on a worker; None once the race stopped this candidate."""
-        if race.stop.is_set():
-            return None
-        future = self._ctx.plan_async(request, snapshot=on, planner=planner, abort=race.stop.is_set)
-        yield Wait(future=future)
-        result = future.result()
-        if race.stop.is_set():
-            return None
-        duration = None if result.trajectory is None else result.trajectory.duration
-        race.plans.append(
-            {"stage": stage, "seed": seed, "status": result.status.value, "duration_s": duration}
-        )
-        if result.succeeded:
-            race.cost += duration or 0.0
-        return result
-
-    def _prefix(self, race: _Race) -> Generator[Wait, None, None]:
-        try:
-            yield from self._evaluate(race)
-        except SsrobotError as e:  # a refused request: this candidate is infeasible
-            race.record.update(outcome="failed", detail=f"{e.code}: {e.message}")
-        if race.stop.is_set() and race.record.get("outcome") != "succeeded":
-            race.record.update(outcome="canceled_by_priority", detail="a higher priority succeeded")
-        race.record["plans"] = race.plans
-        if race.record.get("outcome") == "succeeded":
-            race.record["cost_s"] = race.cost
-
-    def _evaluate(self, race: _Race) -> Generator[Wait, None, None]:
-        ctx, c, g = self._ctx, race.candidate, race.candidate.grasp
+    def _chain(self, c: Candidate) -> Chain:
+        """The candidate's prefix as ssrobot stages; see the module."""
+        ctx, g = self._ctx, c.grasp
         arm = ctx.manipulator(g.manipulator)
         basis = self._basis
-        state = basis.state if isinstance(basis, PredictedSnapshot) else basis
-        for seed in range(g.pregrasp_attempts):
-            race.plans.clear()
-            race.cost = 0.0
-            pregrasp = yield from self._plan(
-                race,
-                "pregrasp",
-                seed,
-                arm.request(
-                    TsrGoal(tsrs=tuple(g.pregrasps)),
-                    snapshot=basis,
-                    seed=seed,
-                    clearance_m=g.clearance_m,
-                ),
-                c.planner,
-                basis,
-            )
-            if pregrasp is None:
-                return
-            if not pregrasp.succeeded:
-                continue
-            at = _at(state, *_end(pregrasp))
-            approach = yield from self._plan(
-                race,
-                "approach",
-                seed,
-                arm.request(_approach_goal(arm, ctx, at, g), snapshot=at),
-                c.checker,
-                at,
-            )
-            if approach is None:
-                return
-            if not approach.succeeded:
-                continue
-            grasped = _at(state, *_end(approach))
-            gripping = self._holding(arm, g, grasped, grasped, (g.support,))
-            lift = yield from self._plan(
-                race,
-                "lift",
-                seed,
-                arm.request(
-                    OffsetGoal(
-                        direction=g.normal,
-                        distance=g.lift_m,
-                        position_tolerance=g.line_tolerance_m,
-                        rotation_tolerance=1e-2,
-                    ),
-                    snapshot=gripping,
-                ),
-                c.checker,
-                gripping,
-            )
-            if lift is None:
-                return
-            if lift.succeeded:
-                race.pregrasp = pregrasp
-                break
-        else:
-            race.record.update(
-                outcome="failed",
-                detail=f"no pregrasp in {g.pregrasp_attempts} seeds whose approach and lift plan",
-            )
-            return
-        if c.drop is not None:
-            ok = yield from self._transfer(race, arm, c.drop, grasped, _at(state, *_end(lift)))
-            if not ok:
-                return
-        race.record.update(outcome="succeeded", detail="every motion of the prefix plans")
 
-    def _transfer(
-        self,
-        race: _Race,
-        arm: Any,
-        drop: DropSpec,
-        grasped: SceneSnapshot,
-        lifted: SceneSnapshot,
-    ) -> Generator[Wait, None, bool]:
-        """Plan the drop's transfer, holding the object as the grasp would, and its
-        retreat check."""
-        holding = self._holding(arm, race.candidate.grasp, grasped, lifted)
-        c = race.candidate
-        for seed in range(drop.transfer_attempts):
-            transfer = yield from self._plan(
-                race,
-                "transfer",
-                seed,
-                arm.request(
+        def pregrasp(previous: StageResult | None) -> StageRequest:
+            request = arm.request(
+                TsrGoal(tsrs=tuple(g.pregrasps)), snapshot=basis, clearance_m=g.clearance_m
+            )
+            return StageRequest(snapshot=basis, request=request, planner=c.planner)
+
+        def approach(previous: StageResult | None) -> StageRequest:
+            assert previous is not None
+            at = previous.projection
+            distance = _distances(arm, ctx, at, g)[0]
+            request = arm.request(
+                _approach_goal(arm, ctx, at, g, distance),
+                snapshot=at,
+                seed=previous.plan.request.seed,
+            )
+            return StageRequest(snapshot=at, request=request, planner=c.checker)
+
+        def lift(previous: StageResult | None) -> StageRequest:
+            assert previous is not None
+            at = previous.projection
+            held = self._held(arm, g, at.state, also=(g.support,))
+            attachments = tuple(sorted((*at.state.attachments, held), key=lambda a: a.object))
+            state = replace(at.state, attachments=attachments)
+            request = arm.request(
+                OffsetGoal(
+                    direction=g.normal,
+                    distance=g.lift_m,
+                    position_tolerance=g.line_tolerance_m,
+                    rotation_tolerance=1e-2,
+                ),
+                snapshot=state,
+                seed=previous.plan.request.seed,
+            )
+            return StageRequest(
+                snapshot=at, request=request, planner=c.checker, attachments=attachments
+            )
+
+        stages = [Stage("pregrasp", pregrasp), Stage("approach", approach), Stage("lift", lift)]
+        drop = c.drop
+        if drop is not None:
+
+            def transfer(previous: StageResult | None) -> StageRequest:
+                assert previous is not None and drop is not None
+                at = previous.projection
+                hand = _hand_frames(ctx, g.end_effector)
+                attachments = tuple(
+                    replace(a, allow=hand) if a.object == g.object else a
+                    for a in at.state.attachments
+                )
+                state = replace(at.state, attachments=attachments)
+                request = arm.request(
                     TsrGoal(tsrs=tuple(drop.regions)),
-                    snapshot=holding,
-                    seed=seed,
+                    snapshot=state,
+                    seed=previous.plan.request.seed,
                     velocity_scaling=drop.carry_scaling,
                     acceleration_scaling=drop.carry_scaling,
                     clearance_m=drop.clearance_m,
-                ),
-                c.planner,
-                holding,
-            )
-            if transfer is None:
-                return False
-            if not transfer.succeeded:
-                continue
-            if drop.retreat_m == 0:
-                return True
-            over = _at(holding, *_end(transfer))
-            retreat = yield from self._plan(
-                race,
-                "retreat",
-                seed,
-                arm.request(
-                    OffsetGoal(
-                        direction=drop.normal,
-                        distance=drop.retreat_m,
-                        position_tolerance=drop.line_tolerance_m,
-                        rotation_tolerance=1e-2,
-                    ),
-                    snapshot=over,
-                ),
-                c.checker,
-                over,
-            )
-            if retreat is None:
-                return False
-            if retreat.succeeded:
-                return True
-        race.record.update(
-            outcome="failed",
-            detail=f"no transfer to {drop.container!r} in {drop.transfer_attempts} seeds"
-            + (" from which the retreat plans" if drop.retreat_m > 0 else ""),
-        )
-        return False
+                )
+                return StageRequest(
+                    snapshot=at, request=request, planner=c.planner, attachments=attachments
+                )
 
-    def _holding(
-        self,
-        arm: Any,
-        g: GraspSpec,
-        grasped: SceneSnapshot,
-        lifted: SceneSnapshot,
-        also: Sequence[str] = (),
-    ) -> SceneSnapshot:
-        """``lifted`` with the object held as the grasp would hold it: at its pose relative
-        to the hand where the approach ends, allowed to touch the hand's frames (ssrobot's
-        default allowance) and ``also``, as the grasp allows its support for the lift."""
+            # Retried from the same lift, as ``drop`` retries it; and, once every seed
+            # fails, the candidate fails rather than planning another prefix: see the
+            # module.
+            stages.append(
+                Stage(
+                    "transfer",
+                    transfer,
+                    seeds=tuple(range(drop.transfer_attempts)),
+                    retry_prefix=False,
+                )
+            )
+            if drop.retreat_m > 0:
+
+                def retreat(previous: StageResult | None) -> StageRequest:
+                    assert previous is not None and drop is not None
+                    at = previous.projection
+                    request = arm.request(
+                        OffsetGoal(
+                            direction=drop.normal,
+                            distance=drop.retreat_m,
+                            position_tolerance=drop.line_tolerance_m,
+                            rotation_tolerance=1e-2,
+                        ),
+                        snapshot=at,
+                        seed=previous.plan.request.seed,
+                    )
+                    return StageRequest(snapshot=at, request=request, planner=c.checker)
+
+                stages.append(Stage("retreat", retreat))
+        return Chain(
+            label=c.label,
+            stages=tuple(stages),
+            seeds=tuple(range(g.pregrasp_attempts)),
+            priority=c.priority,
+        )
+
+    def _held(
+        self, arm: Any, g: GraspSpec, at: SceneSnapshot, also: Sequence[str] = ()
+    ) -> Attachment:
+        """The object held as the grasp would hold it from ``at``: at its pose relative to
+        the hand there, allowed to touch the hand's frames (ssrobot's default allowance)
+        and ``also``, as the grasp allows its support for the lift."""
         ctx = self._ctx
         frame = ctx.description.end_effector(g.end_effector).frame
-        joints = ctx.description.group(arm.group).joints
-
-        def hand(snapshot: SceneSnapshot) -> Any:
-            q = tuple(snapshot.position(j) for j in joints)
-            return ctx.planning_scene(snapshot, arm.group).forward_kinematics(q, frame)
-
-        pose = next(o.pose for o in grasped.objects if o.name == g.object)
-        transform = compose(invert(hand(grasped)), pose)
-        held = Attachment(
+        q = tuple(at.position(j) for j in ctx.description.group(arm.group).joints)
+        hand = ctx.planning_scene(at, arm.group).forward_kinematics(q, frame)
+        pose = next(o.pose for o in at.objects if o.name == g.object)
+        return Attachment(
             object=g.object,
             end_effector=g.end_effector,
-            transform=transform,
+            transform=compose(invert(hand), pose),
             allow=tuple(sorted({*_hand_frames(ctx, g.end_effector), *also})),
         )
-        carried = compose(hand(lifted), transform)
-        objects = tuple(
-            replace(o, pose=carried) if o.name == g.object else o for o in lifted.objects
-        )
-        attachments = tuple(sorted((*lifted.attachments, held), key=lambda a: a.object))
-        return replace(lifted, objects=objects, attachments=attachments)
 
     def _select(self) -> None:
-        succeeded = [
-            (i, r) for i, r in enumerate(self._races) if r.record.get("outcome") == "succeeded"
-        ]
-        chosen = min(
-            succeeded, key=lambda ir: (-ir[1].candidate.priority, ir[1].cost, ir[0]), default=None
-        )
+        result = self._run.result
+        report = json.loads(dumps(result.report))
         basis: dict[str, Any]
         if self._prediction is not None:
             basis = {"on": "prediction", **lookahead_entry("pregrasp", self._prediction)}
         else:
             assert isinstance(self._basis, SceneSnapshot)
             basis = {"on": "snapshot", "snapshot": self._basis.fingerprint()}
+        selected = result.selected
         self._report = {
             "basis": basis,
-            "rule": RULE,
-            "candidates": [r.record for r in self._races],
-            "selected": None if chosen is None else chosen[1].candidate.label,
+            "rule": report["rule"],
+            "candidates": [_summary(c) for c in report["chains"]],
+            "selected": None if selected is None else selected[0].label,
+            "chains": report,
         }
-        if chosen is None:
+        if selected is None:
             return
-        race = chosen[1]
-        assert race.pregrasp is not None
-        pregrasp: PlanResult | Ahead = race.pregrasp
+        chain, _, stages = selected
+        candidate = self._candidates[[c.label for c in self._candidates].index(chain.label)]
+        pregrasp: PlanResult | Ahead = stages[0].plan
         if self._prediction is not None:
             ready: Future[PlanResult] = Future()
-            ready.set_result(race.pregrasp)
+            ready.set_result(stages[0].plan)
             pregrasp = Ahead(
                 stage="pregrasp",
                 prediction=self._prediction,
-                planner=race.candidate.planner,
+                planner=candidate.planner,
                 future=ready,
                 log=lookahead_entry(
-                    "pregrasp", self._prediction, raced=[r.candidate.label for r in self._races]
+                    "pregrasp", self._prediction, raced=[c.label for c in self._candidates]
                 ),
             )
-        self._selection = Selection(candidate=race.candidate, pregrasp=pregrasp)
+        self._selection = Selection(
+            candidate=candidate,
+            pregrasp=pregrasp,
+            approach=Kept(stages[0].projection, stages[1].plan, candidate.checker),
+        )
+
+
+def _summary(chain: dict[str, Any]) -> dict[str, Any]:
+    """One candidate, from its chain's record: its outcome, why, its cost, and every
+    stage of every seed tried."""
+    attempts = chain["attempts"]
+    if chain["chosen"] is not None:
+        seed = attempts[chain["chosen"]]["seed"]
+        outcome, detail = "succeeded", f"seed {seed}: every motion of the prefix plans"
+    else:
+        last = attempts[-1]["stages"][-1]
+        stopped = last["outcome"] in ("not_started", "canceled")
+        outcome = "canceled_by_priority" if stopped else "failed"
+        detail = f"no seed whose prefix plans; the last stopped at {last['name']}: {last['detail']}"
+    return {
+        "label": chain["label"],
+        "priority": chain["priority"],
+        "outcome": outcome,
+        "detail": detail,
+        "cost_s": chain["cost_s"],
+        "plans": [
+            {
+                "seed": a["seed"],
+                "stage": s["name"],
+                "stage_seed": s["seed"],
+                "status": s["outcome"],
+                "duration_s": s["duration_s"],
+            }
+            for a in attempts
+            for s in a["stages"]
+        ],
+    }
 
 
 def _hand_frames(ctx: RobotContext, end_effector: str) -> tuple[str, ...]:

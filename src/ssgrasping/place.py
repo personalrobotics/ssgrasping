@@ -171,7 +171,7 @@ def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Bod
     raised = [
         _moved(_for_hand(r, object_to_hand), spec.normal, spec.preplace_m) for r in spec.regions
     ]
-    transfer = run.choose(
+    transfer, _, _ = run.choose(
         "transfer",
         "descend",
         lambda snapshot, seed: arm.plan_to_tsr(
@@ -183,7 +183,7 @@ def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Bod
             acceleration_scaling=spec.carry_scaling,
             clearance_m=spec.clearance_m,
         ),
-        lambda start: _toward(ctx, _allowing(start, spec), checker, spec),
+        lambda start: _toward(ctx, _allowing(start.state, spec), checker, spec),
         spec.transfer_attempts,
     )
     yield from run.move("transfer", transfer, planner)

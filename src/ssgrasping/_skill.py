@@ -23,12 +23,14 @@ from typing import Any
 
 from ssrobot import (
     CommandKind,
+    Continuation,
     Execution,
     ExecutionState,
     GripperCommand,
     ObservationRequest,
     Planner,
     PlanningRequest,
+    PlanProjection,
     PlanResult,
     PredictedSnapshot,
     RobotContext,
@@ -67,13 +69,15 @@ class Wait:
 Body = Generator[Wait, None, None]
 
 REST_WAIT_NS = 500_000_000
-"""How long a continuation waits, after its source succeeds, for the joints to come to
-rest before it is replanned from where they are instead."""
-RECOVER = ("source_not_succeeded", "unpredicted_scene_change")
+"""How long a continuation waits, by default, after its source succeeds, for the joints
+to come to rest (``Lookahead.rest_wait_ns``)."""
+RECOVER = ("source_not_succeeded", "unpredicted_scene_change", "not_at_rest", "rest_unobservable")
 """Continuation refusals that fail the stage, for the application's recovery: the motion
-before it failed, or the scene changed in a way the prediction did not record. Every
-other refusal (still moving, a small arrival mismatch, a rebase the planner cannot make
-or that is invalid in the actual scene) is replanned from the actual state."""
+before it failed; the scene changed in a way the prediction did not record; or rest,
+ssrobot's gate before anything moves again, was not established (still moving after
+``rest_wait_ns``, or unobservable). Nothing is submitted around them. Every other refusal
+(a small arrival mismatch, a rebase the planner cannot make or that is invalid in the
+actual scene) is replanned from the actual state."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,15 +90,34 @@ class Lookahead:
     arrival_tolerance: float | None = None
     """How far, per joint, the arrival may be from a continuation's start before the stage
     is replanned from where the arm is; None for the runtime's declared goal tolerance."""
+    rest_wait_ns: int = REST_WAIT_NS
+    """How long a continuation waits, after its source succeeds, for the joints to come to
+    rest; the stage then fails for recovery."""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "unsettled", tuple(self.unsettled))
+        check_spec(
+            isinstance(self.rest_wait_ns, int) and self.rest_wait_ns >= 0,
+            "a non-negative number of nanoseconds",
+            "rest_wait_ns",
+        )
         if self.arrival_tolerance is not None:
             check_spec(
                 math.isfinite(self.arrival_tolerance) and self.arrival_tolerance >= 0,
                 "must be finite and non-negative",
                 "arrival_tolerance",
             )
+
+
+@dataclass(frozen=True, slots=True)
+class Kept:
+    """A follow-on plan kept from a feasibility check: ``plan``, made by ``planner`` on
+    ``projection``, the projection of the plan before it. It continues only from the
+    execution of exactly that plan (``Run.kept``)."""
+
+    projection: PlanProjection
+    plan: PlanResult
+    planner: Planner
 
 
 @dataclass(slots=True)
@@ -108,6 +131,9 @@ class Ahead:
     log: dict[str, object]
     """This lookahead's entry in ``values["lookahead"]``."""
     stop: threading.Event = field(default_factory=threading.Event)
+    continuation: Continuation | None = None
+    """A continuation already bound, for a plan kept from a feasibility check made on
+    the projection of the plan its source runs; ``prediction`` is its source's."""
 
     def cancel(self) -> None:
         """Ask the planner to stop: the prediction will not be used."""
@@ -190,6 +216,43 @@ class Run:
         stop = threading.Event()
         future = self.ctx.plan_async(built, snapshot=prediction, planner=planner, abort=stop.is_set)
         ahead = Ahead(stage, prediction, planner, future, log, stop)
+        self._aheads.append(ahead)
+        return ahead
+
+    def kept(
+        self,
+        stage: str,
+        source: Execution,
+        projection: PlanProjection,
+        plan: PlanResult,
+        planner: Planner,
+    ) -> Ahead | None:
+        """``plan``, made on ``projection`` before ``source`` was submitted, as the
+        continuation of exactly that execution: ``ctx.continuation(plan, projection=,
+        source=)``, with the lookahead's ``unsettled``. ``source`` may have run the
+        projected plan itself, or continued it, rebased onto the actual state, to the same
+        end. None if the skill does not look ahead, or, logged, if the binding is refused
+        (``source`` does not run the projected plan, say because it was replanned, or
+        rebased to another end); the stage is then planned again."""
+        if self.lookahead is None:
+            return None
+        try:
+            continuation = self.ctx.continuation(
+                plan,
+                planner=planner,
+                projection=projection,
+                source=source,
+                unsettled=self.lookahead.unsettled,
+            )
+        except SsrobotError as e:
+            self._log().append({"stage": stage, "boundary": f"kept plan refused: {e.code}"})
+            return None
+        prediction = continuation.prediction
+        log = lookahead_entry(stage, prediction, kept="the feasibility check, planned before")
+        self._log().append(log)
+        future: Future[PlanResult] = Future()
+        future.set_result(plan)
+        ahead = Ahead(stage, prediction, planner, future, log, continuation=continuation)
         self._aheads.append(ahead)
         return ahead
 
@@ -321,15 +384,17 @@ class Run:
         if not plan.succeeded:
             log["decision"] = f"replanned: planning on the prediction {plan.status.value}"
             return self._replanned(name, replan, planner, log["decision"])
-        continuation = ctx.continuation(plan, planner=ahead.planner, prediction=ahead.prediction)
+        continuation = ahead.continuation or ctx.continuation(
+            plan, planner=ahead.planner, prediction=ahead.prediction
+        )
+        look = self.lookahead or Lookahead()
         since = ctx.now.time_ns
         while True:
             result = ctx.execute_continuation(
-                continuation,
-                arrival_tolerance=(self.lookahead or Lookahead()).arrival_tolerance,
+                continuation, arrival_tolerance=look.arrival_tolerance
             )
             report = result.report
-            if report.refusal != "not_at_rest" or ctx.now.time_ns - since >= REST_WAIT_NS:
+            if report.refusal != "not_at_rest" or ctx.now.time_ns - since >= look.rest_wait_ns:
                 break
             yield Wait(until_ns=ctx.now.time_ns + 1)  # the next tick
         log.update(
@@ -424,16 +489,18 @@ class Run:
         name: str,
         then: str | None,
         plan: Callable[[SceneSnapshot, int], PlanResult],
-        follow: Callable[[SceneSnapshot], PlanResult] | None,
+        follow: Callable[[PlanProjection], PlanResult] | None,
         attempts: int,
-    ) -> PlanResult:
-        """A plan for ``name`` from which the straight motion ``then`` also plans.
+    ) -> tuple[PlanResult, PlanResult | None, PlanProjection | None]:
+        """A plan for ``name`` from which the straight motion ``then`` also plans; with
+        the follow-on plan and the projection it was planned on.
 
         A goal region is checked only for collision, so a plan can reach it at a
         configuration from which the next straight move is infeasible. Each seed's plan
-        is kept only if ``follow`` plans from where it ends; this checks, and does not
-        replace, the plan made again from where the arm actually ends up. The seeds
-        tried are recorded in ``values[name + "_attempts"]``."""
+        is kept only if ``follow`` plans on its projection (``ctx.project``): where it would
+        leave the robot. That follow-on plan is returned, so a skill may continue it
+        (``Run.kept``) once the plan runs, instead of planning it again. The seeds tried
+        are recorded in ``values[name + "_attempts"]``."""
         self.begin(name)
         snapshot = self.ctx.snapshot()
         tried: list[dict[str, object]] = []
@@ -445,12 +512,12 @@ class Run:
                 continue
             if follow is None or then is None:  # nothing follows: the first plan will do
                 tried.append({"seed": seed, name: "succeeded"})
-                return result
-            joints, q = _end(result)
-            check = follow(_at(snapshot, joints, q))
+                return result, None, None
+            projection = self.ctx.project(result, snapshot=snapshot)
+            check = follow(projection)
             tried.append({"seed": seed, name: "succeeded", then: check.status.value})
             if check.succeeded:
-                return result
+                return result, check, projection
         detail = f"no plan in {attempts} seeds" + (
             "" if then is None else f" from which {then} plans"
         )

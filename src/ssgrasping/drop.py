@@ -33,7 +33,7 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from ssrobot import Planner, PlanResult, RobotContext, SceneSnapshot, Tsr
+from ssrobot import Planner, PlanProjection, PlanResult, RobotContext, SceneSnapshot, Tsr
 
 from ssgrasping._poses import inside
 from ssgrasping._skill import Body, Lookahead, Run, Wait, check_spec, preflight, unit
@@ -145,7 +145,7 @@ def _drop(run: Run, planner: Planner, checker: Planner, spec: DropSpec) -> Body:
         run.record("transfer", False, f"{spec.object!r} is not attached", Evidence.PLANNED)
     arm = ctx.manipulator(spec.manipulator)
     retreats = spec.retreat_m > 0
-    transfer = run.choose(
+    transfer, _, _ = run.choose(
         "transfer",
         "retreat" if retreats else None,
         lambda snapshot, seed: arm.plan_to_tsr(
@@ -212,7 +212,10 @@ def _drop(run: Run, planner: Planner, checker: Planner, spec: DropSpec) -> Body:
 
 
 def _away(
-    ctx: RobotContext, snapshot: SceneSnapshot, planner: Planner, spec: DropSpec
+    ctx: RobotContext,
+    snapshot: SceneSnapshot | PlanProjection,
+    planner: Planner,
+    spec: DropSpec,
 ) -> PlanResult:
     """The straight retreat along the container's normal from ``snapshot``."""
     return ctx.manipulator(spec.manipulator).plan_to_end_effector_offset(

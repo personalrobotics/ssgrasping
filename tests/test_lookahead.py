@@ -8,8 +8,9 @@ planners are ``test_grasp_place``'s and ``test_drop``'s, for whichever arm is na
 Each scenario is one contract case, recorded in ``lookahead.json``:
 - ``plain``: grasp, then drop, without lookahead: the reference.
 - ``lookahead``: the same with a ``Lookahead``: every stage has the same outcome and
-  evidence kind; the approach was planned while the pregrasp executed, on its
-  prediction, and continued; and the log names where each skill stopped looking ahead
+  evidence kind; the approach is the pregrasp's feasibility check, made on its
+  projection before the pregrasp executed, kept and continued on arrival rather than
+  planned again; and the log names where each skill stopped looking ahead
   (``close``, ``restrict``, ``release``). Run twice, byte-identical: a driver blocks on a
   plan instead of stepping, so the runtime's timeline does not depend on how long
   planning takes.
@@ -21,20 +22,28 @@ Each scenario is one contract case, recorded in ``lookahead.json``:
   the drop's free-space stages, and the selected arm grasps, looking ahead, and drops it.
   Every command compiled keeps exactly its stage's clearance: the raced pregrasp and the
   transfer 5 mm, the approach (planned ahead and continued) and the lift none.
+- ``not_at_rest``, ``rest_unobservable``: the arm's joint velocities are reported moving,
+  or valid only before the arrival. The approach planned ahead is refused, waiting
+  within ``rest_wait_ns`` for rest or, unobservable, at once; the grasp fails for
+  recovery, and nothing is submitted after the first refusal.
 - ``race``: both arms race for ``can``; the left arm is preferred (priority 1) but drops
-  into the right bin, which it cannot reach, so its prefix fails at ``transfer`` after
-  its pregrasp, approach, and lift planned, and the right arm is selected. Nothing moves
+  into the right bin, which it cannot reach, so its prefix fails at ``transfer``, every
+  transfer seed tried from the same lift, after its pregrasp, approach, and lift
+  planned, and the right arm is selected. Nothing moves
   before the selection. The right arm then grasps with the raced pregrasp and drops
   ``can`` without a retreat. While its transfer carries ``can`` to the bin, the race for
   ``can_b``, each arm into its own bin with the right arm, on its side, preferred, is
   planned on the transfer's prediction, which expects ``can`` to be released where the
   transfer ends; the selection follows the rule, and its pregrasp continues from there
-  once ``can`` has been released and has landed. Whether the left arm was stopped by
+  once ``can`` has been released and has landed. Each raced grasp continues the
+  approach its race planned, ``can_b``'s from its pregrasp's continuation, and plans
+  none again. Whether the left arm was stopped by
   priority or finished depends on timing, so that one field of ``race_b`` may differ
   between runs.
 
 ``timing.json``, outside the claim, records how long each scenario planned on the
-context's thread and on workers. Reproduce with ``uv run pytest tests/test_lookahead.py``.
+context's thread and on workers, and how many plans of each kind of stage it made, in
+all and by arm. Reproduce with ``uv run pytest tests/test_lookahead.py``.
 """
 
 from __future__ import annotations
@@ -43,11 +52,21 @@ import dataclasses
 import json
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from sscbirrt import CBiRRTConfig
-from ssrobot import Planner, PlanResult, Pose, RobotContext, TraceKind, load_installed_package
+from ssrobot import (
+    OffsetGoal,
+    Planner,
+    PlanResult,
+    Pose,
+    RobotContext,
+    TraceKind,
+    TsrGoal,
+    load_installed_package,
+)
 from ssrobot.mujoco import MujocoRuntime
 from ssrobot.planning import CBiRRT
 
@@ -80,11 +99,24 @@ LEFT_BIN = (-BIN[0], BIN[1], BIN[2])
 calls: list[dict[str, Any]] = []
 
 
-class _Timed:
-    """A planner that records how long each plan took, and on which thread."""
+def _stage(request: Any) -> str:
+    """Which kind of stage a request plans, from its goal: into regions at the carry's
+    scaling, a transfer, otherwise a pregrasp; straight along the hand's (horizontal)
+    approach axis, an approach; straight up, a lift or a retreat."""
+    goal = request.goal
+    if isinstance(goal, TsrGoal):
+        return "transfer" if request.limits.velocity_scaling < 1.0 else "pregrasp"
+    if isinstance(goal, OffsetGoal):
+        return "approach" if abs(goal.direction[2]) < 0.9 else "lift_or_retreat"
+    return type(goal).__name__
 
-    def __init__(self, inner: Planner, scenario: list[str]) -> None:
-        self._inner, self._scenario = inner, scenario
+
+class _Timed:
+    """A planner that records how long each plan took, on which thread, and the kind of
+    stage it planned."""
+
+    def __init__(self, inner: Planner, scenario: list[str], arm: str) -> None:
+        self._inner, self._scenario, self._arm = inner, scenario, arm
 
     def plan(self, request: Any, scene: Any, *, abort: Any = None) -> Any:
         start = time.perf_counter()
@@ -92,6 +124,8 @@ class _Timed:
         calls.append(
             {
                 "scenario": self._scenario[0],
+                "arm": self._arm,
+                "stage": _stage(request),
                 "context_thread": threading.current_thread() is threading.main_thread(),
                 "s": time.perf_counter() - start,
             }
@@ -156,16 +190,20 @@ def _planners(package: Any, side: str, scenario: list[str]) -> tuple[Planner, Pl
         planner = CBiRRT.from_package(
             package, f"{side}_arm", config=CBiRRTConfig(edge_resolution=0.01, **config)
         )
-        return _Timed(planner, scenario)
+        return _Timed(planner, scenario, side)
 
     return make(), make(max_iterations=CHECK_ITERATIONS)
 
 
-def _session(scene: Path, name: str, run: Any, sinks: Any = ()) -> Any:
+def _session(
+    scene: Path, name: str, run: Any, sinks: Any = (), wrap: Callable[[Any], Any] | None = None
+) -> Any:
     package = load_installed_package("geodude_assets")
     scenario = [name]
     arms = {side: _planners(package, side, scenario) for side in ("right", "left")}
-    runtime = MujocoRuntime(package, scene=scene, attach_tolerance_rad=SWING_TOLERANCE_RAD)
+    runtime: Any = MujocoRuntime(package, scene=scene, attach_tolerance_rad=SWING_TOLERANCE_RAD)
+    if wrap is not None:
+        runtime = wrap(runtime)
     with RobotContext(package.description, runtime, sinks=sinks) as ctx:
         poses = {o.name: o.pose for o in ctx.snapshot().objects}
         return run(ctx, arms, poses)
@@ -189,6 +227,61 @@ def _pick_and_drop(lookahead: Lookahead | None) -> Any:
         return report
 
     return run
+
+
+class _Unrested:
+    """MujocoRuntime whose joint velocity readings never show the arm at rest: with
+    ``moving``, every joint moving at 1 rad/s; otherwise valid before the observation,
+    too old to show the arrival."""
+
+    def __init__(self, inner: Any, *, moving: bool) -> None:
+        self.inner, self.moving = inner, moving
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.inner, name)
+
+    def observe(self, request: Any) -> Any:
+        observation = self.inner.observe(request)
+
+        def reported(r: Any) -> Any:
+            if not r.channel.endswith("_qd"):
+                return r
+            if self.moving:
+                return dataclasses.replace(r, value=tuple(1.0 for _ in r.value))
+            before = dataclasses.replace(r.stamp, time_ns=observation.stamp.time_ns - 2_000_000)
+            return dataclasses.replace(r, stamp=before)
+
+        return dataclasses.replace(
+            observation, readings=tuple(reported(r) for r in observation.readings)
+        )
+
+
+UNRESTED_WAIT_NS = 100_000_000
+
+
+def _unrested(order: list[list[Any]]) -> Any:
+    """The right arm grasps ``can``, looking ahead, while the arm is never observed at
+    rest: the approach planned ahead is refused, and the grasp fails for recovery.
+    ``order`` collects every submission and continuation decision, in order."""
+
+    def run(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
+        planner, checker = arms["right"]
+        spec = _grasp(poses["can"], "can", "right")
+        look = Lookahead(rest_wait_ns=UNRESTED_WAIT_NS)
+        picked = _drive(ctx, grasp(ctx, planner, spec, check_planner=checker, lookahead=look))
+        return {"grasp": _report(picked), "order": order}
+
+    return run
+
+
+def _ordered(order: list[list[Any]]) -> Callable[[Any], None]:
+    def sink(r: Any) -> None:
+        if r.kind is TraceKind.SUBMITTED:
+            order.append(["submitted", None])
+        elif r.kind is TraceKind.CONTINUED:
+            order.append(["continued", r.payload.refusal])
+
+    return sink
 
 
 def _scene_changed(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
@@ -249,6 +342,7 @@ def _raced(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
     assert selection is not None and selection.candidate.drop is not None
     planner, checker = arms[selection.candidate.label]
     look = Lookahead()
+    before_grasp = len(calls)
     picked = _drive(
         ctx,
         grasp(
@@ -258,9 +352,11 @@ def _raced(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
             check_planner=checker,
             lookahead=look,
             pregrasp=selection.pregrasp,
+            approach=selection.approach,
         ),
     )
     out["grasp"] = _report(picked)
+    out["grasp_planned"] = _counted(calls[before_grasp:])
     assert picked.succeeded, out["grasp"]["stages"]
     no_retreat = dataclasses.replace(selection.candidate.drop, retreat_m=0.0)
     dropping = drop(ctx, planner, no_retreat, check_planner=checker, lookahead=look)
@@ -303,6 +399,7 @@ def _raced(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
     assert chosen is not None and chosen.candidate.drop is not None
     planner, checker = arms[chosen.candidate.label]
     later = Lookahead(unsettled=("can",))
+    before_grasp_b = len(calls)
     picked_b = _drive(
         ctx,
         grasp(
@@ -312,15 +409,25 @@ def _raced(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
             check_planner=checker,
             lookahead=later,
             pregrasp=chosen.pregrasp,
+            approach=chosen.approach,
         ),
     )
     out["grasp_b"] = _report(picked_b)
+    out["grasp_b_planned"] = _counted(calls[before_grasp_b:])
     if picked_b.succeeded:
         dropped_b = drop(
             ctx, planner, chosen.candidate.drop, check_planner=checker, lookahead=later
         )
         out["drop_b"] = _report(_drive(ctx, dropped_b))
     return out
+
+
+def _counted(made: list[dict[str, Any]]) -> dict[str, int]:
+    """How many plans of each kind of stage ``made`` holds."""
+    counts: dict[str, int] = {}
+    for c in made:
+        counts[c["stage"]] = counts.get(c["stage"], 0) + 1
+    return dict(sorted(counts.items()))
 
 
 CLEARANCE_M = 0.005
@@ -361,6 +468,7 @@ def _cleared(compiled: list[float]) -> Any:
                 check_planner=checker,
                 lookahead=look,
                 pregrasp=selection.pregrasp,
+                approach=selection.approach,
             ),
         )
         out: dict[str, Any] = {
@@ -395,12 +503,28 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     calls.clear()
     first = json.dumps(_session(scene, "lookahead", _pick_and_drop(Lookahead())), indent=2)
     again = json.dumps(_session(scene, "lookahead_again", _pick_and_drop(Lookahead())), indent=2)
+    moving: list[list[Any]] = []
+    stale: list[list[Any]] = []
     scenarios = {
         "plain": _session(scene, "plain", _pick_and_drop(None)),
         "lookahead": json.loads(first),
         "mismatch": _session(scene, "mismatch", _pick_and_drop(Lookahead(arrival_tolerance=1e-9))),
         "scene_change": _session(scene, "scene_change", _scene_changed),
         "race": _session(scene, "race", _raced),
+        "not_at_rest": _session(
+            scene,
+            "not_at_rest",
+            _unrested(moving),
+            sinks=[_ordered(moving)],
+            wrap=lambda rt: _Unrested(rt, moving=True),
+        ),
+        "rest_unobservable": _session(
+            scene,
+            "rest_unobservable",
+            _unrested(stale),
+            sinks=[_ordered(stale)],
+            wrap=lambda rt: _Unrested(rt, moving=False),
+        ),
         "clearance": _session(
             scene,
             "clearance",
@@ -420,10 +544,22 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
         "scenarios": scenarios,
     }
     (artifacts / "lookahead.json").write_text(json.dumps(report, indent=2) + "\n")
-    timing: dict[str, dict[str, float]] = {}
+    timing: dict[str, dict[str, Any]] = {}
     for c in calls:
-        row = timing.setdefault(c["scenario"], {"context_thread_s": 0.0, "workers_s": 0.0})
+        row = timing.setdefault(
+            c["scenario"], {"context_thread_s": 0.0, "workers_s": 0.0, "planned": {}}
+        )
         row["context_thread_s" if c["context_thread"] else "workers_s"] += c["s"]
+    for name, row in timing.items():
+        made = [c for c in calls if c["scenario"] == name]
+        row["planned"] = _counted(made)
+        row["by_arm"] = {
+            arm: {
+                "planned": _counted([c for c in made if c["arm"] == arm]),
+                "s": sum(c["s"] for c in made if c["arm"] == arm),
+            }
+            for arm in sorted({c["arm"] for c in made})
+        }
     (artifacts / "timing.json").write_text(json.dumps(timing, indent=2) + "\n")
 
     assert first == again, "two runs in one environment differ"
@@ -465,10 +601,24 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     outcomes = {c["label"]: c for c in raced["race"]["candidates"]}
     assert raced["race"]["selected"] == "right"
     left = outcomes["left"]
-    assert left["outcome"] == "failed" and left["detail"].startswith("no transfer")
-    assert {p["stage"] for p in left["plans"] if p["status"] == "succeeded"} >= {
-        "pregrasp", "approach", "lift",
-    }  # fmt: skip
+    assert left["outcome"] == "failed"
+    # Some seed planned its pregrasp, approach, and lift, validated, and failed at the
+    # transfer into a bin out of its reach: every transfer seed, tried from that same
+    # lift, without planning the prefix again.
+    chains = {c["label"]: c for c in raced["race"]["chains"]["chains"]}
+    transfer_seeds = chains["left"]["stage_seeds"][3]
+    reached = [
+        a
+        for a in chains["left"]["attempts"]
+        if [(s["name"], s["outcome"]) for s in a["stages"]][:3]
+        == [("pregrasp", "valid"), ("approach", "valid"), ("lift", "valid")]
+    ]
+    assert reached
+    for a in reached:
+        tries = a["stages"][3:]
+        assert [(s["name"], s["seed"]) for s in tries] == [("transfer", k) for k in transfer_seeds]
+        assert all(s["outcome"] != "valid" for s in tries)
+    assert chains["left"]["chosen"] is None
     assert raced["grasp"]["state"] == raced["drop"]["state"] == SkillState.SUCCEEDED
 
     race_b = raced["race_b"]
@@ -484,8 +634,41 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     pregrasp = _entry(raced["grasp_b"], "pregrasp")
     assert pregrasp["during"] == raced["transfer"]  # planned while the can was carried
     assert pregrasp["decision"] == "continued", pregrasp
+    # Each raced grasp continues the approach its race planned, and plans none again,
+    # though can_b's pregrasp ran as a continuation, rebased onto the actual arrival.
+    for picked, planned in (("grasp", "grasp_planned"), ("grasp_b", "grasp_b_planned")):
+        kept = _entry(raced[picked], "approach")
+        assert kept.get("kept") == "the feasibility check, planned before", kept
+        assert "approach" not in raced[planned], raced[planned]
     assert raced["grasp_b"]["state"] == SkillState.SUCCEEDED
     assert raced["drop_b"]["state"] == SkillState.SUCCEEDED
+
+    # Neither rest refusal submits a command: not at rest, it waits within the declared
+    # rest_wait_ns, unobservable, it fails at once; either way the grasp fails for
+    # recovery, and nothing is submitted after the first refusal.
+    for refusal in ("not_at_rest", "rest_unobservable"):
+        unrested = scenarios[refusal]
+        assert unrested["grasp"]["state"] == SkillState.FAILED
+        last = unrested["grasp"]["stages"][-1]
+        assert last["name"] == "approach" and not last["succeeded"]
+        assert last["detail"].startswith(f"continuation refused, {refusal}"), last
+        entry = _entry(unrested["grasp"], "approach")
+        assert entry["decision"] == "failed: for recovery", entry
+        order = unrested["order"]
+        first = order.index(["continued", refusal])
+        assert ["submitted", None] in order[:first]  # the pregrasp
+        assert all(o == ["continued", refusal] for o in order[first:]), order
+    assert _entry(scenarios["not_at_rest"]["grasp"], "approach")["waited_for_rest_ns"] >= (
+        UNRESTED_WAIT_NS
+    )
+    assert _entry(scenarios["rest_unobservable"]["grasp"], "approach")["waited_for_rest_ns"] == 0
+    # Unobservable, it is refused once; not at rest, again each tick until the wait ends.
+    decided = {
+        refusal: [o for o in scenarios[refusal]["order"] if o[0] == "continued"]
+        for refusal in ("not_at_rest", "rest_unobservable")
+    }
+    assert decided["rest_unobservable"] == [["continued", "rest_unobservable"]]
+    assert len(decided["not_at_rest"]) > 1
 
     # Only the free-space stages keep the clearance, whichever path planned them: the
     # race's pregrasp, the approach planned ahead and continued, the lift, the transfer.

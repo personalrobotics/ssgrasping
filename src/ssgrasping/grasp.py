@@ -11,7 +11,9 @@ these stages, recording each:
    to ``pregrasp_attempts``. The pregrasp alone is checked only for collision, so a
    region can be reachable while its approach is not. Then execute it.
 4. ``approach``: move straight along the hand's approach axis, by ``approach_m``,
-   planned again from where the arm actually is; with lookahead, planned while the
+   planned again from where the arm actually is. With lookahead, the approach the
+   pregrasp was checked with, made on its projection before it executed, continues on
+   arrival; if the pregrasp did not run as that plan, the approach is planned while the
    pregrasp executes, on its prediction, and continued on arrival. With ``deepest``, as
    far toward the object as plans: the longest of ``approach_tries`` lengths from the
    deepest the application allows down to ``approach_m``, found with the check
@@ -48,9 +50,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from ssrobot import (
+    Execution,
     ManipulatorView,
     OffsetGoal,
     Planner,
+    PlanProjection,
     PlanResult,
     Pose,
     PredictedSnapshot,
@@ -60,7 +64,7 @@ from ssrobot import (
 )
 
 from ssgrasping._poses import axis
-from ssgrasping._skill import Ahead, Body, Lookahead, Run, check_spec, preflight, unit
+from ssgrasping._skill import Ahead, Body, Kept, Lookahead, Run, check_spec, preflight, unit
 from ssgrasping.execution import SkillExecution
 from ssgrasping.outcomes import Evidence
 
@@ -139,6 +143,7 @@ def grasp(
     check_planner: Planner | None = None,
     lookahead: Lookahead | None = None,
     pregrasp: PlanResult | Ahead | None = None,
+    approach: Kept | None = None,
 ) -> SkillExecution:
     """A pending grasp of ``spec.object`` that lifts it clear of its support; see the
     module. Advance it, or drive it with ``run_skill``.
@@ -148,13 +153,19 @@ def grasp(
     iteration budget rejects an infeasible one quickly, and deterministically, where
     ``planner`` would spend its whole budget first.
 
-    With ``lookahead``, the approach is planned while the pregrasp executes. ``pregrasp``
-    is a pregrasp planned beforehand (``Selection.pregrasp``), executed in place of
-    choosing one. Neither changes any stage's meaning or evidence kind; a stage that ran
-    from a plan made ahead says so in its detail."""
+    With ``lookahead``, the approach the pregrasp was checked with, made on its projection
+    before the pregrasp executed, continues once the pregrasp has run, instead of being
+    planned again: the pregrasp ran as that plan, or continued it, rebased onto the
+    actual state, to the same end. It removes the wait for the approach without
+    overlapping the pregrasp's motion. If the pregrasp did not run as that plan (it was
+    replanned, or rebased to another end), the approach is planned while the pregrasp
+    executes, on its prediction, instead. ``pregrasp`` is a pregrasp planned beforehand
+    (``Selection.pregrasp``), executed in place of choosing one, and ``approach`` its
+    checked approach (``Selection.approach``). None of this changes any stage's meaning or
+    evidence kind; a stage that ran from a plan made ahead says so in its detail."""
     run = Run(ctx, "grasp", spec.object, lookahead=lookahead)
     checker = planner if check_planner is None else check_planner
-    return SkillExecution(run, _grasp(run, planner, checker, spec, pregrasp))
+    return SkillExecution(run, _grasp(run, planner, checker, spec, pregrasp, approach))
 
 
 def _grasp(
@@ -163,6 +174,7 @@ def _grasp(
     checker: Planner,
     spec: GraspSpec,
     planned: PlanResult | Ahead | None,
+    kept: Kept | None,
 ) -> Body:
     ctx = run.ctx
     preflight(
@@ -180,8 +192,10 @@ def _grasp(
         "open", True, f"opening {run.observe(spec.opening_channel)[0]:.3f}", Evidence.PORTABLE
     )
 
+    checked = [kept]  # the approach the pregrasp to run was checked with
+
     def choose() -> PlanResult:
-        return run.choose(
+        result, check, projection = run.choose(
             "pregrasp",
             "approach",
             lambda snapshot, seed: arm.plan_to_tsr(
@@ -193,6 +207,29 @@ def _grasp(
             ),
             lambda start: _approach(arm, ctx, start, checker, spec),
             spec.pregrasp_attempts,
+        )
+        assert check is not None and projection is not None  # an approach follows
+        checked[0] = Kept(projection, check, checker)
+        return result
+
+    def ahead(execution: Execution) -> Ahead | None:
+        """The checked approach, continued from this execution of the pregrasp it was
+        checked with; failing that, the approach planned ahead on the pregrasp's
+        prediction. With deepest, the longest line is planned ahead by the check
+        planner, which rejects an infeasible line quickly; if it fails, the approach is
+        replanned from the arrival, shorter as needed."""
+        approach = checked[0]
+        if approach is not None:
+            continued = run.kept(
+                "approach", execution, approach.projection, approach.plan, approach.planner
+            )
+            if continued is not None:
+                return continued
+        return run.ahead(
+            "approach",
+            execution,
+            ahead_request,
+            planner if spec.deepest is None else checker,
         )
 
     def replan_approach() -> PlanResult:
@@ -216,15 +253,7 @@ def _grasp(
         choose() if planned is None else planned,
         planner,
         replan=choose,
-        # With deepest, the longest line is planned ahead by the check planner, which
-        # rejects an infeasible line quickly; if it fails, the approach is replanned
-        # from the arrival, shorter as needed.
-        then=lambda execution: run.ahead(
-            "approach",
-            execution,
-            ahead_request,
-            planner if spec.deepest is None else checker,
-        ),
+        then=ahead,
     )
 
     run.begin("approach")
@@ -303,7 +332,7 @@ def _grasp(
 def _approach(
     arm: ManipulatorView,
     ctx: RobotContext,
-    snapshot: SceneSnapshot,
+    snapshot: SceneSnapshot | PlanProjection,
     planner: Planner,
     spec: GraspSpec,
 ) -> PlanResult:
@@ -339,12 +368,14 @@ def _deepest_approach(
 
 
 def _pose(
-    arm: ManipulatorView, ctx: RobotContext, snapshot: SceneSnapshot | PredictedSnapshot
+    arm: ManipulatorView,
+    ctx: RobotContext,
+    snapshot: SceneSnapshot | PredictedSnapshot | PlanProjection,
 ) -> Pose:
     """Where the end effector is in ``snapshot``."""
     frame = arm.frame
     assert frame is not None  # the end effector's frame
-    state = snapshot.state if isinstance(snapshot, PredictedSnapshot) else snapshot
+    state = snapshot.state if isinstance(snapshot, PredictedSnapshot | PlanProjection) else snapshot
     q = tuple(state.position(j) for j in ctx.description.group(arm.group).joints)
     return ctx.planning_scene(snapshot, arm.group).forward_kinematics(q, frame)
 
@@ -352,7 +383,7 @@ def _pose(
 def _distances(
     arm: ManipulatorView,
     ctx: RobotContext,
-    snapshot: SceneSnapshot | PredictedSnapshot,
+    snapshot: SceneSnapshot | PredictedSnapshot | PlanProjection,
     spec: GraspSpec,
 ) -> list[float]:
     """The approach lengths to try, longest first: from the deepest ``spec.deepest``
@@ -369,7 +400,7 @@ def _distances(
 def _approach_goal(
     arm: ManipulatorView,
     ctx: RobotContext,
-    snapshot: SceneSnapshot | PredictedSnapshot,
+    snapshot: SceneSnapshot | PredictedSnapshot | PlanProjection,
     spec: GraspSpec,
     distance: float | None = None,
 ) -> OffsetGoal:
