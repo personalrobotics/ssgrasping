@@ -34,6 +34,7 @@ A failure before ``release`` leaves the object attached and held.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
@@ -51,7 +52,7 @@ from ssrobot import (
 )
 
 from ssgrasping._poses import compose, inside, invert, offset_interval
-from ssgrasping._skill import Body, Run, Wait, check_spec, preflight, unit
+from ssgrasping._skill import Body, Lookahead, Run, Wait, check_spec, preflight, unit
 from ssgrasping.execution import SkillExecution
 from ssgrasping.outcomes import Evidence
 
@@ -100,6 +101,11 @@ class PlaceSpec:
     transfer_attempts: int = 8
     """How many seeds to try for a transfer whose descent also plans."""
 
+    clearance_m: float = 0.0
+    """The clearance the transfer, a move through free space carrying the object, keeps
+    from the environment (``PlanningRequest.clearance_m``). The guarded descent and the
+    retreat, which must come close to the target, keep none."""
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "normal", unit(self.normal, "normal"))
         check_spec(len(self.regions) > 0, "at least one region", "regions")
@@ -114,17 +120,31 @@ class PlaceSpec:
             check_spec(0.0 <= getattr(self, name) <= 1.0, "between 0 and 1", name)
         check_spec(self.transfer_attempts >= 1, "at least 1", "transfer_attempts")
         check_spec(0.0 < self.carry_scaling <= 1.0, "in (0, 1]", "carry_scaling")
+        check_spec(
+            math.isfinite(self.clearance_m) and self.clearance_m >= 0,
+            "must be finite and non-negative",
+            "clearance_m",
+        )
 
 
 def place(
-    ctx: RobotContext, planner: Planner, spec: PlaceSpec, *, check_planner: Planner | None = None
+    ctx: RobotContext,
+    planner: Planner,
+    spec: PlaceSpec,
+    *,
+    check_planner: Planner | None = None,
+    lookahead: Lookahead | None = None,
 ) -> SkillExecution:
     """A pending placement of the held ``spec.object`` on ``spec.target``; see the
     module. Advance it, or drive it with ``run_skill``.
 
     ``check_planner`` plans the descent checks from candidate transfers, as in
-    ``grasp``."""
-    run = Run(ctx, "place", spec.object)
+    ``grasp``.
+
+    With ``lookahead``, the boundaries where the placement cannot look ahead are logged in
+    ``values["lookahead"]``: its stages after the transfer depend on outcomes not yet
+    known."""
+    run = Run(ctx, "place", spec.object, lookahead=lookahead)
     checker = planner if check_planner is None else check_planner
     return SkillExecution(run, _place(run, planner, checker, spec))
 
@@ -151,7 +171,7 @@ def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Bod
     raised = [
         _moved(_for_hand(r, object_to_hand), spec.normal, spec.preplace_m) for r in spec.regions
     ]
-    transfer = run.choose(
+    transfer, _, _ = run.choose(
         "transfer",
         "descend",
         lambda snapshot, seed: arm.plan_to_tsr(
@@ -161,12 +181,14 @@ def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Bod
             seed=seed,
             velocity_scaling=spec.carry_scaling,
             acceleration_scaling=spec.carry_scaling,
+            clearance_m=spec.clearance_m,
         ),
-        lambda start: _toward(ctx, _allowing(start, spec), checker, spec),
+        lambda start: _toward(ctx, _allowing(start.state, spec), checker, spec),
         spec.transfer_attempts,
     )
     yield from run.move("transfer", transfer, planner)
 
+    run.boundary("allow_target", "allows the target: a scene change; the descent is guarded")
     run.begin("allow_target")
     run.replace_allowance("allow_target", spec.end_effector, (*hand, spec.target))
     run.record("allow_target", True, f"allowed {', '.join((*hand, spec.target))}", Evidence.PLANNED)
