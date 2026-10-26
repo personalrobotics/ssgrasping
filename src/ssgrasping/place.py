@@ -185,6 +185,7 @@ def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Bod
         ),
         lambda start: _toward(ctx, _allowing(start.state, spec), checker, spec),
         spec.transfer_attempts,
+        planner=planner,
     )
     yield from run.move("transfer", transfer, planner)
 

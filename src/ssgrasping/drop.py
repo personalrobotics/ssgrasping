@@ -159,6 +159,7 @@ def _drop(run: Run, planner: Planner, checker: Planner, spec: DropSpec) -> Body:
         ),
         (lambda start: _away(ctx, start, checker, spec)) if retreats else None,
         spec.transfer_attempts,
+        planner=planner,
     )
     yield from run.move("transfer", transfer, planner)
 
