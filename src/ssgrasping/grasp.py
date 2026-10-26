@@ -142,8 +142,6 @@ def grasp(
     *,
     check_planner: Planner | None = None,
     lookahead: Lookahead | None = None,
-    pregrasp: PlanResult | Ahead | None = None,
-    approach: Kept | None = None,
 ) -> SkillExecution:
     """A pending grasp of ``spec.object`` that lifts it clear of its support; see the
     module. Advance it, or drive it with ``run_skill``.
@@ -158,13 +156,29 @@ def grasp(
     planned again: the pregrasp ran as that plan, or continued it, rebased onto the
     actual state, to the same end. It removes the wait for the approach without
     overlapping the pregrasp's motion. If the pregrasp did not run as that plan (it was
-    replanned, or rebased to another end), the approach is planned while the pregrasp
-    executes, on its prediction, instead. ``pregrasp`` is a pregrasp planned beforehand
-    (``Selection.pregrasp``), executed in place of choosing one, and ``approach`` its
-    checked approach (``Selection.approach``). None of this changes any stage's meaning or
-    evidence kind; a stage that ran from a plan made ahead says so in its detail."""
+    replanned, or rebased to another end), or with ``deepest`` (the check is of
+    ``approach_m``, not the deepest line), the approach is planned while the pregrasp
+    executes, on its prediction, instead. None of this changes any stage's meaning or
+    evidence kind; a stage that ran from a plan made ahead says so in its detail.
+
+    A grasp raced by ``Candidates`` runs from its selection: ``Selection.grasp``."""
     run = Run(ctx, "grasp", spec.object, lookahead=lookahead)
     checker = planner if check_planner is None else check_planner
+    return SkillExecution(run, _grasp(run, planner, checker, spec, None, None))
+
+
+def _selected_grasp(
+    ctx: RobotContext,
+    planner: Planner,
+    checker: Planner,
+    spec: GraspSpec,
+    lookahead: Lookahead | None,
+    pregrasp: PlanResult | Ahead,
+    approach: Kept,
+) -> SkillExecution:
+    """``grasp``, executing ``pregrasp``, planned beforehand, in place of choosing one,
+    with ``approach`` the approach it was checked with: a ``Selection``'s, only."""
+    run = Run(ctx, "grasp", spec.object, lookahead=lookahead)
     return SkillExecution(run, _grasp(run, planner, checker, spec, pregrasp, approach))
 
 
@@ -219,7 +233,8 @@ def _grasp(
         planner, which rejects an infeasible line quickly; if it fails, the approach is
         replanned from the arrival, shorter as needed."""
         approach = checked[0]
-        if approach is not None:
+        # The check is of approach_m: with deepest, the deepest line is planned ahead.
+        if approach is not None and spec.deepest is None:
             continued = run.kept(
                 "approach", execution, approach.projection, approach.plan, approach.planner
             )

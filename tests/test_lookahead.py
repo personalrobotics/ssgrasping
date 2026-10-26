@@ -41,6 +41,13 @@ Each scenario is one contract case, recorded in ``lookahead.json``:
   priority or finished depends on timing, so that one field of ``race_b`` may differ
   between runs.
 
+- ``deepest``: the right arm races alone with a grasp whose deepest approach is blocked
+  (10 cm past ``approach_m``) and whose shorter ones plan. The race checks the approach
+  the grasp guarantees, ``approach_m``, so the candidate is selected, and its grasp
+  approaches as deep as plans, between the two.
+- ``closed``: both arms race, and the race is closed before it finishes: each candidate
+  is ``canceled``, the race ``aborted``; none claims a higher priority stopped it.
+
 ``timing.json``, outside the claim, records how long each scenario planned on the
 context's thread and on workers, and how many plans of each kind of stage it made, in
 all and by arm. Reproduce with ``uv run pytest tests/test_lookahead.py``.
@@ -345,15 +352,7 @@ def _raced(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
     before_grasp = len(calls)
     picked = _drive(
         ctx,
-        grasp(
-            ctx,
-            planner,
-            selection.candidate.grasp,
-            check_planner=checker,
-            lookahead=look,
-            pregrasp=selection.pregrasp,
-            approach=selection.approach,
-        ),
+        selection.grasp(ctx, lookahead=look),
     )
     out["grasp"] = _report(picked)
     out["grasp_planned"] = _counted(calls[before_grasp:])
@@ -402,15 +401,7 @@ def _raced(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
     before_grasp_b = len(calls)
     picked_b = _drive(
         ctx,
-        grasp(
-            ctx,
-            planner,
-            chosen.candidate.grasp,
-            check_planner=checker,
-            lookahead=later,
-            pregrasp=chosen.pregrasp,
-            approach=chosen.approach,
-        ),
+        chosen.grasp(ctx, lookahead=later),
     )
     out["grasp_b"] = _report(picked_b)
     out["grasp_b_planned"] = _counted(calls[before_grasp_b:])
@@ -461,15 +452,7 @@ def _cleared(compiled: list[float]) -> Any:
         look = Lookahead()
         picked = _drive(
             ctx,
-            grasp(
-                ctx,
-                planner,
-                selection.candidate.grasp,
-                check_planner=checker,
-                lookahead=look,
-                pregrasp=selection.pregrasp,
-                approach=selection.approach,
-            ),
+            selection.grasp(ctx, lookahead=look),
         )
         out: dict[str, Any] = {
             "selected": selection.candidate.label,
@@ -485,6 +468,53 @@ def _cleared(compiled: list[float]) -> Any:
         return out
 
     return run
+
+
+DEEPEST_PAST_M = 0.10
+"""How far past ``approach_m`` the ``deepest`` scenario's grasp asks to approach: into the
+can, so the longest line is blocked and a shorter one plans."""
+
+
+def _deepest(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
+    """The right arm races alone, with a grasp whose deepest approach is blocked
+    (``DEEPEST_PAST_M`` past ``approach_m``) and whose shorter ones plan. The race checks
+    the approach the grasp guarantees, ``approach_m``, so the candidate is selected; the
+    selected grasp then approaches as deep as plans, short of the blocked line."""
+    base = _grasp(poses["can"], "can", "right")
+    spec = dataclasses.replace(
+        base, deepest=lambda pose: base.approach_m + DEEPEST_PAST_M, approach_tries=4
+    )
+    race = Candidates(
+        ctx,
+        [Candidate(label="right", grasp=spec, planner=arms["right"][0], checker=arms["right"][1])],
+    )
+    run_together(ctx, [race], max_ticks=MAX_TICKS)
+    out: dict[str, Any] = {"race": race.report, "approach_m": base.approach_m}
+    selection = race.selection
+    if selection is not None:
+        out["grasp"] = _report(_drive(ctx, selection.grasp(ctx, lookahead=Lookahead())))
+    return out
+
+
+def _closed(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
+    """Both arms race for ``can``, and the race is closed before it can finish: no
+    candidate was outranked, so none is reported as stopped by priority."""
+    race = Candidates(
+        ctx,
+        [
+            Candidate(
+                label=side,
+                grasp=_grasp(poses["can"], "can", side),
+                planner=arms[side][0],
+                checker=arms[side][1],
+                drop=_drop("can", side, side),
+                priority=1 if side == "right" else 0,
+            )
+            for side in ("right", "left")
+        ],
+    )
+    race.close()
+    return {"race": race.report, "selected": race.selection is not None}
 
 
 def _kinds(report: dict[str, Any]) -> list[tuple[str, bool, str]]:
@@ -525,6 +555,8 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
             sinks=[_ordered(stale)],
             wrap=lambda rt: _Unrested(rt, moving=False),
         ),
+        "deepest": _session(scene, "deepest", _deepest),
+        "closed": _session(scene, "closed", _closed),
         "clearance": _session(
             scene,
             "clearance",
@@ -669,6 +701,21 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     }
     assert decided["rest_unobservable"] == [["continued", "rest_unobservable"]]
     assert len(decided["not_at_rest"]) > 1
+
+    # A grasp whose deepest approach is blocked races on the approach it guarantees: it is
+    # selected, and approaches as deep as plans, deeper than approach_m and short of the
+    # blocked line.
+    deepest = scenarios["deepest"]
+    assert deepest["race"]["selected"] == "right", deepest["race"]["candidates"]
+    assert deepest["grasp"]["state"] == SkillState.SUCCEEDED, deepest["grasp"]["stages"]
+    reached = deepest["grasp"]["values"]["approach_m"]
+    assert deepest["approach_m"] < reached < deepest["approach_m"] + DEEPEST_PAST_M
+
+    # A race closed before it finished reports its candidates canceled by the caller, not
+    # by a higher priority's success.
+    closed = scenarios["closed"]
+    assert not closed["selected"] and closed["race"]["chains"]["stopped"] == "aborted"
+    assert {c["outcome"] for c in closed["race"]["candidates"]} == {"canceled"}
 
     # Only the free-space stages keep the clearance, whichever path planned them: the
     # race's pregrasp, the approach planned ahead and continued, the lift, the transfer.

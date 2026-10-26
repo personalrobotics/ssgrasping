@@ -9,8 +9,10 @@ the stage before it would leave the robot:
 
 1. ``pregrasp``: into the pregrasp regions, one attempt per seed, up to the spec's
    ``pregrasp_attempts``;
-2. ``approach``: the straight approach from the pregrasp's projection, as ``grasp``
-   would plan it, with the check planner;
+2. ``approach``: the straight approach from the pregrasp's projection by ``approach_m``,
+   the depth ``grasp`` guarantees, as its own pregrasp check plans it, with the check
+   planner. With ``deepest``, the selected grasp then approaches as deep as plans, down
+   to that;
 3. ``lift``: from the approach's projection, holding the object as the grasp would (at
    its pose relative to the hand there, allowed to touch the hand and the support), with
    the check planner;
@@ -38,13 +40,15 @@ Given ``after``, a motion executing now, the prefix is planned on ``ctx.predict(
 ``releases``, held objects to be released when ``after`` ends, such as one dropped from
 where a transfer ends, each at the pose it is expected to rest at; ``joints``, other
 joints as they are expected then, such as the gripper opened to release it): the
-selected pregrasp is then an ``Ahead``, which ``grasp`` continues once ``after`` ends.
-Otherwise it is planned on a snapshot captured now.
+selected pregrasp then continues once ``after`` ends. Otherwise it is planned on a
+snapshot captured now.
 
-The selection also carries the selected attempt's approach, kept for ``grasp`` to
-continue once the pregrasp has run (``Selection.approach``); it was planned before the
-pregrasp ran, not while it runs. The report is ssrobot's ``ChainsReport``, with the
-basis and a summary per candidate; it is deterministic for deterministic planners.
+The selection runs its candidate's grasp (``Selection.grasp``): its raced pregrasp, and
+the approach it was checked with, kept for the grasp to continue once the pregrasp has
+run; it was planned before the pregrasp ran, not while it runs. The report is ssrobot's
+``ChainsReport``, with the basis and a summary per candidate (``canceled`` when the race
+was stopped, ``canceled_by_priority`` when a higher priority succeeded); it is
+deterministic for deterministic planners.
 """
 
 from __future__ import annotations
@@ -52,7 +56,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from concurrent.futures import Future
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from ssrobot import (
@@ -75,9 +79,10 @@ from ssrobot import (
 )
 
 from ssgrasping._poses import compose, invert
-from ssgrasping._skill import Ahead, Kept, lookahead_entry
+from ssgrasping._skill import Ahead, Kept, Lookahead, lookahead_entry
 from ssgrasping.drop import DropSpec
-from ssgrasping.grasp import GraspSpec, _approach_goal, _distances
+from ssgrasping.execution import SkillExecution
+from ssgrasping.grasp import GraspSpec, _approach_goal, _selected_grasp
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,13 +100,25 @@ class Candidate:
 
 @dataclass(frozen=True, slots=True)
 class Selection:
-    """The selected candidate; its pregrasp, a plan on a captured snapshot or an
-    ``Ahead`` on the prediction, for ``grasp(..., pregrasp=...)``; and its approach,
-    planned on the pregrasp's projection, for ``grasp(..., approach=...)``."""
+    """The selected candidate, and the prefix it was selected on, inseparable from it:
+    ``grasp`` runs that candidate's grasp, with its planners, from its raced pregrasp and
+    the approach it was checked with. ``pregrasp`` is the raced pregrasp plan, for
+    inspection; it runs only through ``grasp``."""
 
     candidate: Candidate
-    pregrasp: PlanResult | Ahead
-    approach: Kept
+    pregrasp: PlanResult
+    _start: PlanResult | Ahead = field(repr=False)
+    """The pregrasp as it runs: the plan, or, raced on a prediction, its ``Ahead``."""
+    _approach: Kept = field(repr=False)
+
+    def grasp(self, ctx: RobotContext, *, lookahead: Lookahead | None = None) -> SkillExecution:
+        """The selected candidate's grasp: ``ssgrasping.grasp`` of its spec, with its
+        planner and check planner, executing the raced pregrasp in place of choosing
+        one, and, with ``lookahead``, continuing the approach it was checked with."""
+        c = self.candidate
+        return _selected_grasp(
+            ctx, c.planner, c.checker, c.grasp, lookahead, self._start, self._approach
+        )
 
 
 class Candidates:
@@ -182,9 +199,8 @@ class Candidates:
         def approach(previous: StageResult | None) -> StageRequest:
             assert previous is not None
             at = previous.projection
-            distance = _distances(arm, ctx, at, g)[0]
             request = arm.request(
-                _approach_goal(arm, ctx, at, g, distance),
+                _approach_goal(arm, ctx, at, g),
                 snapshot=at,
                 seed=previous.plan.request.seed,
             )
@@ -302,7 +318,7 @@ class Candidates:
         self._report = {
             "basis": basis,
             "rule": report["rule"],
-            "candidates": [_summary(c) for c in report["chains"]],
+            "candidates": [_summary(c, report) for c in report["chains"]],
             "selected": None if selected is None else selected[0].label,
             "chains": report,
         }
@@ -325,23 +341,39 @@ class Candidates:
             )
         self._selection = Selection(
             candidate=candidate,
-            pregrasp=pregrasp,
-            approach=Kept(stages[0].projection, stages[1].plan, candidate.checker),
+            pregrasp=stages[0].plan,
+            _start=pregrasp,
+            _approach=Kept(stages[0].projection, stages[1].plan, candidate.checker),
         )
 
 
-def _summary(chain: dict[str, Any]) -> dict[str, Any]:
-    """One candidate, from its chain's record: its outcome, why, its cost, and every
-    stage of every seed tried."""
+def _summary(chain: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
+    """One candidate, from its chain's record and the race's report: its outcome, why,
+    its cost, and every stage of every seed tried. A candidate whose last stage never
+    finished was stopped: by the caller, when the race was (``canceled``); by a strictly
+    higher priority's success, when one was chosen and stops lower ones
+    (``canceled_by_priority``)."""
     attempts = chain["attempts"]
     if chain["chosen"] is not None:
         seed = attempts[chain["chosen"]]["seed"]
         outcome, detail = "succeeded", f"seed {seed}: every motion of the prefix plans"
     else:
         last = attempts[-1]["stages"][-1]
-        stopped = last["outcome"] in ("not_started", "canceled")
-        outcome = "canceled_by_priority" if stopped else "failed"
-        detail = f"no seed whose prefix plans; the last stopped at {last['name']}: {last['detail']}"
+        unfinished = last["outcome"] in ("not_started", "canceled")
+        outranked = report["cancel_lower"] and any(
+            c["chosen"] is not None and c["priority"] > chain["priority"] for c in report["chains"]
+        )
+        if unfinished and report["stopped"] is not None:
+            outcome = "canceled"
+            detail = f"the race was stopped ({report['stopped']}) at {last['name']}"
+        elif unfinished and outranked:
+            outcome = "canceled_by_priority"
+            detail = f"a higher priority succeeded; stopped at {last['name']}"
+        else:
+            outcome = "failed"
+            detail = (
+                f"no seed whose prefix plans; the last stopped at {last['name']}: {last['detail']}"
+            )
     return {
         "label": chain["label"],
         "priority": chain["priority"],
