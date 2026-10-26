@@ -310,11 +310,6 @@ def _scene_changed(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
     return {"grasp": _report(execution.result), "injected": injected}
 
 
-def _moved(ctx: RobotContext, before: Any) -> float:
-    now = ctx.snapshot()
-    return float(max(abs(a - b) for a, b in zip(now.positions, before.positions, strict=True)))
-
-
 def _raced(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
     # can: the left arm preferred, but into the right bin, out of its reach.
     before = ctx.snapshot()
@@ -340,10 +335,22 @@ def _raced(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
             ),
         ],
     )
+    started_ns = ctx.now.time_ns
     run_together(ctx, [race], max_ticks=MAX_TICKS)
+    after = ctx.snapshot()
+    moved = max(
+        (abs(a - b), j)
+        for j, a, b in zip(after.joints, after.positions, before.positions, strict=True)
+    )
     out: dict[str, Any] = {
         "race": race.report,
-        "nothing_moved_before_selection": not ctx.executions and _moved(ctx, before) == 0.0,
+        "nothing_moved_before_selection": not ctx.executions and moved[0] == 0.0,
+        # What the race let happen, to diagnose an intermittent CI failure of the above.
+        "during_race": {
+            "runtime_s": (ctx.now.time_ns - started_ns) / 1e9,
+            "executions": len(ctx.executions),
+            "most_moved": [moved[1], moved[0]],
+        },
     }
     selection = race.selection
     assert selection is not None and selection.candidate.drop is not None
@@ -629,7 +636,7 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     assert _entry(changed["grasp"], "approach")["decision"] == "failed: for recovery"
 
     raced = scenarios["race"]
-    assert raced["nothing_moved_before_selection"]
+    assert raced["nothing_moved_before_selection"], raced["during_race"]
     outcomes = {c["label"]: c for c in raced["race"]["candidates"]}
     assert raced["race"]["selected"] == "right"
     left = outcomes["left"]
