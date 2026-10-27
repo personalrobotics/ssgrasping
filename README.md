@@ -13,11 +13,11 @@ checked execution boundary or establishes a fact, and the skill records where ea
 came from. A skill stops at the first stage that fails and reports the object's state
 conservatively, so an application can decide how to recover.
 
-The skills are robot-neutral. Everything that differs between robots, such as the arm,
-the hand frame, the gripper, the regions in which a grasp or placement is acceptable,
-and the planners, is supplied as explicit data. ssgrasping owns no simulator, planner,
-kinematics, retiming, or runtime control. Its wheel depends only on ssrobot, and
-importing it loads none of those systems.
+The skills are written against robot-neutral contracts. Everything that differs between
+robots, such as the arm, the hand frame, the gripper, the regions in which a grasp or
+placement is acceptable, and the planners, is supplied as explicit data. ssgrasping owns
+no simulator, planner, kinematics, retiming, or runtime control. Its wheel depends only
+on ssrobot, and importing it loads none of those systems.
 
 ## Skills and stages
 
@@ -246,9 +246,9 @@ retained   ok      privileged
 
 Run it with `uv run python` from the repository root, where it writes `can.xml`. CI runs
 this same example. The two helpers convert sstsr's matrices into ssrobot's `Pose` and `Tsr`
-values. The planners use a 1 cm validation resolution, fine enough for the short
-straight approach and lift, and the attachment monitor tolerates the can swinging
-between the pads as the arm accelerates.
+values. The planners check validity every 0.01 rad in joint space (`edge_resolution`),
+the spacing at which this example's straight approach and lift pass end to end. The
+attachment monitor tolerates the can swinging between the pads as the arm accelerates.
 
 ## Current capabilities
 
