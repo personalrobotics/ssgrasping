@@ -491,16 +491,23 @@ class Run:
         plan: Callable[[SceneSnapshot, int], PlanResult],
         follow: Callable[[PlanProjection], PlanResult] | None,
         attempts: int,
+        *,
+        planner: Planner,
     ) -> tuple[PlanResult, PlanResult | None, PlanProjection | None]:
         """A plan for ``name`` from which the straight motion ``then`` also plans; with
         the follow-on plan and the projection it was planned on.
 
-        A goal region is checked only for collision, so a plan can reach it at a
-        configuration from which the next straight move is infeasible. Each seed's plan
-        is kept only if ``follow`` plans on its projection (``ctx.project``): where it would
-        leave the robot. That follow-on plan is returned, so a skill may continue it
-        (``Run.kept``) once the plan runs, instead of planning it again. The seeds tried
-        are recorded in ``values[name + "_attempts"]``."""
+        Each seed's plan is prepared for the runtime first (``ctx.prepare``, with
+        ``planner``, the one that executes it): a plan whose command is not ready
+        (``execution_unready``) is rejected, before anything executes, and the next seed
+        tried. The follow-on plan is not prepared here: it is rebased into another motion,
+        which its continuation prepares. A goal region is checked only for collision, so
+        a plan can reach it at a configuration from which the next straight move is
+        infeasible. Each seed's plan is kept only if ``follow`` plans on its projection
+        (``ctx.project``): where it would leave the robot. That follow-on plan is
+        returned, so a skill may continue it (``Run.kept``) once the plan runs, instead of
+        planning it again. The seeds tried are recorded in
+        ``values[name + "_attempts"]``."""
         self.begin(name)
         snapshot = self.ctx.snapshot()
         tried: list[dict[str, object]] = []
@@ -509,6 +516,13 @@ class Run:
             result = plan(snapshot, seed)
             if not result.succeeded:
                 tried.append({"seed": seed, name: result.status.value})
+                continue
+            try:
+                self.ctx.prepare(result, planner=planner)
+            except ValidationError as e:
+                if e.code != "execution_unready":
+                    raise
+                tried.append({"seed": seed, name: "unready", "detail": e.message})
                 continue
             if follow is None or then is None:  # nothing follows: the first plan will do
                 tried.append({"seed": seed, name: "succeeded"})

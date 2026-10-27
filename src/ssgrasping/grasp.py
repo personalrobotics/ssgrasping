@@ -221,6 +221,7 @@ def _grasp(
             ),
             lambda start: _approach(arm, ctx, start, checker, spec),
             spec.pregrasp_attempts,
+            planner=planner,
         )
         assert check is not None and projection is not None  # an approach follows
         checked[0] = Kept(projection, check, checker)
