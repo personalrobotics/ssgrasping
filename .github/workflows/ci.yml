@@ -31,6 +31,12 @@ jobs:
       - run: uv run mypy
       - run: uv run python scripts/check_boundary.py
       - run: uv run pytest
+      - name: The README's grasp example runs and succeeds
+        run: |
+          # The section's Python block is the complete, runnable example, run from the root.
+          sed -n '/^## Grasping a can with Geodude/,/^## /p' README.md | sed -n '/^```python$/,/^```$/{p;/^```$/q;}' | sed '1d;$d' > "$RUNNER_TEMP/readme_example.py"
+          uv run python "$RUNNER_TEMP/readme_example.py" | tee artifacts/readme_example.txt
+          head -1 artifacts/readme_example.txt | grep -qx succeeded
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" role="img" aria-labelledby="title desc">
+  <title id="title">Which motions of a pick and drop can be planned before the robot gets there</title>
+  <desc id="desc">A pick and drop runs pregrasp, approach, close, lift, transfer, and release. Before anything moves, a race of candidates checks that each candidate's pregrasp, approach, lift, and transfer all plan, on projected states. The selected pregrasp is executed, and the approach planned with it is kept and continued when it arrives. Closing the fingers and releasing the object are physical outcomes, and the stages after them are planned again from the actual state. While the transfer executes, the race for the next object can be planned on its prediction.</desc>
+  <defs>
+    <marker id="arrow-ink" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#334155"/>
+    </marker>
+    <marker id="arrow-violet" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#6d4aa8"/>
+    </marker>
+    <style>
+      .eyebrow { font: 600 18px Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif; letter-spacing: 1.3px; fill: #6d4aa8; }
+      .eyebrow-slate { font: 600 18px Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif; letter-spacing: 1.3px; fill: #475569; }
+      .label { font: 600 24px Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif; fill: #17212b; }
+      .body { font: 400 22px Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif; fill: #475569; }
+      .violet { font: 400 22px Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif; fill: #5b3d8f; }
+    </style>
+  </defs>
+
+  <rect width="960" height="560" rx="24" fill="#fafaf7"/>
+
+  <!-- The race: one candidate's feasibility prefix, planned before anything moves. -->
+  <text x="480" y="46" text-anchor="middle" class="eyebrow">CHECKED BEFORE ANYTHING MOVES</text>
+  <text x="480" y="76" text-anchor="middle" class="violet">each candidate's whole prefix, planned on projected states</text>
+  <path d="M40 112 L40 96 L762 96 L762 112" fill="none" stroke="#6d4aa8" stroke-width="2.5"/>
+
+  <!-- Stages. Motions are amber; physical outcomes are slate. -->
+  <rect x="35" y="130" width="130" height="86" rx="14" fill="#fbf1e1" stroke="#b45309" stroke-width="2"/>
+  <text x="100" y="181" text-anchor="middle" class="label">Pregrasp</text>
+
+  <rect x="187" y="130" width="130" height="86" rx="14" fill="#fbf1e1" stroke="#b45309" stroke-width="2"/>
+  <text x="252" y="181" text-anchor="middle" class="label">Approach</text>
+
+  <rect x="339" y="130" width="130" height="86" rx="14" fill="#eef1f4" stroke="#475569" stroke-width="2" stroke-dasharray="7 5"/>
+  <text x="404" y="170" text-anchor="middle" class="label">Close</text>
+  <text x="404" y="196" text-anchor="middle" class="body">held?</text>
+
+  <rect x="491" y="130" width="130" height="86" rx="14" fill="#fbf1e1" stroke="#b45309" stroke-width="2"/>
+  <text x="556" y="181" text-anchor="middle" class="label">Lift</text>
+
+  <rect x="643" y="130" width="130" height="86" rx="14" fill="#fbf1e1" stroke="#b45309" stroke-width="2"/>
+  <text x="708" y="181" text-anchor="middle" class="label">Transfer</text>
+
+  <rect x="795" y="130" width="130" height="86" rx="14" fill="#eef1f4" stroke="#475569" stroke-width="2" stroke-dasharray="7 5"/>
+  <text x="860" y="170" text-anchor="middle" class="label">Release</text>
+  <text x="860" y="196" text-anchor="middle" class="body">released?</text>
+
+  <path d="M165 173 L185 173" stroke="#334155" stroke-width="2" marker-end="url(#arrow-ink)"/>
+  <path d="M317 173 L337 173" stroke="#334155" stroke-width="2" marker-end="url(#arrow-ink)"/>
+  <path d="M469 173 L489 173" stroke="#334155" stroke-width="2" marker-end="url(#arrow-ink)"/>
+  <path d="M621 173 L641 173" stroke="#334155" stroke-width="2" marker-end="url(#arrow-ink)"/>
+  <path d="M773 173 L793 173" stroke="#334155" stroke-width="2" marker-end="url(#arrow-ink)"/>
+
+  <!-- The approach planned with the pregrasp continues on arrival. -->
+  <path d="M100 222 C100 290, 252 290, 252 228" fill="none" stroke="#6d4aa8" stroke-width="2.5" stroke-dasharray="8 6" marker-end="url(#arrow-violet)"/>
+  <text x="176" y="320" text-anchor="middle" class="violet">kept, continued</text>
+  <text x="176" y="346" text-anchor="middle" class="violet">on arrival</text>
+
+  <!-- While the transfer runs, the next object's race is planned on its prediction. -->
+  <path d="M708 222 L708 282" fill="none" stroke="#6d4aa8" stroke-width="2.5" stroke-dasharray="8 6" marker-end="url(#arrow-violet)"/>
+  <text x="708" y="312" text-anchor="middle" class="violet">next object's race,</text>
+  <text x="708" y="338" text-anchor="middle" class="violet">on this motion's prediction</text>
+
+  <!-- Physical outcomes: the world decides what follows. -->
+  <line x1="40" y1="396" x2="920" y2="396" stroke="#d6dbe1" stroke-width="1.5"/>
+  <text x="480" y="438" text-anchor="middle" class="eyebrow-slate">THE WORLD DECIDES</text>
+  <text x="480" y="472" text-anchor="middle" class="body">Whether the fingers hold the object, and whether it was released,</text>
+  <text x="480" y="500" text-anchor="middle" class="body">are observed, not planned. Later stages are planned again from there.</text>
+  <path d="M404 404 L404 222" stroke="#475569" stroke-width="1.5" stroke-dasharray="3 5"/>
+  <path d="M860 404 L860 222" stroke="#475569" stroke-width="1.5" stroke-dasharray="3 5"/>
+</svg>
