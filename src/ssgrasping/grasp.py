@@ -21,23 +21,31 @@ these stages, recording each:
    planner and recorded in ``values["approach_m"]``. The pregrasp's own check is of
    ``approach_m``, the depth it is guaranteed.
 5. ``close``: close the gripper. The command must succeed, ending when the fingers stop.
-6. ``acquired``: classify the opening as held, missed, or indeterminate. This is
-   portable evidence, read before anything is attached. Only ``held`` continues; a miss
-   reopens the gripper, the one cleanup whose meaning is unambiguous.
-7. ``attach``: declare the object held, allowed to touch the hand and its support.
+6. ``obstructed``: the close stopped short of its target (ssrobot's
+   ``GripperResult``): something is between the fingers. This is necessary and
+   provisional: the object stops them, but so can anything else, such as the support. If
+   the close reached its target, the grasp missed: it reopens the gripper, the one
+   cleanup whose meaning is unambiguous, and fails. Whether the opening matches the
+   object's width is personalrobotics/ssgrasping#28's.
+7. ``attach``: declare the object attached, allowed to touch the hand and its support:
+   the hypothesis the lift is planned under, not yet a claim that it is held.
 8. ``lift``: move straight along ``normal``, away from the support, by ``lift_m``.
-9. ``restrict``: replace the allowance with the hand alone, keeping the attachment's
-   transform, so nothing else may be touched from now on.
-10. ``clear``: the held object is clear of everything, by the planner's validator.
-11. ``retained``: the attachment monitor still reports the object held at the
+9. ``acquired``: close the gripper again. If it still stops short, what stopped the
+   fingers rose with them; if it reaches its target, it stayed behind, and the grasp
+   fails. This is portable evidence, and the grasp's only claim that it holds the
+   object.
+10. ``restrict``: replace the allowance with the hand alone, keeping the attachment's
+    transform, so nothing else may be touched from now on.
+11. ``clear``: the held object is clear of everything, by the planner's validator.
+12. ``retained``: the attachment monitor still reports the object held at the
     transform declared at ``attach``. This is privileged evidence about the motion; it
     never stands in for ``acquired``.
 
 After ``attach``, a failure or cancellation leaves the attachment declared and reports
-the object as held: the physically conservative state. Retrying or recovering is the
-application's.
+the object as held: the physically conservative state, since it may be in the hand.
+Retrying or recovering is the application's.
 
-Lookahead stops at ``close``: whether the object is held decides what follows. The
+Lookahead stops at ``close``: whether the fingers are obstructed decides what follows. The
 stages after it plan from the actual state: ``attach`` and ``restrict`` change the scene.
 A ``pregrasp`` made beforehand, such as by ``Candidates`` while another motion ran, is
 executed in place of choosing one; if it cannot continue, one is chosen as usual.
@@ -52,6 +60,7 @@ from typing import Any
 
 from ssrobot import (
     Execution,
+    GripperTermination,
     ManipulatorView,
     OffsetGoal,
     Planner,
@@ -101,9 +110,6 @@ class GraspSpec:
     """Where the end effector frame may be before the approach, in the world."""
     approach_m: float
     """How far the approach moves along the end effector frame's z axis."""
-    held_opening: tuple[float, float]
-    """The opening range, after closing, that means the object is between the fingers.
-    Below it is a miss; above it, indeterminate."""
     lift_m: float
     open_opening: float = 1.0
     close_opening: float = 0.0
@@ -134,8 +140,6 @@ class GraspSpec:
         check_spec(len(self.pregrasps) > 0, "at least one pregrasp region", "pregrasps")
         for name in ("approach_m", "lift_m", "line_tolerance_m"):
             check_spec(getattr(self, name) > 0, "must be positive", name)
-        low, high = self.held_opening
-        check_spec(0.0 <= low <= high <= 1.0, "0 <= low <= high <= 1", "held_opening")
         for name in ("open_opening", "close_opening"):
             check_spec(0.0 <= getattr(self, name) <= 1.0, "between 0 and 1", name)
         check_spec(self.gripper_timeout_ns > 0, "must be positive", "gripper_timeout_ns")
@@ -295,18 +299,22 @@ def _grasp(
     run.values["closed_opening"] = opening
     run.record("close", True, f"opening {opening:.3f}", Evidence.PORTABLE)
 
-    low, high = spec.held_opening
-    if opening < low:
+    closed = run.values["gripper"]["close"]  # type: ignore[index]
+    if closed["termination"] == GripperTermination.REACHED_TARGET:
         run.held = False
-        yield from run.grip("acquired", spec.gripper, spec.open_opening, spec.gripper_timeout_ns)
-        run.record("acquired", False, f"missed: opening {opening:.3f} < {low}", Evidence.PORTABLE)
-    if opening > high:
+        yield from run.grip("obstructed", spec.gripper, spec.open_opening, spec.gripper_timeout_ns)
         run.record(
-            "acquired", False, f"indeterminate: opening {opening:.3f} > {high}", Evidence.PORTABLE
+            "obstructed",
+            False,
+            f"missed: the fingers reached their target, at opening {opening:.3f}",
+            Evidence.PORTABLE,
         )
-    run.held = True
+    run.held = True  # conservatively, from here on: it may be in the hand
     run.record(
-        "acquired", True, f"held: opening {opening:.3f} in [{low}, {high}]", Evidence.PORTABLE
+        "obstructed",
+        True,
+        f"the fingers stopped short, at opening {opening:.3f}",
+        Evidence.PORTABLE,
     )
 
     # ssrobot's own default allowance (the hand), read back, plus the support.
@@ -329,6 +337,24 @@ def _grasp(
         spec.normal, spec.lift_m, planner=planner, position_tolerance=spec.line_tolerance_m
     )
     yield from run.move("lift", lift, planner)
+
+    yield from run.grip("acquired", spec.gripper, spec.close_opening, spec.gripper_timeout_ns)
+    lifted = float(run.observe(spec.opening_channel)[0])
+    run.values["lifted_opening"] = lifted
+    reclosed = run.values["gripper"]["acquired"]  # type: ignore[index]
+    if reclosed["termination"] == GripperTermination.REACHED_TARGET:
+        run.record(
+            "acquired",
+            False,
+            f"lost: after the lift, the fingers reached their target, at opening {lifted:.3f}",
+            Evidence.PORTABLE,
+        )
+    run.record(
+        "acquired",
+        True,
+        f"held: after the lift, the fingers still stop short, at opening {lifted:.3f}",
+        Evidence.PORTABLE,
+    )
 
     run.boundary("restrict", "re-declares the attachment's allowance: a scene change")
     run.replace_allowance("restrict", spec.end_effector, hand)

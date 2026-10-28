@@ -23,9 +23,10 @@ on ssrobot, and importing it loads none of those systems.
 
 A skill is a fixed sequence of named stages. `grasp` opens the gripper, moves to a
 pregrasp pose, approaches along the hand's axis, and closes the fingers. It then
-classifies the measured opening as held, missed, or indeterminate before declaring an
-attachment, lifts the object along the support's normal, and confirms that the object
-is clear of everything. `place` carries a held object to a target region, descends
+checks that the close stopped short of its target, as it does on something between the
+fingers, before declaring an attachment. It lifts along the support's normal, then
+closes again: only if the fingers still stop short is the object acquired. It finally
+confirms that the object is clear of everything. `place` carries a held object to a target region, descends
 under a force guard until contact, releases it, and checks where it rests. `drop`
 carries the object over a container and lets it fall. It ends at the confirmed
 release, so the robot can move on at once. `landing` then observes where the object
@@ -70,9 +71,11 @@ evidence it relied on:
 | `privileged` | Simulator state that a physical robot does not report, such as an object's pose or the attachment monitor |
 
 The distinction determines what a skill may rely on. Whether a grasp succeeded is
-decided by `acquired`, from the gripper opening, which a physical gripper reports. The
-later `retained` stage reads the simulator's attachment monitor and is recorded as
-privileged; it adds information in simulation but never substitutes for `acquired`.
+decided by `acquired`, from how the gripper's close ends after the lift, which a physical
+gripper reports. The close before the lift only shows the fingers are `obstructed`: the
+support could stop them too. The later `retained` stage reads the simulator's
+attachment monitor and is recorded as privileged; it adds information in simulation but
+never substitutes for `acquired`.
 
 ## Passive execution
 
@@ -219,7 +222,6 @@ with RobotContext(package.description, runtime) as ctx:
         normal=(0.0, 0.0, 1.0),
         pregrasps=pregrasps,
         approach_m=0.08,
-        held_opening=(0.2, 0.95),
         lift_m=0.06,
     )
     result = run_skill(ctx, grasp(ctx, planner, spec, check_planner=checker), max_ticks=200_000)
@@ -239,9 +241,10 @@ open       ok      portable
 pregrasp   ok      commanded
 approach   ok      commanded
 close      ok      portable
-acquired   ok      portable
+obstructed ok      portable
 attach     ok      planned
 lift       ok      commanded
+acquired   ok      portable
 restrict   ok      planned
 clear      ok      planned
 retained   ok      privileged
