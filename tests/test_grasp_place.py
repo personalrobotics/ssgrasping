@@ -181,7 +181,6 @@ def _grasp_spec(can: Pose, **changes: Any) -> GraspSpec:
             _tsr(dataclasses.replace(t, Tw_e=t.Tw_e @ back).instantiate(bottom)) for t in templates
         ],
         approach_m=STANDOFF,
-        held_opening=(0.2, 0.95),
         lift_m=0.06,
     )
     return dataclasses.replace(spec, **changes)

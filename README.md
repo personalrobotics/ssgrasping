@@ -23,8 +23,8 @@ on ssrobot, and importing it loads none of those systems.
 
 A skill is a fixed sequence of named stages. `grasp` opens the gripper, moves to a
 pregrasp pose, approaches along the hand's axis, and closes the fingers. It then
-classifies the measured opening as held, missed, or indeterminate before declaring an
-attachment, lifts the object along the support's normal, and confirms that the object
+decides from how the close ended whether it holds the object (stopped short of its
+target) or missed it (reached its target) before declaring an attachment, lifts the object along the support's normal, and confirms that the object
 is clear of everything. `place` carries a held object to a target region, descends
 under a force guard until contact, releases it, and checks where it rests. `drop`
 carries the object over a container and lets it fall. It ends at the confirmed
@@ -219,7 +219,6 @@ with RobotContext(package.description, runtime) as ctx:
         normal=(0.0, 0.0, 1.0),
         pregrasps=pregrasps,
         approach_m=0.08,
-        held_opening=(0.2, 0.95),
         lift_m=0.06,
     )
     result = run_skill(ctx, grasp(ctx, planner, spec, check_planner=checker), max_ticks=200_000)

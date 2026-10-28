@@ -21,9 +21,12 @@ these stages, recording each:
    planner and recorded in ``values["approach_m"]``. The pregrasp's own check is of
    ``approach_m``, the depth it is guaranteed.
 5. ``close``: close the gripper. The command must succeed, ending when the fingers stop.
-6. ``acquired``: classify the opening as held, missed, or indeterminate. This is
-   portable evidence, read before anything is attached. Only ``held`` continues; a miss
-   reopens the gripper, the one cleanup whose meaning is unambiguous.
+6. ``acquired``: held if the close stopped short of its target, as fingers do on an
+   object between them; missed if it reached its target (ssrobot's ``GripperResult``).
+   This is portable evidence, read before anything is attached. Only ``held`` continues;
+   a miss reopens the gripper, the one cleanup whose meaning is unambiguous. Something
+   else that stops the fingers, such as the support, also reads as held: whether the
+   opening matches the object's width is personalrobotics/ssgrasping#28's.
 7. ``attach``: declare the object held, allowed to touch the hand and its support.
 8. ``lift``: move straight along ``normal``, away from the support, by ``lift_m``.
 9. ``restrict``: replace the allowance with the hand alone, keeping the attachment's
@@ -52,6 +55,7 @@ from typing import Any
 
 from ssrobot import (
     Execution,
+    GripperTermination,
     ManipulatorView,
     OffsetGoal,
     Planner,
@@ -101,9 +105,6 @@ class GraspSpec:
     """Where the end effector frame may be before the approach, in the world."""
     approach_m: float
     """How far the approach moves along the end effector frame's z axis."""
-    held_opening: tuple[float, float]
-    """The opening range, after closing, that means the object is between the fingers.
-    Below it is a miss; above it, indeterminate."""
     lift_m: float
     open_opening: float = 1.0
     close_opening: float = 0.0
@@ -134,8 +135,6 @@ class GraspSpec:
         check_spec(len(self.pregrasps) > 0, "at least one pregrasp region", "pregrasps")
         for name in ("approach_m", "lift_m", "line_tolerance_m"):
             check_spec(getattr(self, name) > 0, "must be positive", name)
-        low, high = self.held_opening
-        check_spec(0.0 <= low <= high <= 1.0, "0 <= low <= high <= 1", "held_opening")
         for name in ("open_opening", "close_opening"):
             check_spec(0.0 <= getattr(self, name) <= 1.0, "between 0 and 1", name)
         check_spec(self.gripper_timeout_ns > 0, "must be positive", "gripper_timeout_ns")
@@ -295,18 +294,22 @@ def _grasp(
     run.values["closed_opening"] = opening
     run.record("close", True, f"opening {opening:.3f}", Evidence.PORTABLE)
 
-    low, high = spec.held_opening
-    if opening < low:
+    closed = run.values["gripper"]["close"]  # type: ignore[index]
+    if closed["termination"] == GripperTermination.REACHED_TARGET:
         run.held = False
         yield from run.grip("acquired", spec.gripper, spec.open_opening, spec.gripper_timeout_ns)
-        run.record("acquired", False, f"missed: opening {opening:.3f} < {low}", Evidence.PORTABLE)
-    if opening > high:
         run.record(
-            "acquired", False, f"indeterminate: opening {opening:.3f} > {high}", Evidence.PORTABLE
+            "acquired",
+            False,
+            f"missed: the fingers reached their target, at opening {opening:.3f}",
+            Evidence.PORTABLE,
         )
     run.held = True
     run.record(
-        "acquired", True, f"held: opening {opening:.3f} in [{low}, {high}]", Evidence.PORTABLE
+        "acquired",
+        True,
+        f"held: the fingers stopped short, at opening {opening:.3f}",
+        Evidence.PORTABLE,
     )
 
     # ssrobot's own default allowance (the hand), read back, plus the support.
