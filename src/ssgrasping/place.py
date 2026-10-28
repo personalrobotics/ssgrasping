@@ -13,8 +13,9 @@ outward ``normal``: away from it to pre-place and retreat, toward it to descend.
    held object's attachment transform turns them into regions for the end effector.
 3. ``allow_target``: replace the allowance with the hand and the target support, for
    the terminal descent only, keeping the attachment's transform.
-4. ``descend``: hold still for ``settle_ns``, so the guard tares a settled wrist and
-   not the transfer's transient; plan straight toward the support by
+4. ``descend``: hold still for ``tare_wait_ns`` (a temporary fixed wait, until ssrobot
+   can report the arm at rest: personalrobotics/ssrobot#221), so the guard tares a
+   settled wrist and not the transfer's transient; plan straight toward the support by
    ``preplace_m + overshoot_m``, compile it for the runtime, and execute it under
    ``guard``. ``guard_triggered`` is the expected stop; ``trajectory_completed`` without
    it is a failed placement.
@@ -52,7 +53,16 @@ from ssrobot import (
 )
 
 from ssgrasping._poses import compose, inside, invert, offset_interval
-from ssgrasping._skill import Body, Lookahead, Run, Wait, check_spec, preflight, unit
+from ssgrasping._skill import (
+    GRIPPER_TIMEOUT_NS,
+    Body,
+    Lookahead,
+    Run,
+    Wait,
+    check_spec,
+    preflight,
+    unit,
+)
 from ssgrasping.execution import SkillExecution
 from ssgrasping.outcomes import Evidence
 
@@ -91,8 +101,15 @@ class PlaceSpec:
     open_opening: float = 1.0
     released_opening: float = 0.9
     """The opening that confirms the fingers have let go."""
-    settle_ns: int = 1_000_000_000
-    """How long the fingers, or the arm before the guarded descent, settle."""
+    gripper_timeout_ns: int = GRIPPER_TIMEOUT_NS
+    """The deadline on each gripper command, on the runtime clock: a failure bound, not a
+    settle. A command ends when the fingers' motion ends; one that has not by then fails
+    its stage (``timed_out``)."""
+    tare_wait_ns: int = 1_000_000_000
+    """How long the arm holds still before the guarded descent, so the guard tares a
+    settled wrist and not the transfer's transient. A temporary fixed wait: it is to wait
+    on the arm observed at rest instead, once ssrobot can report that
+    (personalrobotics/ssrobot#221)."""
     line_tolerance_m: float = 1e-3
     carry_scaling: float = 1.0
     """The fraction of the joints' velocity and acceleration limits the transfer, made
@@ -111,8 +128,9 @@ class PlaceSpec:
         check_spec(len(self.regions) > 0, "at least one region", "regions")
         for name in ("preplace_m", "retreat_m", "line_tolerance_m"):
             check_spec(getattr(self, name) > 0, "must be positive", name)
-        for name in ("overshoot_m", "terminal_m", "settle_ns"):
+        for name in ("overshoot_m", "terminal_m", "tare_wait_ns"):
             check_spec(getattr(self, name) >= 0, "must be non-negative", name)
+        check_spec(self.gripper_timeout_ns > 0, "must be positive", "gripper_timeout_ns")
         check_spec(self.terminal_m <= self.preplace_m, "at most preplace_m", "terminal_m")
         metres, radians = self.region_tolerance
         check_spec(metres >= 0 and radians >= 0, "non-negative", "region_tolerance")
@@ -219,7 +237,7 @@ def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Bod
         Evidence.PORTABLE,
     )
 
-    yield from run.grip("release", spec.gripper, spec.open_opening, spec.settle_ns)
+    yield from run.grip("release", spec.gripper, spec.open_opening, spec.gripper_timeout_ns)
     opening = float(run.observe(spec.opening_channel)[0])
     run.values["released_opening"] = opening
     if opening < spec.released_opening:
@@ -255,7 +273,7 @@ def _descend(run: Run, planner: Planner, spec: PlaceSpec) -> Body:
     """The guarded terminal descent: settled, planned, compiled for the runtime, run."""
     ctx = run.ctx
     run.begin("descend")
-    yield Wait(until_ns=ctx.now.time_ns + spec.settle_ns)
+    yield Wait(until_ns=ctx.now.time_ns + spec.tare_wait_ns)  # temporary: ssrobot#221
     snapshot = ctx.snapshot()
     plan = _toward(ctx, snapshot, planner, spec)
     if not plan.succeeded:

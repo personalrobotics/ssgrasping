@@ -14,6 +14,7 @@ on an outcome not yet known, is logged in ``values["lookahead"]``.
 
 from __future__ import annotations
 
+import json
 import math
 import threading
 from collections.abc import Callable, Generator, Sequence
@@ -38,6 +39,7 @@ from ssrobot import (
     SsrobotError,
     ValidationError,
     WrenchGuard,
+    dumps,
 )
 
 from ssgrasping.outcomes import Evidence, SkillResult, SkillState, Stage
@@ -67,6 +69,12 @@ class Wait:
 
 
 Body = Generator[Wait, None, None]
+
+GRIPPER_TIMEOUT_NS = 5_000_000_000
+"""The default deadline on a gripper command (``gripper_timeout_ns``): a failure bound
+for a detector or controller that never reports the end of the fingers' motion, not a
+wait. The slowest measured motion is ADA's unobstructed open, 1.49 s; Geodude's is 1.0 s
+(personalrobotics/ssrobot#220)."""
 
 REST_WAIT_NS = 500_000_000
 """How long a continuation waits, by default, after its source succeeds, for the joints
@@ -440,14 +448,19 @@ class Run:
                 detail += f": {status.diagnostic.code}"
             self.record(name, False, detail, Evidence.COMMANDED)
 
-    def grip(self, name: str, gripper: str, opening: float, settle_ns: int) -> Body:
-        """Command ``gripper`` to ``opening``, require the command to succeed, then wait
-        ``settle_ns`` for the fingers to settle."""
+    def grip(self, name: str, gripper: str, opening: float, timeout_ns: int) -> Body:
+        """Command ``gripper`` to ``opening`` and wait for the command to end, which it
+        does when the fingers' motion ends (``GripperResult``); require it to succeed by
+        ``timeout_ns``. The result is kept in ``values["gripper"][name]``."""
         self.begin(name)
-        execution = self.ctx.submit(GripperCommand(gripper=gripper, opening=opening))
+        command = GripperCommand(gripper=gripper, opening=opening)
+        execution = self.ctx.submit(command, timeout_ns=timeout_ns)
         yield Wait(execution=execution)
         self.finished(name, execution)
-        yield Wait(until_ns=self.ctx.now.time_ns + settle_ns)
+        result = execution.status.gripper
+        assert result is not None  # a gripper command's success always carries one
+        results: dict[str, Any] = self.values.setdefault("gripper", {})  # type: ignore[assignment]
+        results[name] = json.loads(dumps(result))
 
     def observe(self, channel: str) -> Any:
         return self.ctx.observe(ObservationRequest(channels=(channel,))).readings[0].value
