@@ -15,7 +15,14 @@ Each scenario is one contract case, recorded in ``grasp_place.json`` with every 
 time, scene revision, held and attached state, and evidence kind, and the attachment
 the skill left declared:
 - ``success``: grasp, then place, on a manual clock; run twice, byte-identical.
-- ``missed``: a grasp where there is no can fails ``acquired`` with nothing attached.
+- ``missed``: a grasp where there is no can fails ``obstructed`` with nothing attached.
+- ``obstructed``: a grasp where there is no can, but a fixed post stops the fingers, as
+  the support could. The close stops short, so the attachment is declared, but the
+  fingers rest on the post, so the lift cannot plan: the grasp fails without claiming
+  ``acquired``.
+- ``lost``: a 20 kg can, too heavy for the grip. The close stops short on it and the
+  lift runs, but the can stays on the surface: closing again, the fingers reach their
+  target, and ``acquired`` fails.
 - ``preflight``: an unknown channel fails ``preflight`` before anything is commanded.
 - ``external``: the same grasp on an externally clocked runtime, driven by ``run_skill``
   through ``update()`` alone.
@@ -80,6 +87,7 @@ RADIUS, HEIGHT = 0.033, 0.123  # prl_assets' can geometric_properties
 SURFACE_Z = 0.753  # the top of Geodude's work surface (vention_base)
 UP = (0.0, 0.0, 1.0)  # the work surface's outward normal
 CAN_XY = (0.35, -0.40)
+ELSEWHERE = 0.20  # how far in y from the can ``_missed`` aims
 TARGET_XY = (0.20, -0.50)
 TARGET_YAW = (-0.5, 0.5)
 STANDOFF = 0.08
@@ -111,15 +119,24 @@ DRIFT_TOLERANCE_M = 1e-4  # below the ~0.3 mm the can drifts in the fingers on t
 CARRY_SCALING = 0.5
 
 
-def _scene() -> str:
-    """A 50 g can on the work surface."""
+def _scene(mass: float = 0.05, post: bool = False) -> str:
+    """A can of ``mass`` kg on the work surface; with ``post``, a fixed post of the can's
+    size where ``_missed`` aims."""
+    fixed = (
+        f"""
+    <body name="post" pos="{CAN_XY[0]} {CAN_XY[1] + ELSEWHERE} {SURFACE_Z + HEIGHT / 2}">
+      <geom type="cylinder" size="{RADIUS} {HEIGHT / 2}"/>
+    </body>"""
+        if post
+        else ""
+    )
     return f"""<mujoco>
   <worldbody>
     <body name="can" pos="{CAN_XY[0]} {CAN_XY[1]} {SURFACE_Z + HEIGHT / 2}">
       <freejoint/>
-      <geom type="cylinder" size="{RADIUS} {HEIGHT / 2}" mass="0.05"
+      <geom type="cylinder" size="{RADIUS} {HEIGHT / 2}" mass="{mass}"
             friction="0.6 0.005 0.0001"/>
-    </body>
+    </body>{fixed}
   </worldbody>
 </mujoco>
 """
@@ -352,7 +369,7 @@ def _pick_and_place(changes: dict[str, Any] | None = None) -> Session:
 
 def _missed(ctx: RobotContext, planner: Planner, checker: Planner, can: Pose) -> dict[str, Any]:
     elsewhere = Pose(
-        position=(can.position[0], can.position[1] + 0.20, can.position[2]),
+        position=(can.position[0], can.position[1] + ELSEWHERE, can.position[2]),
         quat_wxyz=can.quat_wxyz,
     )
     spec = _grasp_spec(elsewhere)
@@ -390,12 +407,18 @@ def _states(report: dict[str, Any], part: str) -> list[tuple[str, bool]]:
 def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None:
     plain = tmp_path / "can.xml"
     plain.write_text(_scene())
+    posted = tmp_path / "post.xml"
+    posted.write_text(_scene(post=True))
+    heavy = tmp_path / "heavy.xml"
+    heavy.write_text(_scene(mass=20.0))
 
     first = json.dumps(_session(plain, _pick_and_place()), indent=2)
     again = json.dumps(_session(plain, _pick_and_place()), indent=2)
     scenarios = {
         "success": json.loads(first),
         "missed": _session(plain, _missed),
+        "obstructed": _session(posted, _missed),
+        "lost": _session(heavy, _pick()),
         "preflight": _session(plain, _pick({"opening_channel": "right_gripper_width"})),
         "external": _session(plain, _pick(), external=True),
         "cancelled": _session(plain, _cancelled, external=True),
@@ -418,8 +441,8 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     success = scenarios["success"]
     assert success["grasp"]["state"] == SkillState.SUCCEEDED
     assert [n for n, _ in _states(success, "grasp")] == [
-        "preflight", "open", "pregrasp", "approach", "close", "acquired",
-        "attach", "lift", "restrict", "clear", "retained",
+        "preflight", "open", "pregrasp", "approach", "close", "obstructed",
+        "attach", "lift", "acquired", "restrict", "clear", "retained",
     ]  # fmt: skip
     declared = success["grasp"]["values"]["attach_transform"]
     assert success["grasp"]["attachment"]["transform"] == declared  # kept through restrict
@@ -432,8 +455,22 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
 
     missed = scenarios["missed"]["grasp"]
     assert missed["state"] == SkillState.FAILED and missed["attachment"] is None
-    assert missed["stages"][-1]["name"] == "acquired"
+    assert missed["stages"][-1]["name"] == "obstructed"
     assert missed["stages"][-1]["detail"].startswith("missed")
+
+    # Fingers stopped by something other than the object never make the grasp acquired.
+    obstructed = scenarios["obstructed"]["grasp"]
+    assert obstructed["state"] == SkillState.FAILED, obstructed["stages"]
+    assert "acquired" not in [s["name"] for s in obstructed["stages"]]
+    assert [(s["name"], s["succeeded"]) for s in obstructed["stages"][-3:]] == [
+        ("obstructed", True),
+        ("attach", True),
+        ("lift", False),
+    ]
+    lost = scenarios["lost"]["grasp"]
+    assert lost["state"] == SkillState.FAILED, lost["stages"]
+    assert (lost["stages"][-1]["name"], lost["stages"][-1]["evidence"]) == ("acquired", "portable")
+    assert lost["stages"][-1]["detail"].startswith("lost")
 
     pre = scenarios["preflight"]["grasp"]
     assert pre["state"] == SkillState.FAILED and [s["name"] for s in pre["stages"]] == ["preflight"]
