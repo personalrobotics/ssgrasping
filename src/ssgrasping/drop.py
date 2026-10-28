@@ -20,9 +20,10 @@ falls.
 4. ``retreat``: move straight along the container's outward ``normal`` by
    ``retreat_m``; none when ``retreat_m`` is 0, so the next motion can start, and be
    planned ahead, from where the transfer ends.
-5. ``dropped``, only if ``inside`` is given: after ``land_ns``, the object rests in one of
-   the ``inside`` regions, within ``region_tolerance`` of all six bounds, by its
-   privileged pose.
+5. ``dropped``, only if ``inside`` is given: after ``land_ns`` (a temporary fixed wait,
+   until ssrobot can report the object at rest: personalrobotics/ssrobot#221), the
+   object rests in one of the ``inside`` regions, within ``region_tolerance`` of all six
+   bounds, by its privileged pose.
 
 A failure before ``release`` leaves the object attached and held.
 """
@@ -36,7 +37,16 @@ from dataclasses import dataclass
 from ssrobot import Planner, PlanProjection, PlanResult, RobotContext, SceneSnapshot, Tsr
 
 from ssgrasping._poses import inside
-from ssgrasping._skill import Body, Lookahead, Run, Wait, check_spec, preflight, unit
+from ssgrasping._skill import (
+    GRIPPER_TIMEOUT_NS,
+    Body,
+    Lookahead,
+    Run,
+    Wait,
+    check_spec,
+    preflight,
+    unit,
+)
 from ssgrasping.execution import SkillExecution
 from ssgrasping.outcomes import Evidence
 
@@ -70,11 +80,14 @@ class DropSpec:
     open_opening: float = 1.0
     released_opening: float = 0.9
     """The opening that confirms the fingers have let go."""
-    settle_ns: int = 1_000_000_000
-    """How long the fingers settle after the release command."""
+    gripper_timeout_ns: int = GRIPPER_TIMEOUT_NS
+    """The deadline on each gripper command, on the runtime clock: a failure bound, not a
+    settle. A command ends when the fingers' motion ends; one that has not by then fails
+    its stage (``timed_out``)."""
     land_ns: int = 1_000_000_000
-    """How long after the retreat the object is given to come to rest before
-    ``dropped``."""
+    """How long after the retreat the object is given to come to rest before ``dropped``.
+    A temporary fixed wait: it is to wait on the object observed at rest instead, once
+    ssrobot can report that (personalrobotics/ssrobot#221)."""
     line_tolerance_m: float = 1e-3
     carry_scaling: float = 1.0
     """The fraction of the joints' velocity and acceleration limits the transfer, made
@@ -92,8 +105,8 @@ class DropSpec:
         check_spec(len(self.regions) > 0, "at least one region", "regions")
         check_spec(self.retreat_m >= 0, "must be non-negative", "retreat_m")
         check_spec(self.line_tolerance_m > 0, "must be positive", "line_tolerance_m")
-        for name in ("settle_ns", "land_ns"):
-            check_spec(getattr(self, name) >= 0, "must be non-negative", name)
+        check_spec(self.land_ns >= 0, "must be non-negative", "land_ns")
+        check_spec(self.gripper_timeout_ns > 0, "must be positive", "gripper_timeout_ns")
         metres, radians = self.region_tolerance
         check_spec(metres >= 0 and radians >= 0, "non-negative", "region_tolerance")
         for name in ("open_opening", "released_opening"):
@@ -175,7 +188,7 @@ def _drop(run: Run, planner: Planner, checker: Planner, spec: DropSpec) -> Body:
             "attachment monitor: the object left its declared transform during the transfer",
             Evidence.PRIVILEGED,
         )
-    yield from run.grip("release", spec.gripper, spec.open_opening, spec.settle_ns)
+    yield from run.grip("release", spec.gripper, spec.open_opening, spec.gripper_timeout_ns)
     opening = float(run.observe(spec.opening_channel)[0])
     run.values["released_opening"] = opening
     if opening < spec.released_opening:

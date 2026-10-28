@@ -5,7 +5,8 @@ these stages, recording each:
 1. ``preflight``: every reference resolves and every command and channel the grasp
    uses is available. Nothing is commanded before it passes.
 2. ``open``: open the gripper, so the pregrasp is planned with the fingers as they will
-   approach. The command must succeed.
+   approach. The command must succeed: it ends when the fingers' motion ends, and its
+   ``GripperResult`` is kept in ``values["gripper"]``, as for every gripper stage.
 3. ``pregrasp``: plan into the pregrasp regions, and keep the plan only if the straight
    approach also plans from where it ends; otherwise plan again with the next seed, up
    to ``pregrasp_attempts``. The pregrasp alone is checked only for collision, so a
@@ -19,7 +20,7 @@ these stages, recording each:
    deepest the application allows down to ``approach_m``, found with the check
    planner and recorded in ``values["approach_m"]``. The pregrasp's own check is of
    ``approach_m``, the depth it is guaranteed.
-5. ``close``: close the gripper. The command must succeed.
+5. ``close``: close the gripper. The command must succeed, ending when the fingers stop.
 6. ``acquired``: classify the opening as held, missed, or indeterminate. This is
    portable evidence, read before anything is attached. Only ``held`` continues; a miss
    reopens the gripper, the one cleanup whose meaning is unambiguous.
@@ -64,7 +65,17 @@ from ssrobot import (
 )
 
 from ssgrasping._poses import axis
-from ssgrasping._skill import Ahead, Body, Kept, Lookahead, Run, check_spec, preflight, unit
+from ssgrasping._skill import (
+    GRIPPER_TIMEOUT_NS,
+    Ahead,
+    Body,
+    Kept,
+    Lookahead,
+    Run,
+    check_spec,
+    preflight,
+    unit,
+)
 from ssgrasping.execution import SkillExecution
 from ssgrasping.outcomes import Evidence
 
@@ -96,8 +107,10 @@ class GraspSpec:
     lift_m: float
     open_opening: float = 1.0
     close_opening: float = 0.0
-    settle_ns: int = 1_000_000_000
-    """How long the fingers settle after a gripper command, on the runtime clock."""
+    gripper_timeout_ns: int = GRIPPER_TIMEOUT_NS
+    """The deadline on each gripper command, on the runtime clock: a failure bound, not a
+    settle. A command ends when the fingers' motion ends; one that has not by then fails
+    its stage (``timed_out``)."""
     line_tolerance_m: float = 1e-3
     """Position tolerance of the straight approach and lift."""
     pregrasp_attempts: int = 8
@@ -125,7 +138,7 @@ class GraspSpec:
         check_spec(0.0 <= low <= high <= 1.0, "0 <= low <= high <= 1", "held_opening")
         for name in ("open_opening", "close_opening"):
             check_spec(0.0 <= getattr(self, name) <= 1.0, "between 0 and 1", name)
-        check_spec(self.settle_ns >= 0, "must be non-negative", "settle_ns")
+        check_spec(self.gripper_timeout_ns > 0, "must be positive", "gripper_timeout_ns")
         check_spec(self.pregrasp_attempts >= 1, "at least 1", "pregrasp_attempts")
         check_spec(self.approach_tries >= 2, "at least 2", "approach_tries")
         check_spec(
@@ -201,7 +214,7 @@ def _grasp(
     )
     arm = ctx.manipulator(spec.manipulator)
 
-    yield from run.grip("open", spec.gripper, spec.open_opening, spec.settle_ns)
+    yield from run.grip("open", spec.gripper, spec.open_opening, spec.gripper_timeout_ns)
     run.record(
         "open", True, f"opening {run.observe(spec.opening_channel)[0]:.3f}", Evidence.PORTABLE
     )
@@ -277,7 +290,7 @@ def _grasp(
     yield from run.move("approach", approach, planner, replan=replan_approach)
     run.boundary("close", "grasp verification: the closed opening decides what follows")
 
-    yield from run.grip("close", spec.gripper, spec.close_opening, spec.settle_ns)
+    yield from run.grip("close", spec.gripper, spec.close_opening, spec.gripper_timeout_ns)
     opening = float(run.observe(spec.opening_channel)[0])
     run.values["closed_opening"] = opening
     run.record("close", True, f"opening {opening:.3f}", Evidence.PORTABLE)
@@ -285,7 +298,7 @@ def _grasp(
     low, high = spec.held_opening
     if opening < low:
         run.held = False
-        yield from run.grip("acquired", spec.gripper, spec.open_opening, spec.settle_ns)
+        yield from run.grip("acquired", spec.gripper, spec.open_opening, spec.gripper_timeout_ns)
         run.record("acquired", False, f"missed: opening {opening:.3f} < {low}", Evidence.PORTABLE)
     if opening > high:
         run.record(

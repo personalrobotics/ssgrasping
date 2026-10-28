@@ -28,6 +28,8 @@ the skill left declared:
 - ``unconfirmed_release``: the gripper opens only halfway, so ``release`` is not
   confirmed and the object stays attached.
 - ``trajectory_only``: a planner that returns trajectories without paths still grasps.
+- ``gripper_timeout``: a 20 ms gripper deadline, shorter than the close, fails ``close``
+  with ``timed_out``; the open, on a hand already open, ends within it.
 The environment the artifact was made in is recorded with it; byte-identity is claimed
 within one environment.
 
@@ -83,6 +85,7 @@ TARGET_YAW = (-0.5, 0.5)
 STANDOFF = 0.08
 CHECK_ITERATIONS = 300  # feasible checks plan well within this; infeasible ones stop
 MAX_TICKS = 200_000
+GRIPPER_DEADLINE_NS = 20_000_000  # shorter than any close of the 2F-140 in this scene
 # The attachment monitor's rotation tolerance: a cylinder pinched between two pads swings
 # about the finger axis as the arm accelerates (0.101 rad at the peak of the transfer,
 # settling back to under 0.01 rad), and that swing is still a held can.
@@ -402,6 +405,7 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
         ),
         "unconfirmed_release": _session(plain, _pick_and_place({"open_opening": 0.5})),
         "trajectory_only": _session(plain, _pick(), strip=True),
+        "gripper_timeout": _session(plain, _pick({"gripper_timeout_ns": GRIPPER_DEADLINE_NS})),
     }
     report = {
         "environment": _environment(),
@@ -459,3 +463,22 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     assert unconfirmed["attachment"] is not None
 
     assert scenarios["trajectory_only"]["grasp"]["state"] == SkillState.SUCCEEDED
+
+    # Each gripper stage waits on its command's own result, kept in the evidence: the
+    # hand starts open, so its open asks for no motion; the close stops short on the can.
+    gripped = success["grasp"]["values"]["gripper"]
+    assert (gripped["open"]["termination"], gripped["open"]["direction"]) == (
+        "reached_target",
+        "stationary",
+    )
+    assert (gripped["close"]["termination"], gripped["close"]["direction"]) == (
+        "stopped_short",
+        "closing",
+    )
+    assert success["place"]["values"]["gripper"]["release"]["termination"] == "reached_target"
+
+    # A gripper deadline is a failure bound: a close that has not ended by it fails.
+    timed = scenarios["gripper_timeout"]["grasp"]
+    assert timed["state"] == SkillState.FAILED, timed["stages"]
+    assert timed["stages"][-1]["name"] == "close"
+    assert timed["stages"][-1]["detail"] == "timed_out: deadline_exceeded"
