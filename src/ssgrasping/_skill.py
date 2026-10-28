@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import math
 import threading
-from collections.abc import Callable, Generator, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from concurrent.futures import Future, wait
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -128,6 +128,19 @@ class Kept:
     planner: Planner
 
 
+@dataclass(frozen=True, slots=True)
+class Follow:
+    """The next skill's first motion, to plan while this skill's last one runs: its
+    ``stage`` name, the ``request`` for it on the prediction of that motion, and the
+    ``planner`` that plans it, which nothing else may use until the plan is ready. A grasp
+    plans it during its lift (``grasp(follow=...)``), and the next skill continues the
+    plan (``drop(planned=...)``)."""
+
+    stage: str
+    request: Callable[[PredictedSnapshot], PlanningRequest]
+    planner: Planner
+
+
 @dataclass(slots=True)
 class Ahead:
     """A stage's motion being planned on a prediction while the motion before it runs."""
@@ -160,6 +173,7 @@ def lookahead_entry(stage: str, prediction: PredictedSnapshot, **more: object) -
             "held": [o.name for o in prediction.held],
             "unsettled": list(prediction.unsettled),
             "releases": list(prediction.releases),
+            "allowances": list(prediction.allowances),
         },
         **more,
     }
@@ -189,6 +203,9 @@ class Run:
         self.held: bool | None = None
         self.lookahead = lookahead
         self._aheads: list[Ahead] = []
+        self.upcoming: Ahead | None = None
+        """The next skill's first motion, planned ahead and handed on if this one
+        succeeds (``Follow``)."""
 
     def _log(self) -> list[dict[str, object]]:
         log = self.values.setdefault("lookahead", [])
@@ -207,14 +224,20 @@ class Run:
         source: Execution,
         request: Callable[[PredictedSnapshot], PlanningRequest],
         planner: Planner,
+        *,
+        allowances: Mapping[str, Sequence[str]] | None = None,
     ) -> Ahead | None:
         """Plan ``stage`` on ``ctx.predict(source)``, on a worker, while ``source`` runs.
         None if the skill does not look ahead, or, logged, if ``source`` is unpredictable.
-        ``planner`` must not be used for anything else until the plan is ready."""
+        ``allowances`` are the attachments the skill will re-declare before ``stage``
+        runs, and their allow sets (``ctx.predict``'s). ``planner`` must not be used for
+        anything else until the plan is ready."""
         if self.lookahead is None:
             return None
         try:
-            prediction = self.ctx.predict(source, unsettled=self.lookahead.unsettled)
+            prediction = self.ctx.predict(
+                source, unsettled=self.lookahead.unsettled, allowances=allowances
+            )
             built = request(prediction)
         except SsrobotError as e:
             self._log().append({"stage": stage, "boundary": f"unpredictable: {e.code}"})
@@ -271,8 +294,17 @@ class Run:
         self._log().append(ahead.log)
         self._aheads.append(ahead)
 
-    def close(self) -> None:
-        """Stop every lookahead not used, and wait for it to stop; the skill has ended."""
+    def close(self, succeeded: bool = False) -> None:
+        """Stop every lookahead not used, and wait for it to stop; the skill has ended.
+        If it ``succeeded``, the next skill's first motion (``upcoming``) is handed on
+        instead, with a log entry of its own for the next skill."""
+        if succeeded and self.upcoming is not None and "decision" not in self.upcoming.log:
+            handed = self.upcoming
+            handed.log["decision"] = "handed on: continued by the next skill"
+            handed.log = {k: v for k, v in handed.log.items() if k != "decision"}
+            self._aheads.remove(handed)
+        else:
+            self.upcoming = None
         for ahead in self._aheads:
             if "decision" not in ahead.log:
                 ahead.cancel()
