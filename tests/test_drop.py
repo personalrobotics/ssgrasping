@@ -11,8 +11,9 @@ above the rim (+2 cm / -5 cm), at any yaw.
 
 Each scenario is one contract case, recorded in ``drop.json`` with every stage's time,
 scene revision, held and attached state, and evidence kind:
-- ``success``: grasp, then drop on a manual clock: the can is released over the bin and
-  comes to rest inside it, by its privileged pose; run twice, byte-identical.
+- ``success``: grasp, then drop on a manual clock: the can is released over the bin, the
+  drop ends after its retreat, and ``landing`` then finds it at rest inside the bin, by
+  its privileged pose; run twice, byte-identical.
 - ``unconfirmed_release``: the gripper opens only halfway, so ``release`` is not
   confirmed and the can stays attached.
 - ``slipped``: the attachment monitor reports the can leaving the fingers during the
@@ -36,7 +37,7 @@ from typing import Any
 
 from ssrobot import AttachmentViolation, Planner, Pose, RobotContext, RuntimeUpdate, Tsr
 
-from ssgrasping import DropSpec, SkillState, drop, grasp
+from ssgrasping import DropSpec, LandingSpec, SkillState, drop, grasp, landing
 from tests.test_grasp_place import (
     CAN_XY,
     CARRY_SCALING,
@@ -94,8 +95,7 @@ def _scene() -> str:
 
 
 def _drop_spec(**changes: Any) -> DropSpec:
-    """The legacy demo's drop zone over the bin, and its interior as where the can must
-    come to rest."""
+    """The legacy demo's drop zone over the bin."""
     hx = BIN_OUTER[0] / 2 - BIN_WALL - DROP_MARGIN
     hy = BIN_OUTER[1] / 2 - BIN_WALL - DROP_MARGIN
     clearance = max(0.25, HEIGHT + 0.10)
@@ -104,16 +104,6 @@ def _drop_spec(**changes: Any) -> DropSpec:
         offset=Pose(position=(0.0, 0.0, 0.0), quat_wxyz=(1.0, 0.0, 0.0, 0.0)),
         position_bounds=((-hx, hx), (-hy, hy), (-0.02, 0.05)),
         rotation_bounds=((0.0, 0.0), (0.0, 0.0), (-math.pi, math.pi)),
-    )
-    interior = Tsr(
-        origin=Pose(position=BIN, quat_wxyz=(1.0, 0.0, 0.0, 0.0)),
-        offset=Pose(position=(0.0, 0.0, 0.0), quat_wxyz=(1.0, 0.0, 0.0, 0.0)),
-        position_bounds=(
-            (-BIN_INNER_HALF, BIN_INNER_HALF),
-            (-BIN_INNER_HALF, BIN_INNER_HALF),
-            (BIN_FLOOR, BIN_OUTER[2]),
-        ),
-        rotation_bounds=((-math.pi, math.pi),) * 3,
     )
     spec = DropSpec(
         manipulator="right_arm",
@@ -125,10 +115,24 @@ def _drop_spec(**changes: Any) -> DropSpec:
         normal=UP,
         regions=[zone],
         retreat_m=0.08,
-        inside=[interior],
         carry_scaling=CARRY_SCALING,
     )
     return dataclasses.replace(spec, **changes)
+
+
+def _landing_spec() -> LandingSpec:
+    """The bin's interior, as where the can must come to rest."""
+    interior = Tsr(
+        origin=Pose(position=BIN, quat_wxyz=(1.0, 0.0, 0.0, 0.0)),
+        offset=Pose(position=(0.0, 0.0, 0.0), quat_wxyz=(1.0, 0.0, 0.0, 0.0)),
+        position_bounds=(
+            (-BIN_INNER_HALF, BIN_INNER_HALF),
+            (-BIN_INNER_HALF, BIN_INNER_HALF),
+            (BIN_FLOOR, BIN_OUTER[2]),
+        ),
+        rotation_bounds=((-math.pi, math.pi),) * 3,
+    )
+    return LandingSpec(object="can", inside=[interior])
 
 
 def _pick_and_drop(changes: dict[str, Any] | None = None) -> Any:
@@ -137,7 +141,10 @@ def _pick_and_drop(changes: dict[str, Any] | None = None) -> Any:
         report = {"grasp": _report(picked)}
         if picked.succeeded:
             spec = _drop_spec(**(changes or {}))
-            report["drop"] = _report(_drive(ctx, drop(ctx, planner, spec, check_planner=checker)))
+            dropped = _drive(ctx, drop(ctx, planner, spec, check_planner=checker))
+            report["drop"] = _report(dropped)
+            if dropped.succeeded:
+                report["landing"] = _report(_drive(ctx, landing(ctx, _landing_spec())))
         return report
 
     return run
@@ -227,10 +234,14 @@ def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> No
     assert success["grasp"]["state"] == SkillState.SUCCEEDED
     assert success["drop"]["state"] == SkillState.SUCCEEDED, success["drop"]["stages"]
     assert [n for n, _ in _states(success, "drop")] == [
-        "preflight", "transfer", "release", "retreat", "dropped",
+        "preflight", "transfer", "release", "retreat",
     ]  # fmt: skip
-    assert success["drop"]["stages"][-1]["evidence"] == "privileged"
     assert success["drop"]["attachment"] is None
+    # The drop ends with the robot free; where the can came to rest is the landing's.
+    assert success["landing"]["state"] == SkillState.SUCCEEDED, success["landing"]["stages"]
+    assert [(s["name"], s["evidence"]) for s in success["landing"]["stages"]] == [
+        ("landed", "privileged"),
+    ]  # fmt: skip
 
     unconfirmed = scenarios["unconfirmed_release"]["drop"]
     assert unconfirmed["state"] == SkillState.FAILED, unconfirmed["stages"]

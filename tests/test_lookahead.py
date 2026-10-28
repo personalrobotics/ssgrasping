@@ -35,7 +35,8 @@ Each scenario is one contract case, recorded in ``lookahead.json``:
   ``can_b``, each arm into its own bin with the right arm, on its side, preferred, is
   planned on the transfer's prediction, which expects ``can`` to be released where the
   transfer ends; the selection follows the rule, and its pregrasp continues from there
-  once ``can`` has been released and has landed. Each raced grasp continues the
+  as soon as ``can`` has been released. ``can``'s ``landing`` is observed alongside
+  ``can_b``'s grasp, and finds it in the bin. Each raced grasp continues the
   approach its race planned, ``can_b``'s from its pregrasp's continuation, and plans
   none again. Whether the left arm was stopped by
   priority or finished depends on timing, so that one field of ``race_b`` may differ
@@ -84,9 +85,10 @@ from ssgrasping import (
     SkillState,
     drop,
     grasp,
+    landing,
     run_together,
 )
-from tests.test_drop import BIN, BIN_FLOOR, _drop_spec
+from tests.test_drop import BIN, BIN_FLOOR, _drop_spec, _landing_spec
 from tests.test_drop import _scene as _can_and_bin
 from tests.test_grasp_place import (
     CHECK_ITERATIONS,
@@ -188,7 +190,6 @@ def _drop(obj: str, side: str, bin_side: str) -> Any:
         spec,
         container="recycle_bin_left",
         regions=[moved(t) for t in spec.regions],
-        inside=[moved(t) for t in spec.inside],
     )
 
 
@@ -406,10 +407,13 @@ def _raced(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
     planner, checker = arms[chosen.candidate.label]
     later = Lookahead(unsettled=("can",))
     before_grasp_b = len(calls)
-    picked_b = _drive(
-        ctx,
-        chosen.grasp(ctx, lookahead=later),
-    )
+    # Where can comes to rest is observed alongside can_b's grasp, not before it.
+    landing_a = landing(ctx, _landing_spec())
+    grasping_b = chosen.grasp(ctx, lookahead=later)
+    assert run_together(ctx, [grasping_b, landing_a], max_ticks=MAX_TICKS)
+    assert grasping_b.result is not None and landing_a.result is not None
+    picked_b = grasping_b.result
+    out["landing"] = _report(landing_a.result)
     out["grasp_b"] = _report(picked_b)
     out["grasp_b_planned"] = _counted(calls[before_grasp_b:])
     if picked_b.succeeded:
@@ -665,8 +669,16 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     assert race_b["basis"]["prediction"]["held"] == []  # released, not carried on
     assert race_b["basis"]["prediction"]["releases"] == ["can"]
     assert [s["name"] for s in raced["drop"]["stages"]] == [
-        "preflight", "transfer", "release", "dropped",
+        "preflight", "transfer", "release",
     ]  # fmt: skip
+    # can_b's grasp starts at the release; can's landing is judged a land_ns later, by
+    # then far into can_b's pregrasp, and finds can in the bin.
+    released_ns = raced["drop"]["stages"][-1]["time_ns"]
+    assert raced["grasp_b"]["stages"][0]["time_ns"] == released_ns
+    assert raced["landing"]["state"] == SkillState.SUCCEEDED, raced["landing"]["stages"]
+    landed = raced["landing"]["stages"][0]
+    assert (landed["name"], landed["evidence"]) == ("landed", "privileged")
+    assert landed["time_ns"] == released_ns + _landing_spec().land_ns
     feasible = [c for c in race_b["candidates"] if c["outcome"] == "succeeded"]
     rule = min(feasible, key=lambda c: (-c["priority"], c["cost_s"]))
     assert race_b["selected"] == rule["label"] == "right"
