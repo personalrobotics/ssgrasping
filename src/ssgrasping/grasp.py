@@ -81,12 +81,16 @@ from ssgrasping._skill import (
     Kept,
     Lookahead,
     Run,
+    Wait,
     check_spec,
     preflight,
     unit,
 )
 from ssgrasping.execution import SkillExecution
 from ssgrasping.outcomes import Evidence
+
+CONTROL_WAIT_NS = 100_000_000
+"""Diagnostic only: how long the second close took on Geodude (geodude#201's seeds)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -338,23 +342,11 @@ def _grasp(
     )
     yield from run.move("lift", lift, planner)
 
-    yield from run.grip("acquired", spec.gripper, spec.close_opening, spec.gripper_timeout_ns)
-    lifted = float(run.observe(spec.opening_channel)[0])
-    run.values["lifted_opening"] = lifted
-    reclosed = run.values["gripper"]["acquired"]  # type: ignore[index]
-    if reclosed["termination"] == GripperTermination.REACHED_TARGET:
-        run.record(
-            "acquired",
-            False,
-            f"lost: after the lift, the fingers reached their target, at opening {lifted:.3f}",
-            Evidence.PORTABLE,
-        )
-    run.record(
-        "acquired",
-        True,
-        f"held: after the lift, the fingers still stop short, at opening {lifted:.3f}",
-        Evidence.PORTABLE,
-    )
+    # Diagnostic control only, not for merge: the second close's time, spent without
+    # submitting it. The close's target stays applied (ssrobot's gripper contract).
+    run.begin("acquired")
+    yield Wait(until_ns=ctx.now.time_ns + CONTROL_WAIT_NS)
+    run.record("acquired", True, "control: waited, no second close", Evidence.PORTABLE)
 
     run.boundary("restrict", "re-declares the attachment's allowance: a scene change")
     run.replace_allowance("restrict", spec.end_effector, hand)
