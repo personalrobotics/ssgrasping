@@ -20,10 +20,10 @@ falls.
 4. ``retreat``: move straight along the container's outward ``normal`` by
    ``retreat_m``; none when ``retreat_m`` is 0, so the next motion can start, and be
    planned ahead, from where the transfer ends.
-5. ``dropped``, only if ``inside`` is given: after ``land_ns`` (a temporary fixed wait,
-   until ssrobot can report the object at rest: personalrobotics/ssrobot#221), the
-   object rests in one of the ``inside`` regions, within ``region_tolerance`` of all six
-   bounds, by its privileged pose.
+
+The drop ends there: the robot is free to move on while the object falls. Where it
+comes to rest is observed by ``landing`` (``ssgrasping.landing``), alongside whatever the
+robot does next.
 
 A failure before ``release`` leaves the object attached and held.
 """
@@ -36,13 +36,11 @@ from dataclasses import dataclass
 
 from ssrobot import Planner, PlanProjection, PlanResult, RobotContext, SceneSnapshot, Tsr
 
-from ssgrasping._poses import inside
 from ssgrasping._skill import (
     GRIPPER_TIMEOUT_NS,
     Body,
     Lookahead,
     Run,
-    Wait,
     check_spec,
     preflight,
     unit,
@@ -71,12 +69,6 @@ class DropSpec:
     regions: Sequence[Tsr]
     """Where the end effector may be when it lets go, in the world."""
     retreat_m: float
-    inside: Sequence[Tsr] = ()
-    """Where the object's frame may come to rest for the drop to count, in the world;
-    empty to skip the ``dropped`` check, which reads privileged object poses."""
-    region_tolerance: tuple[float, float] = (2e-3, 0.05)
-    """How far, in metres and radians, a dropped object may lie outside an ``inside``
-    region's bounds and still count as in it."""
     open_opening: float = 1.0
     released_opening: float = 0.9
     """The opening that confirms the fingers have let go."""
@@ -84,10 +76,6 @@ class DropSpec:
     """The deadline on each gripper command, on the runtime clock: a failure bound, not a
     settle. A command ends when the fingers' motion ends; one that has not by then fails
     its stage (``timed_out``)."""
-    land_ns: int = 1_000_000_000
-    """How long after the retreat the object is given to come to rest before ``dropped``.
-    A temporary fixed wait: it is to wait on the object observed at rest instead, once
-    ssrobot can report that (personalrobotics/ssrobot#221)."""
     line_tolerance_m: float = 1e-3
     carry_scaling: float = 1.0
     """The fraction of the joints' velocity and acceleration limits the transfer, made
@@ -105,10 +93,7 @@ class DropSpec:
         check_spec(len(self.regions) > 0, "at least one region", "regions")
         check_spec(self.retreat_m >= 0, "must be non-negative", "retreat_m")
         check_spec(self.line_tolerance_m > 0, "must be positive", "line_tolerance_m")
-        check_spec(self.land_ns >= 0, "must be non-negative", "land_ns")
         check_spec(self.gripper_timeout_ns > 0, "must be positive", "gripper_timeout_ns")
-        metres, radians = self.region_tolerance
-        check_spec(metres >= 0 and radians >= 0, "non-negative", "region_tolerance")
         for name in ("open_opening", "released_opening"):
             check_spec(0.0 <= getattr(self, name) <= 1.0, "between 0 and 1", name)
         check_spec(self.transfer_attempts >= 1, "at least 1", "transfer_attempts")
@@ -206,23 +191,6 @@ def _drop(run: Run, planner: Planner, checker: Planner, spec: DropSpec) -> Body:
     if retreats:
         run.begin("retreat")
         yield from run.move("retreat", _away(ctx, ctx.snapshot(), planner, spec), planner)
-
-    if not spec.inside:
-        return
-    run.begin("dropped")
-    yield Wait(until_ns=ctx.now.time_ns + spec.land_ns)
-    pose = next(o.pose for o in ctx.snapshot().objects if o.name == spec.object)
-    run.values["dropped_pose"] = {
-        "position": list(pose.position),
-        "quat_wxyz": list(pose.quat_wxyz),
-    }
-    within = [i for i, r in enumerate(spec.inside) if inside(pose, r, spec.region_tolerance)]
-    run.record(
-        "dropped",
-        bool(within),
-        f"in region {within[0]}" if within else f"outside every region at {pose.position}",
-        Evidence.PRIVILEGED,
-    )
 
 
 def _away(

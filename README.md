@@ -27,8 +27,10 @@ classifies the measured opening as held, missed, or indeterminate before declari
 attachment, lifts the object along the support's normal, and confirms that the object
 is clear of everything. `place` carries a held object to a target region, descends
 under a force guard until contact, releases it, and checks where it rests. `drop`
-carries the object over a container and lets it fall. Each module documents its
-stages and their exact conditions.
+carries the object over a container and lets it fall. It ends at the confirmed
+release, so the robot can move on at once. `landing` then observes where the object
+comes to rest, alongside whatever the robot does next; it commands nothing. Each module
+documents its stages and their exact conditions.
 
 Failure is reported in terms of the physical situation rather than as a bare error.
 Before anything is commanded, a `preflight` stage confirms that every frame, command,
@@ -40,7 +42,7 @@ belong to the application.
 
 ## Robot-specific choices are data
 
-`GraspSpec`, `PlaceSpec`, and `DropSpec` name everything a skill needs: the manipulator,
+`GraspSpec`, `PlaceSpec`, `DropSpec`, and `LandingSpec` name everything a skill needs: the manipulator,
 end effector, gripper, and gripper-opening channel; the object and the support it rests
 on, with the support's outward normal; the regions in which the hand or the object
 must end, as task space regions; and the distances, tolerances, and attempt limits for
@@ -74,12 +76,13 @@ privileged; it adds information in simulation but never substitutes for `acquire
 
 ## Passive execution
 
-A skill advances only when its caller advances it. `grasp`, `place`, and `drop` return
-a `SkillExecution` that reads the runtime clock, execution states, and finished plans,
-but never steps or polls the runtime itself. `run_skill` drives one skill through the
-context's own calls, stepping a manually clocked runtime or updating an externally
-clocked one. `run_together` advances several items at once, such as one object's drop
-and the race for the next object. ssgrasping creates no threads, clocks, or event loops
+A skill advances only when its caller advances it. `grasp`, `place`, `drop`, and
+`landing` return a `SkillExecution` that reads the runtime clock, execution states, and
+finished plans, but never steps or polls the runtime itself. `run_skill` drives one
+skill through the context's own calls, stepping a manually clocked runtime or updating
+an externally clocked one. `run_together` advances several items at once, such as one
+object's drop and the race for the next object, or one object's landing and the next
+object's grasp. ssgrasping creates no threads, clocks, or event loops
 of its own.
 
 When every unfinished item is waiting only for plans being computed on worker
