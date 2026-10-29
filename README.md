@@ -115,13 +115,14 @@ whose outcome is not yet known, and the skill records each place where it stoppe
 
 A grasp can also plan the next skill's first motion while its lift runs, such as a
 drop's transfer to the container: give it a `Follow`, for example with
-`ssgrasping.drop.transfer_request`. The lift's prediction expects the grasp's
+`ssgrasping.drop.transfer_request`, for a drop without a retreat. The lift's prediction expects the grasp's
 `restrict` to narrow what the held object may touch to the hand, the one scene change
 between the lift and the transfer, and ssrobot checks on arrival that it happened
 exactly so. If the grasp succeeds, it hands the plan on as `SkillExecution.upcoming`,
 and `drop(planned=...)` continues it from where the lift ended, so the robot does not
 wait for the transfer to be planned. Any other scene change fails the transfer for
-recovery.
+recovery. A drop with a retreat refuses a planned transfer: its transfer is kept only if
+the retreat plans from where it ends, which would have to be planned with it.
 
 `Candidates` extends the same idea to a choice between grasps, for example one per arm.
 Each candidate's whole feasibility prefix is planned as an ssrobot chain before anything

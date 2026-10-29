@@ -138,8 +138,11 @@ def drop(
     ``planned`` is the transfer planned while the grasp's lift ran, the grasp's
     ``SkillExecution.upcoming`` (``Follow``, with ``transfer_request``): it continues from
     where the lift ended, or, refused, is planned again as usual; a refusal for recovery
-    still fails the transfer. A drop with a retreat chooses its transfer as usual, since
-    the retreat must plan from where the transfer ends, and cancels ``planned``."""
+    still fails the transfer. A drop with a retreat refuses ``planned``
+    (``invalid_spec``), leaving it to the caller: its transfer is kept only if the retreat
+    plans from where it ends, which a transfer planned alone does not check."""
+    if planned is not None:
+        _check_no_retreat(spec)
     run = Run(ctx, "drop", spec.object, lookahead=lookahead)
     checker = planner if check_planner is None else check_planner
     return SkillExecution(run, _drop(run, planner, checker, spec, planned))
@@ -150,7 +153,9 @@ def transfer_request(
 ) -> Callable[[PredictedSnapshot], PlanningRequest]:
     """The request ``drop`` plans its transfer with, on a given state: to
     ``spec.regions``, at ``spec.carry_scaling`` and ``spec.clearance_m``. For
-    ``Follow.request``, so a grasp plans it during its lift."""
+    ``Follow.request``, so a grasp plans it during its lift. A drop with a retreat is
+    refused (``invalid_spec``), as ``drop`` refuses its ``planned``."""
+    _check_no_retreat(spec)
     arm = ctx.manipulator(spec.manipulator)
 
     def request(state: PredictedSnapshot) -> PlanningRequest:
@@ -163,6 +168,15 @@ def transfer_request(
         )
 
     return request
+
+
+def _check_no_retreat(spec: DropSpec) -> None:
+    check_spec(
+        spec.retreat_m == 0,
+        "must be 0 for a transfer planned ahead: the retreat's feasibility from where the "
+        "transfer ends is not planned with it",
+        "retreat_m",
+    )
 
 
 def _drop(
@@ -203,15 +217,10 @@ def _drop(
         )
         return transfer
 
-    if planned is not None:
-        run.adopt(planned)
-        if retreats:
-            planned.cancel()
-            planned.log["decision"] = "not used: a retreat must plan from the transfer's end"
-            planned = None
     if planned is None:
         yield from run.move("transfer", choose(), planner)
     else:
+        run.adopt(planned)
         yield from run.move("transfer", planned, planner, replan=choose)
 
     run.boundary(

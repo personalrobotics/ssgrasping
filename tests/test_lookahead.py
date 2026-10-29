@@ -19,7 +19,9 @@ Each scenario is one contract case, recorded in ``lookahead.json``:
   prediction, which expects ``restrict`` to narrow the attachment's allowance to the
   hand; the grasp hands it on, and the drop, without a retreat, continues it from where
   the lift ended. The transfer is planned once, never on the context's thread, and every
-  stage has the same outcome and evidence kind as ``lookahead``'s.
+  stage has the same outcome and evidence kind as ``lookahead``'s. Before that, a drop
+  that retreats refuses the handed-on transfer, as ``transfer_request`` refuses it: the
+  retreat's feasibility is not planned with it.
 - ``transfer_disturbed``: the same, with ``can_b`` declared attached between the grasp
   and the drop, a scene change the lift's prediction did not expect: the transfer fails
   for recovery instead of continuing.
@@ -82,6 +84,7 @@ from ssrobot import (
     RobotContext,
     TraceKind,
     TsrGoal,
+    ValidationError,
     load_installed_package,
 )
 from ssrobot.mujoco import MujocoRuntime
@@ -260,6 +263,18 @@ def _transfer_ahead(disturb: bool) -> Any:
         picked = _drive(ctx, grasping)
         report = {"grasp": _report(picked), "handed_on": grasping.upcoming is not None}
         if picked.succeeded:
+            # A drop that retreats refuses a transfer planned ahead, and leaves it as it is.
+            retreating = _drop("can", "right", "right")
+            refusals = []
+            for attempt in (
+                lambda: transfer_request(ctx, retreating),
+                lambda: drop(ctx, planner, retreating, planned=grasping.upcoming),
+            ):
+                try:
+                    attempt()
+                except ValidationError as e:
+                    refusals.append([e.code, e.path])
+            report["retreat_refused"] = refusals
             if disturb:
                 ctx.attach("can_b", "left_hand")
             dropping = drop(
@@ -668,6 +683,7 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
 
     handed = scenarios["transfer_ahead"]
     assert handed["handed_on"]
+    assert handed["retreat_refused"] == [["invalid_spec", "retreat_m"]] * 2
     for skill in ("grasp", "drop"):
         assert handed[skill]["state"] == SkillState.SUCCEEDED, handed[skill]["stages"]
         # lookahead's drop retreats; this one, whose transfer is planned ahead, does not
