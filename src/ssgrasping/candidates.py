@@ -79,7 +79,7 @@ from ssrobot import (
 )
 
 from ssgrasping._poses import compose, invert
-from ssgrasping._skill import Ahead, Kept, Lookahead, lookahead_entry
+from ssgrasping._skill import Ahead, Follow, Kept, Lookahead, lookahead_entry
 from ssgrasping.drop import DropSpec
 from ssgrasping.execution import SkillExecution
 from ssgrasping.grasp import GraspSpec, _approach_goal, _selected_grasp
@@ -111,13 +111,20 @@ class Selection:
     """The pregrasp as it runs: the plan, or, raced on a prediction, its ``Ahead``."""
     _approach: Kept = field(repr=False)
 
-    def grasp(self, ctx: RobotContext, *, lookahead: Lookahead | None = None) -> SkillExecution:
+    def grasp(
+        self,
+        ctx: RobotContext,
+        *,
+        lookahead: Lookahead | None = None,
+        follow: Follow | None = None,
+    ) -> SkillExecution:
         """The selected candidate's grasp: ``ssgrasping.grasp`` of its spec, with its
         planner and check planner, executing the raced pregrasp in place of choosing
-        one, and, with ``lookahead``, continuing the approach it was checked with."""
+        one, and, with ``lookahead``, continuing the approach it was checked with, and
+        planning ``follow`` during the lift (``ssgrasping.grasp``)."""
         c = self.candidate
         return _selected_grasp(
-            ctx, c.planner, c.checker, c.grasp, lookahead, self._start, self._approach
+            ctx, c.planner, c.checker, c.grasp, lookahead, self._start, self._approach, follow
         )
 
 

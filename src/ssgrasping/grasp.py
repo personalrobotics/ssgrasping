@@ -78,6 +78,7 @@ from ssgrasping._skill import (
     GRIPPER_TIMEOUT_NS,
     Ahead,
     Body,
+    Follow,
     Kept,
     Lookahead,
     Run,
@@ -159,6 +160,7 @@ def grasp(
     *,
     check_planner: Planner | None = None,
     lookahead: Lookahead | None = None,
+    follow: Follow | None = None,
 ) -> SkillExecution:
     """A pending grasp of ``spec.object`` that lifts it clear of its support; see the
     module. Advance it, or drive it with ``run_skill``.
@@ -178,10 +180,15 @@ def grasp(
     executes, on its prediction, instead. None of this changes any stage's meaning or
     evidence kind; a stage that ran from a plan made ahead says so in its detail.
 
+    With ``lookahead`` and ``follow``, the next skill's first motion, such as a drop's
+    transfer, is planned while the lift runs, on its prediction, expecting ``restrict``
+    to narrow the attachment's allowance to the hand; if the grasp succeeds, it is handed
+    on as ``SkillExecution.upcoming``, for that skill to continue.
+
     A grasp raced by ``Candidates`` runs from its selection: ``Selection.grasp``."""
     run = Run(ctx, "grasp", spec.object, lookahead=lookahead)
     checker = planner if check_planner is None else check_planner
-    return SkillExecution(run, _grasp(run, planner, checker, spec, None, None))
+    return SkillExecution(run, _grasp(run, planner, checker, spec, None, None, follow))
 
 
 def _selected_grasp(
@@ -192,11 +199,12 @@ def _selected_grasp(
     lookahead: Lookahead | None,
     pregrasp: PlanResult | Ahead,
     approach: Kept,
+    follow: Follow | None = None,
 ) -> SkillExecution:
     """``grasp``, executing ``pregrasp``, planned beforehand, in place of choosing one,
     with ``approach`` the approach it was checked with: a ``Selection``'s, only."""
     run = Run(ctx, "grasp", spec.object, lookahead=lookahead)
-    return SkillExecution(run, _grasp(run, planner, checker, spec, pregrasp, approach))
+    return SkillExecution(run, _grasp(run, planner, checker, spec, pregrasp, approach, follow))
 
 
 def _grasp(
@@ -206,6 +214,7 @@ def _grasp(
     spec: GraspSpec,
     planned: PlanResult | Ahead | None,
     kept: Kept | None,
+    follow: Follow | None = None,
 ) -> Body:
     ctx = run.ctx
     preflight(
@@ -336,7 +345,16 @@ def _grasp(
     lift = arm.plan_to_end_effector_offset(
         spec.normal, spec.lift_m, planner=planner, position_tolerance=spec.line_tolerance_m
     )
-    yield from run.move("lift", lift, planner)
+
+    def hand_on(execution: Execution) -> None:
+        """Plan the next skill's first motion on the lift's prediction, which expects
+        ``restrict``'s allowance: the hand alone."""
+        assert follow is not None
+        run.upcoming = run.ahead(
+            follow.stage, execution, follow.request, follow.planner, allowances={spec.object: hand}
+        )
+
+    yield from run.move("lift", lift, planner, then=None if follow is None else hand_on)
 
     yield from run.grip("acquired", spec.gripper, spec.close_opening, spec.gripper_timeout_ns)
     lifted = float(run.observe(spec.opening_channel)[0])

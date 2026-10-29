@@ -14,6 +14,17 @@ Each scenario is one contract case, recorded in ``lookahead.json``:
   (``close``, ``restrict``, ``release``). Run twice, byte-identical: a driver blocks on a
   plan instead of stepping, so the runtime's timeline does not depend on how long
   planning takes.
+- ``transfer_ahead``: the same grasp, given the drop's transfer to plan (``Follow``,
+  ``transfer_request``), plans it on a worker while its lift runs, on the lift's
+  prediction, which expects ``restrict`` to narrow the attachment's allowance to the
+  hand; the grasp hands it on, and the drop, without a retreat, continues it from where
+  the lift ended. The transfer is planned once, never on the context's thread, and every
+  stage has the same outcome and evidence kind as ``lookahead``'s. Before that, a drop
+  that retreats refuses the handed-on transfer, as ``transfer_request`` refuses it: the
+  retreat's feasibility is not planned with it.
+- ``transfer_disturbed``: the same, with ``can_b`` declared attached between the grasp
+  and the drop, a scene change the lift's prediction did not expect: the transfer fails
+  for recovery instead of continuing.
 - ``mismatch``: an arrival tolerance no arrival meets forces the approach to be
   replanned from the actual state; the stage still succeeds, and says it was replanned.
 - ``scene_change``: a scene change the prediction did not record (``can_b`` declared
@@ -73,6 +84,7 @@ from ssrobot import (
     RobotContext,
     TraceKind,
     TsrGoal,
+    ValidationError,
     load_installed_package,
 )
 from ssrobot.mujoco import MujocoRuntime
@@ -81,6 +93,7 @@ from ssrobot.planning import CBiRRT
 from ssgrasping import (
     Candidate,
     Candidates,
+    Follow,
     Lookahead,
     SkillState,
     drop,
@@ -88,6 +101,7 @@ from ssgrasping import (
     landing,
     run_together,
 )
+from ssgrasping.drop import transfer_request
 from tests.test_drop import BIN, BIN_FLOOR, _drop_spec, _landing_spec
 from tests.test_drop import _scene as _can_and_bin
 from tests.test_grasp_place import (
@@ -230,6 +244,46 @@ def _pick_and_drop(lookahead: Lookahead | None) -> Any:
                 _drop("can", "right", "right"),
                 check_planner=checker,
                 lookahead=lookahead,
+            )
+            report["drop"] = _report(_drive(ctx, dropping))
+        return report
+
+    return run
+
+
+def _transfer_ahead(disturb: bool) -> Any:
+    def run(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
+        planner, checker = arms["right"]
+        spec = _grasp(poses["can"], "can", "right")
+        into = dataclasses.replace(_drop("can", "right", "right"), retreat_m=0.0)
+        follow = Follow("transfer", transfer_request(ctx, into), planner)
+        grasping = grasp(
+            ctx, planner, spec, check_planner=checker, lookahead=Lookahead(), follow=follow
+        )
+        picked = _drive(ctx, grasping)
+        report = {"grasp": _report(picked), "handed_on": grasping.upcoming is not None}
+        if picked.succeeded:
+            # A drop that retreats refuses a transfer planned ahead, and leaves it as it is.
+            retreating = _drop("can", "right", "right")
+            refusals = []
+            for attempt in (
+                lambda: transfer_request(ctx, retreating),
+                lambda: drop(ctx, planner, retreating, planned=grasping.upcoming),
+            ):
+                try:
+                    attempt()
+                except ValidationError as e:
+                    refusals.append([e.code, e.path])
+            report["retreat_refused"] = refusals
+            if disturb:
+                ctx.attach("can_b", "left_hand")
+            dropping = drop(
+                ctx,
+                planner,
+                into,
+                check_planner=checker,
+                lookahead=Lookahead(),
+                planned=grasping.upcoming,
             )
             report["drop"] = _report(_drive(ctx, dropping))
         return report
@@ -549,6 +603,8 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     scenarios = {
         "plain": _session(scene, "plain", _pick_and_drop(None)),
         "lookahead": json.loads(first),
+        "transfer_ahead": _session(scene, "transfer_ahead", _transfer_ahead(disturb=False)),
+        "transfer_disturbed": _session(scene, "transfer_disturbed", _transfer_ahead(disturb=True)),
         "mismatch": _session(scene, "mismatch", _pick_and_drop(Lookahead(arrival_tolerance=1e-9))),
         "scene_change": _session(scene, "scene_change", _scene_changed),
         "race": _session(scene, "race", _raced),
@@ -624,6 +680,30 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     ]
     assert boundaries == ["close", "restrict", "release"]
     assert "lookahead" not in plain["grasp"]["values"]
+
+    handed = scenarios["transfer_ahead"]
+    assert handed["handed_on"]
+    assert handed["retreat_refused"] == [["invalid_spec", "retreat_m"]] * 2
+    for skill in ("grasp", "drop"):
+        assert handed[skill]["state"] == SkillState.SUCCEEDED, handed[skill]["stages"]
+        # lookahead's drop retreats; this one, whose transfer is planned ahead, does not
+        expected = [k for k in _kinds(ahead[skill]) if k[0] != "retreat"]
+        assert _kinds(handed[skill]) == expected, skill
+    planned_ahead = _entry(handed["grasp"], "transfer")
+    assert planned_ahead["prediction"]["allowances"] == ["can"], planned_ahead
+    assert planned_ahead["decision"] == "handed on: continued by the next skill"
+    assert _entry(handed["drop"], "transfer")["decision"] == "continued"
+    stage = next(s for s in handed["drop"]["stages"] if s["name"] == "transfer")
+    assert stage["detail"] == "succeeded (planned ahead, continued)"
+    transfers = [c for c in calls if c["scenario"] == "transfer_ahead" and c["stage"] == "transfer"]
+    assert [c["context_thread"] for c in transfers] == [False], transfers  # once, on a worker
+    disturbed = scenarios["transfer_disturbed"]
+    assert disturbed["grasp"]["state"] == SkillState.SUCCEEDED
+    assert disturbed["drop"]["state"] == SkillState.FAILED
+    last = disturbed["drop"]["stages"][-1]
+    assert last["name"] == "transfer" and not last["succeeded"]
+    assert last["detail"].startswith("continuation refused, unpredicted_scene_change"), last
+    assert _entry(disturbed["drop"], "transfer")["decision"] == "failed: for recovery"
 
     mismatch = scenarios["mismatch"]["grasp"]
     assert mismatch["state"] == SkillState.SUCCEEDED

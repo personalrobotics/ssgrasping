@@ -31,13 +31,24 @@ A failure before ``release`` leaves the object attached and held.
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from ssrobot import Planner, PlanProjection, PlanResult, RobotContext, SceneSnapshot, Tsr
+from ssrobot import (
+    Planner,
+    PlanningRequest,
+    PlanProjection,
+    PlanResult,
+    PredictedSnapshot,
+    RobotContext,
+    SceneSnapshot,
+    Tsr,
+    TsrGoal,
+)
 
 from ssgrasping._skill import (
     GRIPPER_TIMEOUT_NS,
+    Ahead,
     Body,
     Lookahead,
     Run,
@@ -112,6 +123,7 @@ def drop(
     *,
     check_planner: Planner | None = None,
     lookahead: Lookahead | None = None,
+    planned: Ahead | None = None,
 ) -> SkillExecution:
     """A pending drop of the held ``spec.object`` into ``spec.container``; see the
     module. Advance it, or drive it with ``run_skill``.
@@ -121,13 +133,55 @@ def drop(
 
     With ``lookahead``, the boundaries where the drop cannot look ahead are logged in
     ``values["lookahead"]``: its stages after the transfer depend on outcomes not yet
-    known."""
+    known.
+
+    ``planned`` is the transfer planned while the grasp's lift ran, the grasp's
+    ``SkillExecution.upcoming`` (``Follow``, with ``transfer_request``): it continues from
+    where the lift ended, or, refused, is planned again as usual; a refusal for recovery
+    still fails the transfer. A drop with a retreat refuses ``planned``
+    (``invalid_spec``), leaving it to the caller: its transfer is kept only if the retreat
+    plans from where it ends, which a transfer planned alone does not check."""
+    if planned is not None:
+        _check_no_retreat(spec)
     run = Run(ctx, "drop", spec.object, lookahead=lookahead)
     checker = planner if check_planner is None else check_planner
-    return SkillExecution(run, _drop(run, planner, checker, spec))
+    return SkillExecution(run, _drop(run, planner, checker, spec, planned))
 
 
-def _drop(run: Run, planner: Planner, checker: Planner, spec: DropSpec) -> Body:
+def transfer_request(
+    ctx: RobotContext, spec: DropSpec
+) -> Callable[[PredictedSnapshot], PlanningRequest]:
+    """The request ``drop`` plans its transfer with, on a given state: to
+    ``spec.regions``, at ``spec.carry_scaling`` and ``spec.clearance_m``. For
+    ``Follow.request``, so a grasp plans it during its lift. A drop with a retreat is
+    refused (``invalid_spec``), as ``drop`` refuses its ``planned``."""
+    _check_no_retreat(spec)
+    arm = ctx.manipulator(spec.manipulator)
+
+    def request(state: PredictedSnapshot) -> PlanningRequest:
+        return arm.request(
+            TsrGoal(tsrs=tuple(spec.regions)),
+            snapshot=state,
+            velocity_scaling=spec.carry_scaling,
+            acceleration_scaling=spec.carry_scaling,
+            clearance_m=spec.clearance_m,
+        )
+
+    return request
+
+
+def _check_no_retreat(spec: DropSpec) -> None:
+    check_spec(
+        spec.retreat_m == 0,
+        "must be 0 for a transfer planned ahead: the retreat's feasibility from where the "
+        "transfer ends is not planned with it",
+        "retreat_m",
+    )
+
+
+def _drop(
+    run: Run, planner: Planner, checker: Planner, spec: DropSpec, planned: Ahead | None = None
+) -> Body:
     ctx = run.ctx
     attachment = ctx.scene.attachment(spec.object)
     run.held = None if attachment is None else True
@@ -143,23 +197,31 @@ def _drop(run: Run, planner: Planner, checker: Planner, spec: DropSpec) -> Body:
         run.record("transfer", False, f"{spec.object!r} is not attached", Evidence.PLANNED)
     arm = ctx.manipulator(spec.manipulator)
     retreats = spec.retreat_m > 0
-    transfer, _, _ = run.choose(
-        "transfer",
-        "retreat" if retreats else None,
-        lambda snapshot, seed: arm.plan_to_tsr(
-            spec.regions,
-            snapshot=snapshot,
+
+    def choose() -> PlanResult:
+        transfer, _, _ = run.choose(
+            "transfer",
+            "retreat" if retreats else None,
+            lambda snapshot, seed: arm.plan_to_tsr(
+                spec.regions,
+                snapshot=snapshot,
+                planner=planner,
+                seed=seed,
+                velocity_scaling=spec.carry_scaling,
+                acceleration_scaling=spec.carry_scaling,
+                clearance_m=spec.clearance_m,
+            ),
+            (lambda start: _away(ctx, start, checker, spec)) if retreats else None,
+            spec.transfer_attempts,
             planner=planner,
-            seed=seed,
-            velocity_scaling=spec.carry_scaling,
-            acceleration_scaling=spec.carry_scaling,
-            clearance_m=spec.clearance_m,
-        ),
-        (lambda start: _away(ctx, start, checker, spec)) if retreats else None,
-        spec.transfer_attempts,
-        planner=planner,
-    )
-    yield from run.move("transfer", transfer, planner)
+        )
+        return transfer
+
+    if planned is None:
+        yield from run.move("transfer", choose(), planner)
+    else:
+        run.adopt(planned)
+        yield from run.move("transfer", planned, planner, replan=choose)
 
     run.boundary(
         "release", "whether the fingers let go decides what follows; detaching changes the scene"
