@@ -194,7 +194,8 @@ def lookahead_entry(stage: str, prediction: PredictedSnapshot, **more: object) -
 
 def rest_evidence(rest: RestResult) -> dict[str, object]:
     """What a rest result establishes, as structured evidence: how the watch ended, on
-    which channel and by whose criteria, and the window of readings that justified rest."""
+    which channel and by whose criteria, the window of readings that justified rest, how
+    many readings it judged, and the longest still run it saw."""
     window = rest.window
     return {
         "outcome": rest.outcome.value,
@@ -206,6 +207,8 @@ def rest_evidence(rest: RestResult) -> dict[str, object]:
         "end_ns": rest.end.time_ns,
         "window": [window[0].time_ns, window[-1].time_ns] if window else None,
         "terminal": list(window[-1].value) if window else None,
+        "samples": rest.samples,
+        "longest": [rest.longest[0].time_ns, rest.longest[-1].time_ns] if rest.longest else None,
     }
 
 
