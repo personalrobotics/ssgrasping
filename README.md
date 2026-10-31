@@ -30,9 +30,8 @@ confirms that the object is clear of everything. `place` carries a held object t
 is observed at rest, so the force guard tares a settled wrist, descends under that guard
 until contact, releases the object, and checks where it rests. `drop`
 carries the object over a container and lets it fall. It ends at the confirmed
-release, so the robot can move on at once. `landing` then waits, alongside whatever
-the robot does next, until the object is observed at rest, and judges where it came to
-rest from the reading that established rest; it commands nothing. Each module
+release, so the robot can move on at once. `landing` then observes where the object
+comes to rest, alongside whatever the robot does next; it commands nothing. Each module
 documents its stages and their exact conditions.
 
 Failure is reported in terms of the physical situation rather than as a bare error.
@@ -49,10 +48,8 @@ belong to the application.
 end effector, gripper, and gripper-opening channel; the object and the support it rests
 on, with the support's outward normal; the regions in which the hand or the object
 must end, as task space regions; and the distances, tolerances, and attempt limits for
-each stage. Nothing is inferred from names. When a released object counts as at rest
-depends on its pose source and the task, so `LandingSpec` takes the application's
-criteria (`ssrobot.RestCriteria`, with their source) and a timeout, with no default.
-Joint rest uses the criteria the runtime declares for the arm's channel.
+each stage. Nothing is inferred from names. Joint rest uses the criteria the runtime
+declares for the arm's channel.
 
 The regions come from the libraries that own them. In the tests and in Geodude's demo,
 grasp regions come from [sstsr](https://github.com/personalrobotics/sstsr)'s gripper
@@ -87,8 +84,9 @@ never substitutes for `acquired`.
 A skill advances only when its caller advances it. `grasp`, `place`, `drop`, and
 `landing` return a `SkillExecution` that reads the runtime clock, execution states,
 ssrobot's passive rest watches, and finished plans, but never steps or polls the
-runtime itself. Every wait on the robot or the scene is on an observed event; a
-timeout only bounds how long it may take before the stage fails. `run_skill` drives one
+runtime itself. A wait on the robot is on an observed event; a timeout only bounds how
+long it may take before the stage fails. `landing`'s fixed `land_ns` is the one
+exception, until a dropped object can be observed at rest (see CHANGELOG.md). `run_skill` drives one
 skill through the context's own calls, stepping a manually clocked runtime or updating
 an externally clocked one. `run_together` advances several items at once, such as one
 object's drop and the race for the next object, or one object's landing and the next

@@ -757,16 +757,14 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     assert [s["name"] for s in raced["drop"]["stages"]] == [
         "preflight", "transfer", "release",
     ]  # fmt: skip
-    # can_b's grasp starts at the release; can's landing is judged once can is observed
-    # at rest, by then far into can_b's pregrasp, and finds can in the bin.
+    # can_b's grasp starts at the release; can's landing is judged a land_ns later, by
+    # then far into can_b's pregrasp, and finds can in the bin.
     released_ns = raced["drop"]["stages"][-1]["time_ns"]
     assert raced["grasp_b"]["stages"][0]["time_ns"] == released_ns
     assert raced["landing"]["state"] == SkillState.SUCCEEDED, raced["landing"]["stages"]
     landed = raced["landing"]["stages"][0]
     assert (landed["name"], landed["evidence"]) == ("landed", "privileged")
-    rest = raced["landing"]["values"]["landed_rest"]
-    assert rest["outcome"] == "at_rest" and rest["start_ns"] == released_ns, rest
-    assert landed["time_ns"] == rest["end_ns"] > released_ns
+    assert landed["time_ns"] == released_ns + _landing_spec().land_ns
     feasible = [c for c in race_b["candidates"] if c["outcome"] == "succeeded"]
     rule = min(feasible, key=lambda c: (-c["priority"], c["cost_s"]))
     assert race_b["selected"] == rule["label"] == "right"
