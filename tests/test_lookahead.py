@@ -33,10 +33,11 @@ Each scenario is one contract case, recorded in ``lookahead.json``:
   the drop's free-space stages, and the selected arm grasps, looking ahead, and drops it.
   Every command compiled keeps exactly its stage's clearance: the raced pregrasp and the
   transfer 5 mm, the approach (planned ahead and continued) and the lift none.
-- ``not_at_rest``, ``rest_unobservable``: the arm's joint velocities are reported moving,
-  or valid only before the arrival. The approach planned ahead is refused, waiting
-  within ``rest_wait_ns`` for rest or, unobservable, at once; the grasp fails for
-  recovery, and nothing is submitted after the first refusal.
+- ``not_at_rest``, ``stale_rest``: the arm's joint positions are reported moving, or
+  valid only before the arrival. Moving, the rest watch times out after
+  ``rest_timeout_ns``; stale, it comes to rest on readings that end before the arrival.
+  Either way the approach planned ahead is refused ``not_at_rest``, once; the grasp
+  fails for recovery, and nothing is submitted after the refusal.
 - ``race``: both arms race for ``can``; the left arm is preferred (priority 1) but drops
   into the right bin, which it cannot reach, so its prefix fails at ``transfer``, every
   transfer seed tried from the same lift, after its pregrasp, approach, and lift
@@ -292,12 +293,14 @@ def _transfer_ahead(disturb: bool) -> Any:
 
 
 class _Unrested:
-    """MujocoRuntime whose joint velocity readings never show the arm at rest: with
-    ``moving``, every joint moving at 1 rad/s; otherwise valid before the observation,
-    too old to show the arrival."""
+    """MujocoRuntime whose joint position readings never show the arm at rest after its
+    arrival: with ``moving``, every joint offset by an alternating 1 mrad, far above the
+    declared rest variation and far inside the arrival tolerance; otherwise valid 2 ms
+    before the observation, too old to show the arrival."""
 
     def __init__(self, inner: Any, *, moving: bool) -> None:
         self.inner, self.moving = inner, moving
+        self.stamp, self.sign = -1, 1.0  # the offset flips with each new reading time
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.inner, name)
@@ -306,10 +309,12 @@ class _Unrested:
         observation = self.inner.observe(request)
 
         def reported(r: Any) -> Any:
-            if not r.channel.endswith("_qd"):
+            if not r.channel.endswith("_q"):
                 return r
             if self.moving:
-                return dataclasses.replace(r, value=tuple(1.0 for _ in r.value))
+                if r.stamp.time_ns != self.stamp:
+                    self.stamp, self.sign = r.stamp.time_ns, -self.sign
+                return dataclasses.replace(r, value=tuple(v + self.sign * 1e-3 for v in r.value))
             before = dataclasses.replace(r.stamp, time_ns=observation.stamp.time_ns - 2_000_000)
             return dataclasses.replace(r, stamp=before)
 
@@ -318,7 +323,8 @@ class _Unrested:
         )
 
 
-UNRESTED_WAIT_NS = 100_000_000
+UNRESTED_TIMEOUT_NS = 500_000_000
+"""Longer than either arm's declared dwell, so a stale arm still comes to rest."""
 
 
 def _unrested(order: list[list[Any]]) -> Any:
@@ -329,7 +335,7 @@ def _unrested(order: list[list[Any]]) -> Any:
     def run(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
         planner, checker = arms["right"]
         spec = _grasp(poses["can"], "can", "right")
-        look = Lookahead(rest_wait_ns=UNRESTED_WAIT_NS)
+        look = Lookahead(rest_timeout_ns=UNRESTED_TIMEOUT_NS)
         picked = _drive(ctx, grasp(ctx, planner, spec, check_planner=checker, lookahead=look))
         return {"grasp": _report(picked), "order": order}
 
@@ -615,9 +621,9 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
             sinks=[_ordered(moving)],
             wrap=lambda rt: _Unrested(rt, moving=True),
         ),
-        "rest_unobservable": _session(
+        "stale_rest": _session(
             scene,
-            "rest_unobservable",
+            "stale_rest",
             _unrested(stale),
             sinks=[_ordered(stale)],
             wrap=lambda rt: _Unrested(rt, moving=False),
@@ -774,32 +780,28 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     assert raced["grasp_b"]["state"] == SkillState.SUCCEEDED
     assert raced["drop_b"]["state"] == SkillState.SUCCEEDED
 
-    # Neither rest refusal submits a command: not at rest, it waits within the declared
-    # rest_wait_ns, unobservable, it fails at once; either way the grasp fails for
-    # recovery, and nothing is submitted after the first refusal.
-    for refusal in ("not_at_rest", "rest_unobservable"):
-        unrested = scenarios[refusal]
+    # Neither arm observed at rest at its arrival submits a command: moving, the watch
+    # times out; stale, it comes to rest on readings older than the arrival. Either way
+    # the continuation is refused not_at_rest, once, and the grasp fails for recovery.
+    for scenario in ("not_at_rest", "stale_rest"):
+        unrested = scenarios[scenario]
         assert unrested["grasp"]["state"] == SkillState.FAILED
         last = unrested["grasp"]["stages"][-1]
         assert last["name"] == "approach" and not last["succeeded"]
-        assert last["detail"].startswith(f"continuation refused, {refusal}"), last
+        assert last["detail"].startswith("continuation refused, not_at_rest"), last
         entry = _entry(unrested["grasp"], "approach")
         assert entry["decision"] == "failed: for recovery", entry
         order = unrested["order"]
-        first = order.index(["continued", refusal])
+        first = order.index(["continued", "not_at_rest"])
         assert ["submitted", None] in order[:first]  # the pregrasp
-        assert all(o == ["continued", refusal] for o in order[first:]), order
-    assert _entry(scenarios["not_at_rest"]["grasp"], "approach")["waited_for_rest_ns"] >= (
-        UNRESTED_WAIT_NS
-    )
-    assert _entry(scenarios["rest_unobservable"]["grasp"], "approach")["waited_for_rest_ns"] == 0
-    # Unobservable, it is refused once; not at rest, again each tick until the wait ends.
-    decided = {
-        refusal: [o for o in scenarios[refusal]["order"] if o[0] == "continued"]
-        for refusal in ("not_at_rest", "rest_unobservable")
-    }
-    assert decided["rest_unobservable"] == [["continued", "rest_unobservable"]]
-    assert len(decided["not_at_rest"]) > 1
+        assert order[first:] == [["continued", "not_at_rest"]], order
+    timed_out = _entry(scenarios["not_at_rest"]["grasp"], "approach")
+    assert timed_out["rest"]["outcome"] == "deadline", timed_out["rest"]
+    assert timed_out["waited_for_rest_ns"] >= UNRESTED_TIMEOUT_NS
+    too_old = _entry(scenarios["stale_rest"]["grasp"], "approach")
+    assert too_old["rest"]["outcome"] == "at_rest", too_old["rest"]
+    assert too_old["waited_for_rest_ns"] < UNRESTED_TIMEOUT_NS
+    assert "before the arrival snapshot" in too_old["detail"], too_old
 
     # A grasp whose deepest approach is blocked races on the approach it guarantees: it is
     # selected, and approaches as deep as plans, deeper than approach_m and short of the

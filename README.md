@@ -26,8 +26,9 @@ pregrasp pose, approaches along the hand's axis, and closes the fingers. It then
 checks that the close stopped short of its target, as it does on something between the
 fingers, before declaring an attachment. It lifts along the support's normal, then
 closes again: only if the fingers still stop short is the object acquired. It finally
-confirms that the object is clear of everything. `place` carries a held object to a target region, descends
-under a force guard until contact, releases it, and checks where it rests. `drop`
+confirms that the object is clear of everything. `place` carries a held object to a target region, waits until the arm
+is observed at rest, so the force guard tares a settled wrist, descends under that guard
+until contact, releases the object, and checks where it rests. `drop`
 carries the object over a container and lets it fall. It ends at the confirmed
 release, so the robot can move on at once. `landing` then observes where the object
 comes to rest, alongside whatever the robot does next; it commands nothing. Each module
@@ -47,7 +48,8 @@ belong to the application.
 end effector, gripper, and gripper-opening channel; the object and the support it rests
 on, with the support's outward normal; the regions in which the hand or the object
 must end, as task space regions; and the distances, tolerances, and attempt limits for
-each stage. Nothing is inferred from names.
+each stage. Nothing is inferred from names. Joint rest uses the criteria the runtime
+declares for the arm's channel.
 
 The regions come from the libraries that own them. In the tests and in Geodude's demo,
 grasp regions come from [sstsr](https://github.com/personalrobotics/sstsr)'s gripper
@@ -80,8 +82,11 @@ never substitutes for `acquired`.
 ## Passive execution
 
 A skill advances only when its caller advances it. `grasp`, `place`, `drop`, and
-`landing` return a `SkillExecution` that reads the runtime clock, execution states, and
-finished plans, but never steps or polls the runtime itself. `run_skill` drives one
+`landing` return a `SkillExecution` that reads the runtime clock, execution states,
+ssrobot's passive rest watches, and finished plans, but never steps or polls the
+runtime itself. A wait on the robot is on an observed event; a timeout only bounds how
+long it may take before the stage fails. `landing`'s fixed `land_ns` is the one
+exception, until a dropped object can be observed at rest (see CHANGELOG.md). `run_skill` drives one
 skill through the context's own calls, stepping a manually clocked runtime or updating
 an externally clocked one. `run_together` advances several items at once, such as one
 object's drop and the race for the next object, or one object's landing and the next
@@ -106,7 +111,8 @@ the lift must be planned in.
 ssgrasping uses ssrobot's projections, predictions, and continuations to plan ahead
 exactly where the request is determined. A pregrasp is kept only if the straight
 approach also plans from where it ends. With a `Lookahead`, that approach plan is kept
-and continued when the pregrasp arrives, after ssrobot confirms that the arm is at rest,
+and continued when the pregrasp arrives, after ssrobot observes the arm at rest
+(within `Lookahead.rest_timeout_ns`),
 that it arrived where the plan expected, and that the scene has not changed. An arrival
 outside the plan's tolerance is planned again from the actual state. An unpredicted
 change to the scene, or an arm that does not come to rest, fails the stage without

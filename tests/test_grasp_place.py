@@ -37,6 +37,13 @@ the skill left declared:
 - ``trajectory_only``: a planner that returns trajectories without paths still grasps.
 - ``gripper_timeout``: a 20 ms gripper deadline, shorter than the close, fails ``close``
   with ``timed_out``; the open, on a hand already open, ends within it.
+- ``tare_settled``: whether joint rest settles the wrist enough to tare. ``success`` is
+  run again, identically, up to the tick its arm is observed at rest before the descent
+  (``success``'s ``tare_rest``), and the place is cancelled there, before the descent is
+  submitted. The arm then holds for ``TARE_HORIZON_NS``, and the wrist's force is read
+  every tick: it must stay within ``TARE_SETTLED_FRACTION`` of the guard's threshold of
+  its value at rest, so taring then shifts the contact the guard detects by at most
+  that fraction.
 The environment the artifact was made in is recorded with it; byte-identity is claimed
 within one environment.
 
@@ -58,6 +65,7 @@ import numpy as np
 from sscbirrt import CBiRRTConfig
 from ssrobot import (
     ClockMode,
+    ObservationRequest,
     Planner,
     PlanResult,
     Pose,
@@ -109,6 +117,10 @@ SWING_TOLERANCE_RAD = 0.2
 # can, so the margin stands. Again at geodude_assets 7b740c3 (torsional friction, the
 # recalibrated gripper): 4.3-4.9 N.
 CONTACT_N = 8.0
+TARE_HORIZON_NS = 1_000_000_000
+"""How long ``tare_settled`` holds after joint rest: the fixed pre-tare wait it replaces."""
+TARE_SETTLED_FRACTION = 0.1
+"""How much of the guard's threshold the wrist's force may change by after joint rest."""
 DRIFT_TOLERANCE_M = 1e-4  # below the ~0.3 mm the can drifts in the fingers on the lift
 # Held transfers are planned at this fraction of the joints' velocity and acceleration
 # limits. At sscbirrt 3.11's full-limit timing, the drop proof's transfer swings the wrist
@@ -367,6 +379,39 @@ def _pick_and_place(changes: dict[str, Any] | None = None) -> Session:
     return run
 
 
+def _tare_settled(rest_ns: int) -> Session:
+    def run(ctx: RobotContext, planner: Planner, checker: Planner, can: Pose) -> dict[str, Any]:
+        picked = _drive(ctx, grasp(ctx, planner, _grasp_spec(can), check_planner=checker))
+        placing = place(ctx, planner, _place_spec(), check_planner=checker)
+        while ctx.now.time_ns < rest_ns:  # as success ran, to the tick the arm rested
+            placing.advance()
+            ctx.step()
+        placing.cancel("measuring the wrist at rest, before the descent")
+        assert placing.result is not None
+        request = ObservationRequest(channels=("right_wrist_wrench",))
+
+        def wrist() -> tuple[float, ...]:
+            value = ctx.observe(request).readings[0].value
+            assert isinstance(value, tuple)
+            return value[:3]
+
+        force = [wrist()]
+        while ctx.now.time_ns < rest_ns + TARE_HORIZON_NS:
+            ctx.step()
+            force.append(wrist())
+        drift = [math.dist(f, force[0]) for f in force]
+        return {
+            "grasp": _report(picked),
+            "place": _report(placing.result),
+            "rest_ns": rest_ns,
+            "force_at_rest": list(force[0]),
+            "max_change_n": max(drift),
+            "change_at_horizon_n": drift[-1],
+        }
+
+    return run
+
+
 def _missed(ctx: RobotContext, planner: Planner, checker: Planner, can: Pose) -> dict[str, Any]:
     elsewhere = Pose(
         position=(can.position[0], can.position[1] + ELSEWHERE, can.position[2]),
@@ -429,6 +474,8 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
         "trajectory_only": _session(plain, _pick(), strip=True),
         "gripper_timeout": _session(plain, _pick({"gripper_timeout_ns": GRIPPER_DEADLINE_NS})),
     }
+    rested_ns = scenarios["success"]["place"]["values"]["tare_rest"]["end_ns"]
+    scenarios["tare_settled"] = _session(plain, _tare_settled(rested_ns))
     report = {
         "environment": _environment(),
         "repeat_identical": first == again,
@@ -452,6 +499,20 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
         "placed",
     ]  # fmt: skip
     assert success["place"]["attachment"] is None
+    # The descent, which tares the wrist, starts only once the arm is observed at rest
+    # after the transfer, by the runtime's declared criteria.
+    tare = success["place"]["values"]["tare_rest"]
+    transferred = next(s for s in success["place"]["stages"] if s["name"] == "allow_target")
+    assert tare["outcome"] == "at_rest" and not tare["privileged"], tare
+    assert tare["start_ns"] == transferred["time_ns"] < tare["end_ns"]
+    assert tare["window"][1] == tare["end_ns"]
+
+    # At rest, the wrist has settled enough to tare: its force changes by less than
+    # TARE_SETTLED_FRACTION of the guard's threshold over the hold that follows.
+    settled = scenarios["tare_settled"]
+    assert settled["place"]["state"] == SkillState.CANCELLED
+    assert settled["place"]["stages"][-1]["name"] == "descend"
+    assert settled["max_change_n"] < TARE_SETTLED_FRACTION * CONTACT_N, settled
 
     missed = scenarios["missed"]["grasp"]
     assert missed["state"] == SkillState.FAILED and missed["attachment"] is None

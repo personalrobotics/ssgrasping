@@ -28,12 +28,15 @@ from ssrobot import (
     Execution,
     ExecutionState,
     GripperCommand,
+    JointRest,
     ObservationRequest,
     Planner,
     PlanningRequest,
     PlanProjection,
     PlanResult,
     PredictedSnapshot,
+    RestResult,
+    RestWatch,
     RobotContext,
     SceneSnapshot,
     SsrobotError,
@@ -47,13 +50,19 @@ from ssgrasping.outcomes import Evidence, SkillResult, SkillState, Stage
 
 @dataclass(frozen=True, slots=True)
 class Wait:
-    """What a skill waits for: an execution to finish, the clock to reach a time, or a
-    plan being made on a worker. Waiting on a plan alone needs no time to pass: a driver
-    may block on it instead of stepping (``planning``)."""
+    """What a skill waits for, exactly one of: an execution to finish, the clock to reach
+    a time, a plan being made on a worker, or a rest watch to end. Waiting on a plan alone
+    needs no time to pass: a driver may block on it instead of stepping (``planning``)."""
 
     execution: Execution | None = None
     until_ns: int | None = None
     future: Future[Any] | None = None
+    watch: RestWatch | None = None
+
+    def __post_init__(self) -> None:
+        given = (self.execution, self.until_ns, self.future, self.watch)
+        if sum(w is not None for w in given) != 1:
+            raise ValueError("a Wait waits on exactly one thing")
 
     @property
     def planning(self) -> bool:
@@ -64,6 +73,8 @@ class Wait:
             return self.future.done()
         if self.execution is not None:
             return self.execution.done
+        if self.watch is not None:
+            return self.watch.done
         assert self.until_ns is not None
         return ctx.now.time_ns >= self.until_ns
 
@@ -76,14 +87,16 @@ for a detector or controller that never reports the end of the fingers' motion, 
 wait. The slowest measured motion is ADA's unobstructed open, 1.49 s; Geodude's is 1.0 s
 (personalrobotics/ssrobot#220)."""
 
-REST_WAIT_NS = 500_000_000
-"""How long a continuation waits, by default, after its source succeeds, for the joints
-to come to rest (``Lookahead.rest_wait_ns``)."""
+REST_TIMEOUT_NS = 2_000_000_000
+"""The default timeout on a joint-rest watch (``rest_timeout_ns``): a failure bound for
+joints never observed at rest, not a wait; a watch ends as soon as rest is observed. The
+latest measured rest, after a trajectory ends, is ADA's at 614 ms, Geodude's at 336 ms
+(personalrobotics/ssrobot#225's evidence), so the bound leaves over 1.3 s of headroom."""
 RECOVER = ("source_not_succeeded", "unpredicted_scene_change", "not_at_rest", "rest_unobservable")
 """Continuation refusals that fail the stage, for the application's recovery: the motion
 before it failed; the scene changed in a way the prediction did not record; or rest,
-ssrobot's gate before anything moves again, was not established (still moving after
-``rest_wait_ns``, or unobservable). Nothing is submitted around them. Every other refusal
+ssrobot's gate before anything moves again, was not established (not observed at rest
+within ``rest_timeout_ns``, or unobservable). Nothing is submitted around them. Every other refusal
 (a small arrival mismatch, a rebase the planner cannot make or that is invalid in the
 actual scene) is replanned from the actual state."""
 
@@ -98,16 +111,16 @@ class Lookahead:
     arrival_tolerance: float | None = None
     """How far, per joint, the arrival may be from a continuation's start before the stage
     is replanned from where the arm is; None for the runtime's declared goal tolerance."""
-    rest_wait_ns: int = REST_WAIT_NS
-    """How long a continuation waits, after its source succeeds, for the joints to come to
-    rest; the stage then fails for recovery."""
+    rest_timeout_ns: int = REST_TIMEOUT_NS
+    """How long, after its source succeeds, a continuation watches for the joints to come
+    to rest before the stage fails for recovery: a failure bound, not a wait."""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "unsettled", tuple(self.unsettled))
         check_spec(
-            isinstance(self.rest_wait_ns, int) and self.rest_wait_ns >= 0,
-            "a non-negative number of nanoseconds",
-            "rest_wait_ns",
+            isinstance(self.rest_timeout_ns, int) and self.rest_timeout_ns > 0,
+            "a positive number of nanoseconds",
+            "rest_timeout_ns",
         )
         if self.arrival_tolerance is not None:
             check_spec(
@@ -176,6 +189,26 @@ def lookahead_entry(stage: str, prediction: PredictedSnapshot, **more: object) -
             "allowances": list(prediction.allowances),
         },
         **more,
+    }
+
+
+def rest_evidence(rest: RestResult) -> dict[str, object]:
+    """What a rest result establishes, as structured evidence: how the watch ended, on
+    which channel and by whose criteria, the window of readings that justified rest, how
+    many readings it judged, and the longest still run it saw."""
+    window = rest.window
+    return {
+        "outcome": rest.outcome.value,
+        "detail": rest.detail,
+        "channel": rest.channel.channel,
+        "privileged": rest.channel.privileged,
+        "criteria_source": rest.criteria.source,
+        "start_ns": rest.start.time_ns,
+        "end_ns": rest.end.time_ns,
+        "window": [window[0].time_ns, window[-1].time_ns] if window else None,
+        "terminal": list(window[-1].value) if window else None,
+        "samples": rest.samples,
+        "longest": [rest.longest[0].time_ns, rest.longest[-1].time_ns] if rest.longest else None,
     }
 
 
@@ -429,19 +462,16 @@ class Run:
         )
         look = self.lookahead or Lookahead()
         since = ctx.now.time_ns
-        while True:
-            result = ctx.execute_continuation(
-                continuation, arrival_tolerance=look.arrival_tolerance
-            )
-            report = result.report
-            if report.refusal != "not_at_rest" or ctx.now.time_ns - since >= look.rest_wait_ns:
-                break
-            yield Wait(until_ns=ctx.now.time_ns + 1)  # the next tick
+        rest = yield from self.rest(plan.request.group, look.rest_timeout_ns)
+        result = ctx.execute_continuation(
+            continuation, rest=rest, arrival_tolerance=look.arrival_tolerance
+        )
+        report = result.report
         log.update(
             refusal=report.refusal,
             detail=report.detail,
             max_start_gap=report.max_start_gap,
-            rest=report.rest,
+            rest=rest_evidence(rest),
             rebase=report.rebase,
             waited_for_rest_ns=ctx.now.time_ns - since,
         )
@@ -459,6 +489,16 @@ class Run:
             self.record(name, False, refused, evidence)
         log["decision"] = f"replanned: {report.refusal}"
         return self._replanned(name, replan, planner, log["decision"])
+
+    def rest(self, component: str, timeout_ns: int) -> Generator[Wait, None, RestResult]:
+        """Watch ``component``'s joints until they are observed at rest, by the criteria
+        the runtime declares for their channel, or ``timeout_ns`` passes; the result."""
+        watch = self.ctx.watch_rest(
+            JointRest(component=component), deadline_ns=self.ctx.now.time_ns + timeout_ns
+        )
+        yield Wait(watch=watch)
+        assert watch.result is not None  # a watch is done once it has a result
+        return watch.result
 
     def _replanned(
         self, name: str, replan: Callable[[], PlanResult] | None, planner: Planner, why: object

@@ -13,9 +13,11 @@ outward ``normal``: away from it to pre-place and retreat, toward it to descend.
    held object's attachment transform turns them into regions for the end effector.
 3. ``allow_target``: replace the allowance with the hand and the target support, for
    the terminal descent only, keeping the attachment's transform.
-4. ``descend``: hold still for ``tare_wait_ns`` (a temporary fixed wait, until ssrobot
-   can report the arm at rest: personalrobotics/ssrobot#221), so the guard tares a
-   settled wrist and not the transfer's transient; plan straight toward the support by
+4. ``descend``: wait until the arm's joints are observed at rest, by the criteria the
+   runtime declares for them, within ``rest_timeout_ns`` (ssrobot's ``watch_rest``), so
+   the guard tares a settled wrist and not the transfer's transient; any other end of
+   the watch fails the stage before anything is submitted. Then plan straight toward the
+   support by
    ``preplace_m + overshoot_m``, compile it for the runtime, and execute it under
    ``guard``. ``guard_triggered`` is the expected stop; ``trajectory_completed`` without
    it is a failed placement.
@@ -45,6 +47,7 @@ from ssrobot import (
     Planner,
     PlanResult,
     Pose,
+    RestOutcome,
     RobotContext,
     SceneSnapshot,
     Tsr,
@@ -55,12 +58,14 @@ from ssrobot import (
 from ssgrasping._poses import compose, inside, invert, offset_interval
 from ssgrasping._skill import (
     GRIPPER_TIMEOUT_NS,
+    REST_TIMEOUT_NS,
     Body,
     Lookahead,
     Run,
     Wait,
     check_spec,
     preflight,
+    rest_evidence,
     unit,
 )
 from ssgrasping.execution import SkillExecution
@@ -105,11 +110,10 @@ class PlaceSpec:
     """The deadline on each gripper command, on the runtime clock: a failure bound, not a
     settle. A command ends when the fingers' motion ends; one that has not by then fails
     its stage (``timed_out``)."""
-    tare_wait_ns: int = 1_000_000_000
-    """How long the arm holds still before the guarded descent, so the guard tares a
-    settled wrist and not the transfer's transient. A temporary fixed wait: it is to wait
-    on the arm observed at rest instead, once ssrobot can report that
-    (personalrobotics/ssrobot#221)."""
+    rest_timeout_ns: int = REST_TIMEOUT_NS
+    """How long after the transfer the arm may take to be observed at rest before the
+    guarded descent, which tares on the settled wrist, fails: a failure bound, not a
+    wait."""
     line_tolerance_m: float = 1e-3
     carry_scaling: float = 1.0
     """The fraction of the joints' velocity and acceleration limits the transfer, made
@@ -128,9 +132,10 @@ class PlaceSpec:
         check_spec(len(self.regions) > 0, "at least one region", "regions")
         for name in ("preplace_m", "retreat_m", "line_tolerance_m"):
             check_spec(getattr(self, name) > 0, "must be positive", name)
-        for name in ("overshoot_m", "terminal_m", "tare_wait_ns"):
+        for name in ("overshoot_m", "terminal_m"):
             check_spec(getattr(self, name) >= 0, "must be non-negative", name)
         check_spec(self.gripper_timeout_ns > 0, "must be positive", "gripper_timeout_ns")
+        check_spec(self.rest_timeout_ns > 0, "must be positive", "rest_timeout_ns")
         check_spec(self.terminal_m <= self.preplace_m, "at most preplace_m", "terminal_m")
         metres, radians = self.region_tolerance
         check_spec(metres >= 0 and radians >= 0, "non-negative", "region_tolerance")
@@ -270,10 +275,16 @@ def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Bod
 
 
 def _descend(run: Run, planner: Planner, spec: PlaceSpec) -> Body:
-    """The guarded terminal descent: settled, planned, compiled for the runtime, run."""
+    """The guarded terminal descent: observed at rest, planned, compiled for the runtime,
+    run."""
     ctx = run.ctx
     run.begin("descend")
-    yield Wait(until_ns=ctx.now.time_ns + spec.tare_wait_ns)  # temporary: ssrobot#221
+    arm = ctx.manipulator(spec.manipulator)
+    rest = yield from run.rest(arm.group, spec.rest_timeout_ns)
+    run.values["tare_rest"] = rest_evidence(rest)
+    if rest.outcome is not RestOutcome.AT_REST:
+        evidence = Evidence.PRIVILEGED if rest.channel.privileged else Evidence.PORTABLE
+        run.record("descend", False, f"rest {rest.outcome.value}: {rest.detail}", evidence)
     snapshot = ctx.snapshot()
     plan = _toward(ctx, snapshot, planner, spec)
     if not plan.succeeded:

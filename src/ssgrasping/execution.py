@@ -102,6 +102,8 @@ class SkillExecution:
         active = self.active
         if active is not None:
             self._run.ctx.cancel(active)
+        if self._wait is not None and self._wait.watch is not None and not self._wait.watch.done:
+            self._wait.watch.cancel()
         self._body.close()
         self._run.cancelled(reason)
         self._finish(SkillState.CANCELLED)
