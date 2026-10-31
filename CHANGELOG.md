@@ -6,10 +6,12 @@ Waits on the robot are on observed rest, not fixed durations
 (personalrobotics/ssgrasping#35). ssrobot is pinned at 9a0195b, whose continuation gate
 takes a rest watch's result.
 
-`landing` keeps its fixed `land_ns`. In MuJoCo, a can or bottle that lands on its side
-in a bin rocks without decay, because nothing resists its rolling
-(personalrobotics/prl_assets#27), so no rest criterion could pass for it. Landing moves
-to observed rest once that is repaired (#36).
+`landing` keeps its fixed `land_ns`. In MuJoCo, a can or bottle lying on a bin's floor
+never comes to rest: under the native CCD collider, a cylinder at rest on a box of
+comparable size creeps about 50 mm and back, about every 27 s
+(google-deepmind/mujoco#3748, personalrobotics/prl_assets#27). Rolling resistance does
+not stop it, so no rest criterion could pass for it. Landing moves to observed rest once
+the collider is fixed (#36).
 
 ### Migration
 
