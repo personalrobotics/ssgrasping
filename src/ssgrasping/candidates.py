@@ -38,7 +38,9 @@ commanded.
 Given ``after``, a motion executing now, the prefix is planned on ``ctx.predict(after)``
 (``unsettled`` names objects it makes no claim about, such as one just dropped;
 ``releases``, held objects to be released when ``after`` ends, such as one dropped from
-where a transfer ends, each at the pose it is expected to rest at; ``joints``, other
+where a transfer ends, each at the pose it is expected to rest at; ``removals``, held
+objects to be released and then removed from a registered scene, as an application
+does with one it assumes landed; ``joints``, other
 joints as they are expected then, such as the gripper opened to release it): the
 selected pregrasp then continues once ``after`` ends. Otherwise it is planned on a
 snapshot captured now.
@@ -139,6 +141,7 @@ class Candidates:
         after: Execution | None = None,
         unsettled: Sequence[str] = (),
         releases: Mapping[str, Pose] | None = None,
+        removals: Sequence[str] = (),
         joints: Mapping[str, float] | None = None,
     ) -> None:
         if not candidates:
@@ -148,7 +151,7 @@ class Candidates:
         self._prediction: PredictedSnapshot | None = None
         if after is not None and not after.done:
             self._prediction = ctx.predict(
-                after, unsettled=unsettled, releases=releases, joints=joints
+                after, unsettled=unsettled, releases=releases, removals=removals, joints=joints
             )
             self._basis: SceneSnapshot | PredictedSnapshot = self._prediction
         else:

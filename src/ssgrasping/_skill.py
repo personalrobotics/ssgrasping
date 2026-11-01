@@ -232,6 +232,7 @@ def lookahead_entry(stage: str, prediction: PredictedSnapshot, **more: object) -
             "held": [o.name for o in prediction.held],
             "unsettled": list(prediction.unsettled),
             "releases": list(prediction.releases),
+            "removals": list(prediction.removals),
             "allowances": list(prediction.allowances),
         },
         **more,
