@@ -5,6 +5,10 @@ why, the runtime time and scene revision when it ended, and what the skill then
 believed about the object (held, attached). The result names the stage that decided it
 and the attachment the scene declared at the end. Stages are skill-specific; only the
 state is shared.
+
+A failed stage says why twice: as a ``Reason``, with the ssrobot ``cause`` behind it
+when there is one, for an application to act on; and as ``detail``, prose for a person.
+The reason and cause are the protocol; the detail may be reworded at any time.
 """
 
 from __future__ import annotations
@@ -41,6 +45,28 @@ class Evidence(enum.StrEnum):
     """A command's terminal status, from the runtime."""
 
 
+class Reason(enum.StrEnum):
+    """Why a stage failed, stable across releases; the README tabulates each reason's
+    meaning, the stages that report it, and its cause's vocabulary."""
+
+    UNAVAILABLE = "unavailable"
+    NOT_PLANNED = "not_planned"
+    REFUSED = "refused"
+    COMMAND_FAILED = "command_failed"
+    COMMAND_CANCELED = "command_canceled"
+    CANCELLED = "cancelled"
+    NOT_ATTACHED = "not_attached"
+    STILL_ATTACHED = "still_attached"
+    ATTACHMENT_LOST = "attachment_lost"
+    MISSED = "missed"
+    LOST = "lost"
+    IN_CONTACT = "in_contact"
+    RELEASE_UNCONFIRMED = "release_unconfirmed"
+    NOT_AT_REST = "not_at_rest"
+    NO_CONTACT = "no_contact"
+    OUTSIDE_REGIONS = "outside_regions"
+
+
 @dataclass(frozen=True, slots=True)
 class Stage:
     """One stage of a skill, as it ended."""
@@ -55,6 +81,11 @@ class Stage:
     attached: bool
     """Whether the scene then declared the object attached."""
     evidence: Evidence
+    reason: Reason | None = None
+    """Why it failed: None when it succeeded."""
+    cause: str | None = None
+    """The ssrobot code behind ``reason``, in the vocabulary the reason names (a plan
+    status, an error code, an execution diagnostic): None when there is none."""
 
 
 @dataclass(frozen=True, slots=True)

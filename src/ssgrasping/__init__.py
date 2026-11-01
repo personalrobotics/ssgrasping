@@ -12,7 +12,7 @@ from ssgrasping.drop import DropSpec, drop
 from ssgrasping.execution import SkillExecution, run_skill, run_together
 from ssgrasping.grasp import GraspSpec, grasp
 from ssgrasping.landing import LandingSpec, landing
-from ssgrasping.outcomes import Evidence, SkillResult, SkillState, Stage
+from ssgrasping.outcomes import Evidence, Reason, SkillResult, SkillState, Stage
 from ssgrasping.place import PlaceSpec, place
 
 __all__ = [
@@ -25,6 +25,7 @@ __all__ = [
     "LandingSpec",
     "Lookahead",
     "PlaceSpec",
+    "Reason",
     "Selection",
     "SkillExecution",
     "SkillResult",

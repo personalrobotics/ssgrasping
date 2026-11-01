@@ -10,7 +10,8 @@ anywhere over the interior less the policy's margin, ``max(0.25, can height + 0.
 above the rim (+2 cm / -5 cm), at any yaw.
 
 Each scenario is one contract case, recorded in ``drop.json`` with every stage's time,
-scene revision, held and attached state, and evidence kind:
+scene revision, held and attached state, evidence kind, and, for a failed stage, its
+reason and cause:
 - ``success``: grasp, then drop on a manual clock: the can is released over the bin, the
   drop ends after its retreat, and ``landing`` then finds it at rest inside the bin, by
   its privileged pose; run twice, byte-identical.
@@ -37,7 +38,7 @@ from typing import Any
 
 from ssrobot import AttachmentViolation, Planner, Pose, RobotContext, RuntimeUpdate, Tsr
 
-from ssgrasping import DropSpec, LandingSpec, SkillState, drop, grasp, landing
+from ssgrasping import DropSpec, LandingSpec, Reason, SkillState, drop, grasp, landing
 from tests.test_grasp_place import (
     CAN_XY,
     CARRY_SCALING,
@@ -48,7 +49,9 @@ from tests.test_grasp_place import (
     UP,
     _drive,
     _environment,
+    _failed,
     _grasp_spec,
+    _reasons,
     _report,
     _session,
     _states,
@@ -229,6 +232,7 @@ def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> No
     (artifacts / "drop.json").write_text(json.dumps(report, indent=2) + "\n")
 
     assert first == again, "two runs in one environment differ"
+    _reasons(scenarios)
 
     success = scenarios["success"]
     assert success["grasp"]["state"] == SkillState.SUCCEEDED
@@ -245,8 +249,7 @@ def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> No
 
     unconfirmed = scenarios["unconfirmed_release"]["drop"]
     assert unconfirmed["state"] == SkillState.FAILED, unconfirmed["stages"]
-    assert unconfirmed["stages"][-1]["name"] == "release"
-    assert unconfirmed["stages"][-1]["held"] is None
+    assert _failed(unconfirmed) == ("release", Reason.RELEASE_UNCONFIRMED, None, None, True)
     assert unconfirmed["attachment"] is not None
 
     slipped = scenarios["slipped"]["drop"]
@@ -255,6 +258,8 @@ def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> No
         ("transfer", True), ("release", False),
     ]  # fmt: skip
     assert slipped["stages"][-1]["evidence"] == "privileged"
-    assert slipped["stages"][-1]["held"] is True  # conservative: it may still be in hand
+    # Conservatively held: it may still be in the hand. Still declared attached, so an
+    # application may release it where the transfer ended.
+    assert _failed(slipped) == ("release", Reason.ATTACHMENT_LOST, None, True, True)
     assert "released_opening" not in slipped["values"]  # the gripper was never opened
     assert slipped["attachment"] is not None and slipped["attachment"]["held"] is False

@@ -23,7 +23,7 @@ from ssrobot import RobotContext, Tsr
 from ssgrasping._poses import inside
 from ssgrasping._skill import Body, Run, Wait, check_spec
 from ssgrasping.execution import SkillExecution
-from ssgrasping.outcomes import Evidence
+from ssgrasping.outcomes import Evidence, Reason
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,10 +62,22 @@ def _landing(run: Run, spec: LandingSpec) -> Body:
     run.begin("landed")
     yield Wait(until_ns=ctx.now.time_ns + spec.land_ns)
     if run.attached():
-        run.record("landed", False, f"{spec.object!r} is still attached", Evidence.PLANNED)
+        run.record(
+            "landed",
+            False,
+            f"{spec.object!r} is still attached",
+            Evidence.PLANNED,
+            Reason.STILL_ATTACHED,
+        )
     pose = next((o.pose for o in ctx.snapshot().objects if o.name == spec.object), None)
     if pose is None:
-        run.record("landed", False, f"{spec.object!r} is not in the scene", Evidence.PRIVILEGED)
+        run.record(
+            "landed",
+            False,
+            f"{spec.object!r} is not in the scene",
+            Evidence.PRIVILEGED,
+            Reason.UNAVAILABLE,
+        )
     assert pose is not None
     run.values["landed_pose"] = {
         "position": list(pose.position),
@@ -77,4 +89,5 @@ def _landing(run: Run, spec: LandingSpec) -> Body:
         bool(within),
         f"in region {within[0]}" if within else f"outside every region at {pose.position}",
         Evidence.PRIVILEGED,
+        None if within else Reason.OUTSIDE_REGIONS,
     )

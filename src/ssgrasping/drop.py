@@ -57,7 +57,7 @@ from ssgrasping._skill import (
     unit,
 )
 from ssgrasping.execution import SkillExecution
-from ssgrasping.outcomes import Evidence
+from ssgrasping.outcomes import Evidence, Reason
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,7 +194,13 @@ def _drop(
         channels={spec.opening_channel: (1,)},
     )
     if attachment is None:
-        run.record("transfer", False, f"{spec.object!r} is not attached", Evidence.PLANNED)
+        run.record(
+            "transfer",
+            False,
+            f"{spec.object!r} is not attached",
+            Evidence.PLANNED,
+            Reason.NOT_ATTACHED,
+        )
     arm = ctx.manipulator(spec.manipulator)
     retreats = spec.retreat_m > 0
 
@@ -234,6 +240,7 @@ def _drop(
             False,
             "attachment monitor: the object left its declared transform during the transfer",
             Evidence.PRIVILEGED,
+            Reason.ATTACHMENT_LOST,
         )
     yield from run.grip("release", spec.gripper, spec.open_opening, spec.gripper_timeout_ns)
     opening = float(run.observe(spec.opening_channel)[0])
@@ -245,6 +252,7 @@ def _drop(
             False,
             f"opening {opening:.3f} < {spec.released_opening}: release not confirmed",
             Evidence.PORTABLE,
+            Reason.RELEASE_UNCONFIRMED,
         )
     ctx.detach(spec.object)
     run.held = False
