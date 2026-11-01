@@ -555,7 +555,9 @@ def score(out: Path, summary: Path) -> dict[str, Any]:
         "released": ("release_opening", "load_after_n"),
     }
     noise = _sensor_noise()
+    provenance = out / "provenance.json"
     report = {
+        "recorded": json.loads(provenance.read_text()) if provenance.exists() else None,
         "runs": runs,
         "sensor_noise": noise,
         "transitions": {
