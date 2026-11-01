@@ -360,6 +360,11 @@ def record(name: str, seed: int, out: Path) -> Path:
 OPENING, FORCE, Q, QD, QF, HAND = 0, slice(1, 4), slice(7, 14), slice(14, 21), slice(21, 28), 28
 CAN, CONTACTS, HELD = slice(0, 7), slice(7, 15), 15
 G = 9.81
+SLIPPED_M = 0.01
+"""Retained, by truth: through the carry, the can stays within this of where it was in the
+hand when the carry began: ssrobot's default attachment tolerance (``MujocoRuntime``'s
+``attach_tolerance_m``). Finger contact alone flickers as a heavy can shifts a few
+millimetres and stays held, so it is not the criterion."""
 LEFT_HAND_M = 0.05
 """Released, by truth: at the end, the can is no farther than this from the hand."""
 
@@ -388,6 +393,22 @@ def _in_hand(truth: np.ndarray) -> np.ndarray:
     """Each tick: both fingers, pad or follower, touch the can."""
     touch = truth[:, CONTACTS][:, ::2] > 0  # left pad, left follower, right pad, right follower
     return (touch[:, 0] | touch[:, 1]) & (touch[:, 2] | touch[:, 3])
+
+
+def _in_hand_frame(portable: np.ndarray, truth: np.ndarray) -> np.ndarray:
+    """Each tick: the can's position in the hand's frame (the hand pose is portable; the
+    can's is truth)."""
+    w, x, y, z = (portable[:, HAND + 3 + i] for i in range(4))
+    r = np.stack(
+        [
+            np.stack([1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)], -1),
+            np.stack([2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)], -1),
+            np.stack([2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)], -1),
+        ],
+        -2,
+    )
+    offset = truth[:, :3] - portable[:, HAND : HAND + 3]
+    return np.asarray(np.einsum("nji,nj->ni", r, offset))
 
 
 def _stage(meta: dict[str, Any], d: Any, name: str) -> np.ndarray:
@@ -426,12 +447,14 @@ def _run_scores(meta: dict[str, Any], d: Any) -> dict[str, Any]:
     empty = _force(P, close & ~held)  # the closing hand, before it touches the can
     if close.any():
         end = np.flatnonzero(close)[-1]
+        # The can rose with the hand: at least half the lift (``_grasp_spec``'s 0.06 m).
         rose = acquired.any() and T[np.flatnonzero(acquired)[-1], 2] > T[0, 2] + 0.03
         lifted = _force(P, acquired)
         scores["acquired"] = {
-            "truth": bool(acquired.any() and held[np.flatnonzero(acquired)[-1]] and rose),
+            "truth": bool(rose),
             "close_termination": _gripper(meta, "grasp", "close"),
             "close_opening": float(P[end, OPENING]),
+            "reclose_termination": _gripper(meta, "grasp", "acquired"),
             "payload_n": None if empty is None or lifted is None else lifted[0] - empty[0],
             "payload_spread_n": None
             if empty is None or lifted is None
@@ -440,7 +463,8 @@ def _run_scores(meta: dict[str, Any], d: Any) -> dict[str, Any]:
     carry = _stage(meta, d, f"{then}.transfer")
     if carry.any() and held[np.flatnonzero(carry)[0]]:
         ticks = np.flatnonzero(carry)
-        lost = ticks[~held[ticks]]
+        where = _in_hand_frame(P[ticks], T[ticks])
+        lost = ticks[np.linalg.norm(where - where[0], axis=1) > SLIPPED_M]
         start_opening = float(P[ticks[0], OPENING])
         force = np.linalg.norm(P[ticks][:, FORCE], axis=1)
         drop_at = None
@@ -540,6 +564,7 @@ def score(out: Path, summary: Path) -> dict[str, Any]:
                 "true": sum(r["truth"] for r in rows),
                 "false": sum(not r["truth"] for r in rows),
                 "separation": {f: _separation(rows, f) for f in features.get(name, ())},
+                "by_case": _by_case(rows, features.get(name, ())),
                 "terminations": _terminations(rows),
             }
             for name, rows in by.items()
@@ -547,6 +572,25 @@ def score(out: Path, summary: Path) -> dict[str, Any]:
     }
     summary.write_text(json.dumps(report, indent=1) + "\n")
     return report
+
+
+def _by_case(rows: list[dict[str, Any]], features: tuple[str, ...]) -> dict[str, Any]:
+    """Per case: how many runs the transition truly happened in, and each feature's range."""
+    out: dict[str, Any] = {}
+    for case in sorted({r["case"] for r in rows}):
+        mine = [r for r in rows if r["case"] == case]
+        out[case] = {
+            "true": sum(r["truth"] for r in mine),
+            "false": sum(not r["truth"] for r in mine),
+        }
+        extra = ("close_termination", "reclose_termination", "release_termination")
+        for f in (*features, *extra, "opening_half_latency_ns"):
+            values: list[Any] = [r[f] for r in mine if r.get(f) is not None]
+            if values and isinstance(values[0], str):
+                out[case][f] = sorted(set(values))
+            elif values:
+                out[case][f] = _span(values)
+    return out
 
 
 def _terminations(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
