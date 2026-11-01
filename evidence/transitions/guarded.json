@@ -1,0 +1,5199 @@
+{
+ "recorded": {
+  "commit": "ca18812333edbc4d15212083b0c85ff80deaea11",
+  "dirty": false,
+  "environment": {
+   "python": "3.11.17",
+   "ssgrasping": "0.0.1",
+   "ssrobot": "0.0.0",
+   "mujoco": "3.14.0",
+   "sscbirrt": "3.15.0",
+   "sstsr": "4.0.0",
+   "numpy": "2.4.6"
+  },
+  "host": "Linux-7.0.0-38-generic-x86_64-with-glibc2.39",
+  "cpus": 64,
+  "openblas_coretype": "Haswell",
+  "command": [
+   "scripts/study_transitions.py",
+   "run",
+   "/home/siddh/code/ssgrasping/runs/20261101-061315-guarded",
+   "--jobs",
+   "32"
+  ]
+ },
+ "runs": [
+  {
+   "case": "drop",
+   "seed": 0,
+   "sha256": "c5b819c66942f9bda74b86bd573b947ef7b214a9e5e6e57b1199521a11d7fe01",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4479355904163052,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.38990273994252433,
+    "payload_spread_n": 0.9902412116383515
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 1.9280730461757045e-05,
+    "force_range_n": [
+     13.207960516699309,
+     16.475661772483196
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958793243208549,
+    "load_after_n": -0.10138292298822016,
+    "load_spread_n": 0.43384625266788246
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop",
+   "seed": 1,
+   "sha256": "9131e09434e9d1799cdc84e69314c1adbcb5d1611295c7346ca7e346231e277a",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44800056910818875,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.40228305153619104,
+    "payload_spread_n": 0.9907108836557593
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 1.805584294384266e-05,
+    "force_range_n": [
+     13.205683967835833,
+     16.4657892644916
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958834448340671,
+    "load_after_n": -0.11251424701481305,
+    "load_spread_n": 0.45870464997440424
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop",
+   "seed": 2,
+   "sha256": "b9c3f6c46540e3a79521b82fd5408ccda1f86cb0a1cc66616ee29e68f2352424",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44900498981678877,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.6195225607106032,
+    "payload_spread_n": 1.2437480456069365
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0008221876717842136,
+    "force_range_n": [
+     11.064389868423273,
+     15.350861030813402
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959131179035922,
+    "load_after_n": -0.0020626393701448364,
+    "load_spread_n": 0.3673897052703989
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop",
+   "seed": 3,
+   "sha256": "a428efe581463c674d1b1470450f8e94996d2e1e33649ef6db76daea4c06fc0f",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44804614842918944,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.4519086559144423,
+    "payload_spread_n": 0.9859216438749591
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.000357143286586481,
+    "force_range_n": [
+     12.278031036832449,
+     14.682211938723212
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.995860349214294,
+    "load_after_n": -0.162165811379408,
+    "load_spread_n": 0.35678325154855256
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop",
+   "seed": 4,
+   "sha256": "1f62af6bd22b536b6c190ae79dbd6640e9200134c5e48bc51417164237acc98b",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44796363743204387,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.3870568746312557,
+    "payload_spread_n": 0.9878483618309213
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0003543348622723763,
+    "force_range_n": [
+     12.27905305390313,
+     14.684603142111184
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958537154579172,
+    "load_after_n": -0.09273472212647071,
+    "load_spread_n": 0.5113130364836139
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop",
+   "seed": 5,
+   "sha256": "6cb3795f1a1bf5f1c442a40ade7d8f0c0475ee140465545b0ac55af6605d799d",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4480383083817399,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.45505215281137623,
+    "payload_spread_n": 0.9879033615524592
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00035554860330583304,
+    "force_range_n": [
+     12.28053935232864,
+     14.681362664581762
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958593342293451,
+    "load_after_n": -0.16149806846243386,
+    "load_spread_n": 0.35678327414332733
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop",
+   "seed": 6,
+   "sha256": "7c6171b6aa7c6ff4e6b8880a9fa7874d5021351ea41b119afc6f497cf38a0bc6",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44820092238724285,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.4269223265865847,
+    "payload_spread_n": 0.9865381188641081
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00035997422777472865,
+    "force_range_n": [
+     12.279736793189935,
+     14.682977519697618
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.995862749761905,
+    "load_after_n": -0.1351195251325823,
+    "load_spread_n": 0.36254974901710463
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop",
+   "seed": 7,
+   "sha256": "747fee49097784edf65844f24c00d3491711542caa01e2bea00357074e07a76d",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4480302761462467,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.38478762574568925,
+    "payload_spread_n": 0.9912624496550941
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 2.4122188687747403e-05,
+    "force_range_n": [
+     13.206467729583332,
+     16.470329663789524
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958854254885972,
+    "load_after_n": -0.09402594411473508,
+    "load_spread_n": 0.4813344275819502
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop",
+   "seed": 8,
+   "sha256": "b4add6a4f3bec913fd344e9d9585ff352ee626cb9760f17eeeebb96f0ace3519",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44910034651574005,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.669151327631905,
+    "payload_spread_n": 1.246001912453446
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0008286899152136207,
+    "force_range_n": [
+     11.066663909079194,
+     15.355446668913116
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.995915379786051,
+    "load_after_n": -0.043937266170132716,
+    "load_spread_n": 0.35120786396077364
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop",
+   "seed": 9,
+   "sha256": "72ca6b53038b517952ac95c47415a3d0ad7bfe146c8b34f22bea4a3284aeff11",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4656666196504326,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.36729006775630957,
+    "payload_spread_n": 1.0364369113795786
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0014821108682741002,
+    "force_range_n": [
+     12.279672251526309,
+     15.117952937740483
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9960078273383299,
+    "load_after_n": -0.08513489068196556,
+    "load_spread_n": 0.35677987311634096
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop_heavy",
+   "seed": 0,
+   "sha256": "1d21a9d9dc41e9e817af5f5532b61b6828763c7ceec13e4027b6167889cc1263",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45202211950608834,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.9606460411012367,
+    "payload_spread_n": 1.2506951319179314
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 1.4489152689256546e-05,
+    "force_range_n": [
+     15.06328539115365,
+     20.326830713851542
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959540164279319,
+    "load_after_n": -0.13448042921989156,
+    "load_spread_n": 0.36482443995874914
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop_heavy",
+   "seed": 1,
+   "sha256": "9cdd8e1af121b20c895980e3ff291b31486f83813bb2666cc418f9a646809af0",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4520992675459548,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.6624671249166223,
+    "payload_spread_n": 2.1804649362415036
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 1.4436237449233502e-05,
+    "force_range_n": [
+     15.063033760790086,
+     20.31712401826967
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959561378976584,
+    "load_after_n": -0.4311001770773739,
+    "load_spread_n": 2.1804649362415036
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop_heavy",
+   "seed": 2,
+   "sha256": "6a3735ed4d910b088af5711e291053caa7d5f6422efd1223d1d1807494f94d53",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4529918329205543,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.6844665962973053,
+    "payload_spread_n": 1.5573663562507627
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 4.169778031515303e-05,
+    "force_range_n": [
+     13.507891739983574,
+     19.43463860737326
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9960259105685065,
+    "load_after_n": 0.01884289858011634,
+    "load_spread_n": 0.4263405609302599
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop_heavy",
+   "seed": 3,
+   "sha256": "35df4df6b5b3fb0736030f709216a10766cf9387034c74a3201c264c4962b7f1",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4520657145742662,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.8481178746341396,
+    "payload_spread_n": 1.2450689694795254
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00020395366793307668,
+    "force_range_n": [
+     15.062424526833468,
+     18.703403350004283
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.995933187860981,
+    "load_after_n": -0.24589078156191846,
+    "load_spread_n": 0.6632393467198253
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop_heavy",
+   "seed": 4,
+   "sha256": "a280a3bee4d241161b5c4791bc8ce2fa934ce34d04e8402dd57dd29f427daa06",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45197765524656375,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.888193634774897,
+    "payload_spread_n": 1.24709444795963
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0032909614286186217,
+    "force_range_n": [
+     7.767776809722935,
+     48.88467791351675
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959450740152637,
+    "load_after_n": -0.20955341281021234,
+    "load_spread_n": 0.3999625370097054
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop_heavy",
+   "seed": 5,
+   "sha256": "0ccfeba85a6221eb0ca190b6326c5c0414ac8eaac3924798a635650a2141dc1a",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45202409670027616,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.8516339274621156,
+    "payload_spread_n": 1.2471379442633772
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00020313494386997588,
+    "force_range_n": [
+     15.063691867152862,
+     18.703111316126606
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.995931393792392,
+    "load_after_n": -0.23759422960854515,
+    "load_spread_n": 0.5956461174767477
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop_heavy",
+   "seed": 6,
+   "sha256": "7d4db112c554f695942cdde8c1067036ed9e7a1c0f05c45ae8a6112892f9810f",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4521209877229071,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.8564956933928567,
+    "payload_spread_n": 1.2456854744287875
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0031061999194827994,
+    "force_range_n": [
+     6.090935329537389,
+     59.34706149765071
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958846957070412,
+    "load_after_n": -0.24450130100897027,
+    "load_spread_n": 0.5834406367787295
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop_heavy",
+   "seed": 7,
+   "sha256": "534bd0690c666aa2957192f9d9870844c11003d465dbf87d5237aa98e0c4041e",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45208239557277746,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.923236510253272,
+    "payload_spread_n": 1.2517496471576697
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 1.4445432635401545e-05,
+    "force_range_n": [
+     15.063713981595832,
+     20.32130057354857
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959586158772477,
+    "load_after_n": -0.16893701513572168,
+    "load_spread_n": 0.3648243364499155
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop_heavy",
+   "seed": 8,
+   "sha256": "1f6bffa8a5827462e34e753e7d4b7f251c609c48d296368abff580e0aecb1982",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4530103558612714,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.6819881017958256,
+    "payload_spread_n": 1.5600182343125495
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0006726732660003454,
+    "force_range_n": [
+     14.23301106761246,
+     19.37557431002943
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959864301499278,
+    "load_after_n": 0.02848691006149906,
+    "load_spread_n": 0.47078741892744086
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "drop_heavy",
+   "seed": 9,
+   "sha256": "b8bafeda05f0b6a594c4ee84f667c16012718b47f114be6b7e0d722251ea3ccc",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4713870141130272,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.9347370564746615,
+    "payload_spread_n": 1.2006718947547446
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0017672834884523425,
+    "force_range_n": [
+     14.21236872003928,
+     30.6548169179778
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9960288005694206,
+    "load_after_n": -0.260908573811669,
+    "load_spread_n": 0.7590158378499029
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "lost",
+   "seed": 0,
+   "sha256": "8c68bc8221252236c39bf1adbe0eac3a8a137515806778084df6dcf1bae3c022",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4536498314402239,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "lost",
+   "seed": 1,
+   "sha256": "3da3e2487faea70892879db32aab39573539e2383a2a38a4efd97db17ddfdce1",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4535997768229166,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "lost",
+   "seed": 2,
+   "sha256": "72ecc5979337361e0d5831a2ce8b75ef7108f483058fca44d4243690772d595e",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4543789501498159,
+    "reclose_termination": "reached_target",
+    "payload_n": -0.8886353771870024,
+    "payload_spread_n": 2.386627590460549
+   }
+  },
+  {
+   "case": "lost",
+   "seed": 3,
+   "sha256": "603f45b2e66d59abd3c3009ab19dfed000cc4a8ac5b6463178275f21347d7ead",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45366316934214,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "lost",
+   "seed": 4,
+   "sha256": "6e5f4b112b19f958bd8936588603fd80285c7e67b455270ede7b1fc62faaf376",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45380700731712564,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "lost",
+   "seed": 5,
+   "sha256": "95baa02124dc14e532a72505aedb48222baa378bcfb6b3659ce14549acf02c97",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45365455819092004,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "lost",
+   "seed": 6,
+   "sha256": "a604bdb8e59c55b477a9f72a3c7b25c40144f263a6c8e9f4d7f1e1304f78736d",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4537338967293526,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "lost",
+   "seed": 7,
+   "sha256": "b37cce6a79ad098183694f5222916c66f103bbc080ae48de9140a77b1cdfe6be",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45367616561417523,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "lost",
+   "seed": 8,
+   "sha256": "7933b6c6752df146599d27d1b93b3e6a130c504d072c3c076d303c68cce62ca2",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4543803238699992,
+    "reclose_termination": "reached_target",
+    "payload_n": -0.9180872648998939,
+    "payload_spread_n": 2.5359547947620857
+   }
+  },
+  {
+   "case": "lost",
+   "seed": 9,
+   "sha256": "f23c51a9ff3a2a3feb4aa57613d72946ed02bf365797193a9ab8505f8832d0b6",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.48284924122087064,
+    "reclose_termination": "reached_target",
+    "payload_n": -1.1131976379781765,
+    "payload_spread_n": 4.522791468101421
+   }
+  },
+  {
+   "case": "missed",
+   "seed": 0,
+   "sha256": "fb3b1d470f200a656d6058455d53e1f7ac8e541186145f2337f7c65e60d3b796",
+   "acquired": {
+    "truth": false,
+    "close_termination": "reached_target",
+    "close_opening": 0.004578144471337514,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "missed",
+   "seed": 1,
+   "sha256": "17e0055db433b6987830334128fa34be155a76826197a49803528e17556d4a7c",
+   "acquired": {
+    "truth": false,
+    "close_termination": "reached_target",
+    "close_opening": 0.004645230472349559,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "missed",
+   "seed": 2,
+   "sha256": "d2fd183904ccac25e425beaf61b303eb426fb156ccdec3ff3016692dfc2c8645",
+   "acquired": {
+    "truth": false,
+    "close_termination": "reached_target",
+    "close_opening": 0.004534197406340862,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "missed",
+   "seed": 3,
+   "sha256": "469f3b624ebacab6a427f18cda3427d6e808731c47f3a7fb96be473288cafa01",
+   "acquired": {
+    "truth": false,
+    "close_termination": "reached_target",
+    "close_opening": 0.004600691092480158,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "missed",
+   "seed": 4,
+   "sha256": "b62d3fb5aea9abf1fc946e1d5d668b855fb57dc353b74b56e31e2b955a83fb5d",
+   "acquired": {
+    "truth": false,
+    "close_termination": "reached_target",
+    "close_opening": 0.004573457726429509,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "missed",
+   "seed": 5,
+   "sha256": "22169bf630a7a9bb41974faa7c9341cdb31ffcec62c6e627c52bc9efb62853fc",
+   "acquired": {
+    "truth": false,
+    "close_termination": "reached_target",
+    "close_opening": 0.00476987518254094,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "missed",
+   "seed": 6,
+   "sha256": "373aeb29058c57c4a4cc02cb62237f56999290b0a0aa4e59a9795e5758994154",
+   "acquired": {
+    "truth": false,
+    "close_termination": "reached_target",
+    "close_opening": 0.004591059651955768,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "missed",
+   "seed": 7,
+   "sha256": "0b95f223e22fba8df2e55a09a17acc91632da36fd02b03f4e1d1425b4efd8e2a",
+   "acquired": {
+    "truth": false,
+    "close_termination": "reached_target",
+    "close_opening": 0.0045733860236562346,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "missed",
+   "seed": 8,
+   "sha256": "b18ccf09f7465b5c7e9f844d1555854636e8bfd65652482fb967808a0c03e065",
+   "acquired": {
+    "truth": false,
+    "close_termination": "reached_target",
+    "close_opening": 0.004573053665257409,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "missed",
+   "seed": 9,
+   "sha256": "e3f144da759ee61a215ca7395cffe6a01ecddd51448c8e2b52dd0158d6dd3e81",
+   "acquired": {
+    "truth": false,
+    "close_termination": "reached_target",
+    "close_opening": 0.004573162103105439,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "obstructed",
+   "seed": 0,
+   "sha256": "6b3d69ffa091f74acda9248ec0711c479744ed8e6f9fdddae422917855d3c89b",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45193801375035053,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "obstructed",
+   "seed": 1,
+   "sha256": "8d6c0b2a0914f14b0ea90b90ea1011db142f3001b6fb080c94519aa3cb3e2419",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45286758454228987,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "obstructed",
+   "seed": 2,
+   "sha256": "39b711d75694d9bf6e859123eed401565307b4260486bb9b54e4ef18bfa1b3e9",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4534475140220267,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "obstructed",
+   "seed": 3,
+   "sha256": "266bc16e4f7aa7f032b3555e3303e3c78cfe160a9a57820b11ef709c61885dc0",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45566308045057624,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "obstructed",
+   "seed": 4,
+   "sha256": "c92f4559fc183b79e379477b151320ba20f9c202abdc2d8f0926bb86ce1d7b04",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45445491865202065,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "obstructed",
+   "seed": 5,
+   "sha256": "52fa6cb9090c5b3efd8d625cf61aeb8affd1f7d10b07f5581eba4c88bd3e178b",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45508491784153443,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "obstructed",
+   "seed": 6,
+   "sha256": "92981b37ef3738737fd75ce076c5eb5fb098800bda6416f1f7f0ca700d8cd740",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4519732498419262,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "obstructed",
+   "seed": 7,
+   "sha256": "69a6ee0e215c0f8538b1465ba2000f3f8c010c0d52727ec48cbe147559933e71",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4544482377302493,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "obstructed",
+   "seed": 8,
+   "sha256": "fa411bd23384f28632daa7eae74856ae90f5b0ffa5308f1813ba9ae7cd9fe4ae",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45560589051042305,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "obstructed",
+   "seed": 9,
+   "sha256": "5512a8ee81b96e0c1b3a0bfa72adc27e130749725bfd2325534e8e05479ac09b",
+   "acquired": {
+    "truth": false,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45228912652079667,
+    "reclose_termination": null,
+    "payload_n": null,
+    "payload_spread_n": null
+   }
+  },
+  {
+   "case": "outside_bin",
+   "seed": 0,
+   "sha256": "8b7dc7e8400257b4ad8f3aa9b232b6dc7bd9fcabcc45f169bce856344aa43ec8",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4479355904163052,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.38990273994252433,
+    "payload_spread_n": 0.9902412116383515
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 8.517412034453331e-05,
+    "force_range_n": [
+     12.32171945702486,
+     15.298883239354064
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958758675150275,
+    "load_after_n": -0.09555134917555996,
+    "load_spread_n": 0.43384625266788246
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "outside_bin",
+   "seed": 1,
+   "sha256": "174170f39b6610c94ee1a5e4ac24f66e6fc4d38555e367802dfba5e173576d19",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44800056910818875,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.40228305153619104,
+    "payload_spread_n": 0.9907108836557593
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 8.799658953245748e-05,
+    "force_range_n": [
+     12.321289080042295,
+     15.281343997358361
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958806679872599,
+    "load_after_n": -0.10668264177242293,
+    "load_spread_n": 0.45870464997440424
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "outside_bin",
+   "seed": 2,
+   "sha256": "62c9c008d19bd5572584d5f07305c156eac83bbee3dc774b19b3898451d99823",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44900498981678877,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.6195225607106032,
+    "payload_spread_n": 1.2437480456069365
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0003193280364928719,
+    "force_range_n": [
+     11.183879841094692,
+     15.580207542542034
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959613216393413,
+    "load_after_n": -0.006177238261605211,
+    "load_spread_n": 0.3673897052703989
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "outside_bin",
+   "seed": 3,
+   "sha256": "d1967c4b9b5035cfca91a178bae7caa461949c8cf090ff07f47dca3df79a6901",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44804614842918944,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.4519086559144423,
+    "payload_spread_n": 0.9859216438749591
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.006133298458605663,
+    "force_range_n": [
+     8.821454782347297,
+     98.50949430185312
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959354850007284,
+    "load_after_n": -0.16878566685144847,
+    "load_spread_n": 0.3929480044078628
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "outside_bin",
+   "seed": 4,
+   "sha256": "e8dfd5d8760b1f2ad8b442155d8a9fa587d5dbdef6bd00b01207d4b2e26d3166",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44796363743204387,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.3870568746312557,
+    "payload_spread_n": 0.9878483618309213
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00551637097712665,
+    "force_range_n": [
+     6.308748443161604,
+     17.413559141455266
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959424778598837,
+    "load_after_n": -0.10030763916978813,
+    "load_spread_n": 0.5113130364836139
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "outside_bin",
+   "seed": 5,
+   "sha256": "ea5c787c3923cb6b51d966036bd46f61f9d86976c443dd2b4a70e2f6a2dadfe0",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4480383083817399,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.45505215281137623,
+    "payload_spread_n": 0.9879033615524592
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.005315588047284048,
+    "force_range_n": [
+     11.028896320695019,
+     41.363848941070266
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959313663816091,
+    "load_after_n": -0.16811801551178895,
+    "load_spread_n": 0.39294809919716994
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "outside_bin",
+   "seed": 6,
+   "sha256": "0659573d7b161a3ea240fea2b149dec07faf46eb7401a472fb7a5b0425f1bf48",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44820092238724285,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.4269223265865847,
+    "payload_spread_n": 0.9865381188641081
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.005583041751416995,
+    "force_range_n": [
+     6.351579507295879,
+     19.69314151336839
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959211325677646,
+    "load_after_n": -0.14269334502004227,
+    "load_spread_n": 0.39294833042221883
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "outside_bin",
+   "seed": 7,
+   "sha256": "c3f736edfecd1e2652c93051b4ea4795afc30088ad168844150427a113ed7a7e",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4480302761462467,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.38478762574568925,
+    "payload_spread_n": 0.9912624496550941
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 8.348566462101914e-05,
+    "force_range_n": [
+     12.325052525383468,
+     15.294829128723324
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958819780481865,
+    "load_after_n": -0.08819434971602469,
+    "load_spread_n": 0.4813344275819502
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "outside_bin",
+   "seed": 8,
+   "sha256": "0d1d96aa2404571bd7a7edf892759d983524c923743997ff442c7a827c37c41b",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44910034651574005,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.669151327631905,
+    "payload_spread_n": 1.246001912453446
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00032347632657719894,
+    "force_range_n": [
+     11.185716678823434,
+     15.585961199181737
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959638330821333,
+    "load_after_n": -0.04900527562243262,
+    "load_spread_n": 0.3640251968668596
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "outside_bin",
+   "seed": 9,
+   "sha256": "3731db96e1a9690dc5c910f750381ee790db47f14e944ad80e90688fc52521f8",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4656666196504326,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.36729006775630957,
+    "payload_spread_n": 1.0364369113795786
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0026886045472180875,
+    "force_range_n": [
+     7.3187048553369,
+     16.163876235400647
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958768977737055,
+    "load_after_n": -0.09009017926302221,
+    "load_spread_n": 0.3832854458226591
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "outside_region",
+   "seed": 0,
+   "sha256": "3090254411041b80e6e83fee339c11663f4f11aca0208bb0845d64276a06bd28",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4479355904163052,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.38990273994252433,
+    "payload_spread_n": 0.9902412116383515
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00035973501747332826,
+    "force_range_n": [
+     13.276949428348475,
+     15.801718220707691
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959711347008859,
+    "load_after_n": -0.08880432228524526,
+    "load_spread_n": 0.43384625266788246
+   },
+   "placed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "outside_region",
+   "seed": 1,
+   "sha256": "17c1dde7f8d20d167e9ed928d08436639e76b7f34713010fbb9fb00a9978eca3",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44800056910818875,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.40228305153619104,
+    "payload_spread_n": 0.9907108836557593
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0003587635704159764,
+    "force_range_n": [
+     13.276834588373656,
+     15.794933912732793
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959501434609433,
+    "load_after_n": -0.09983575847050119,
+    "load_spread_n": 0.45870464997440424
+   },
+   "placed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "outside_region",
+   "seed": 2,
+   "sha256": "0e8e395bb9db724a222d28b17edb869655d5a8eccdedd095f11cfa842b427b36",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44900498981678877,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.6195225607106032,
+    "payload_spread_n": 1.2437480456069365
+   }
+  },
+  {
+   "case": "outside_region",
+   "seed": 3,
+   "sha256": "72bd6db0eee60547d4fa14cd530dd86e55d814a30d7cce0e19ccbfe9ae57f5a1",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44804614842918944,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.4519086559144423,
+    "payload_spread_n": 0.9859216438749591
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0003731221742459545,
+    "force_range_n": [
+     13.149267230611596,
+     15.969936793698412
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959316380500801,
+    "load_after_n": -0.1545292340707487,
+    "load_spread_n": 0.29011811108549235
+   },
+   "placed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "outside_region",
+   "seed": 4,
+   "sha256": "af1fbed82a3024070dd2355e5cb95ec9e2861e4d993c3935074edd02a3b18bcf",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44796363743204387,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.3870568746312557,
+    "payload_spread_n": 0.9878483618309213
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0003718115194714655,
+    "force_range_n": [
+     13.152360449308167,
+     15.968472761821213
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959257411551331,
+    "load_after_n": -0.08614301717784478,
+    "load_spread_n": 0.5113130364836139
+   },
+   "placed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "outside_region",
+   "seed": 5,
+   "sha256": "3e390e243e5a69c10e3b83e2e80861a51dda144296b429df79da2d03c7c3cb4b",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4480383083817399,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.45505215281137623,
+    "payload_spread_n": 0.9879033615524592
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0003720658646895747,
+    "force_range_n": [
+     13.155866265136485,
+     15.969229580361876
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959698556262755,
+    "load_after_n": -0.15387196643014178,
+    "load_spread_n": 0.2901736533739482
+   },
+   "placed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "outside_region",
+   "seed": 6,
+   "sha256": "2a450a7209e1a08f2a23967b21bbe863e29ef4f1e41d6f1d850b1012b47dac97",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44820092238724285,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.4269223265865847,
+    "payload_spread_n": 0.9865381188641081
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0003757492626004222,
+    "force_range_n": [
+     13.152166353302732,
+     15.971358264159173
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.995928528740877,
+    "load_after_n": -0.12854130690856458,
+    "load_spread_n": 0.36254974901710463
+   },
+   "placed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "outside_region",
+   "seed": 7,
+   "sha256": "bcc2db878e5e70fa312003ce80d51449904a39c06a06cd288edd3103c01607b5",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4480302761462467,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.38478762574568925,
+    "payload_spread_n": 0.9912624496550941
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00035895724869955403,
+    "force_range_n": [
+     13.276829230068925,
+     15.783648728689023
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959283985700043,
+    "load_after_n": -0.08127220733521057,
+    "load_spread_n": 0.4813344275819502
+   },
+   "placed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "outside_region",
+   "seed": 8,
+   "sha256": "b338fa94c81cd0b296b2d01054ecec5492d00fe8a02a91e92d7065574ed9d4e9",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44910034651574005,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.669151327631905,
+    "payload_spread_n": 1.246001912453446
+   }
+  },
+  {
+   "case": "outside_region",
+   "seed": 9,
+   "sha256": "673e5ee1cfcc86f6db0998a71bb9a87a492a2721335b69ca5b040ee79f593155",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4656666196504326,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.36729006775630957,
+    "payload_spread_n": 1.0364369113795786
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0011873267551048006,
+    "force_range_n": [
+     9.13856029480833,
+     37.36256015151267
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958946040411527,
+    "load_after_n": -0.07708175384841098,
+    "load_spread_n": 0.3332849937021092
+   },
+   "placed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_drop",
+   "seed": 0,
+   "sha256": "8c380d0a145e12c03ce9121da753a6dc5edb94f17e1b82c24b781197d46ddd30",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4479355904163052,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.38990273994252433,
+    "payload_spread_n": 0.9902412116383515
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 1.9280730461757045e-05,
+    "force_range_n": [
+     13.207960516699309,
+     16.475661772483196
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.448890403750945,
+    "load_after_n": 0.4461311738930078,
+    "load_spread_n": 0.43384625266788246
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_drop",
+   "seed": 1,
+   "sha256": "c460f11753a51179d7adba0b7fb91d97b0f1692e4daeb638e68aed2941294ce8",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44800056910818875,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.40228305153619104,
+    "payload_spread_n": 0.9907108836557593
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 1.805584294384266e-05,
+    "force_range_n": [
+     13.205683967835833,
+     16.4657892644916
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.44893863110156784,
+    "load_after_n": 0.4350010169146401,
+    "load_spread_n": 0.45870464997440424
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_drop",
+   "seed": 2,
+   "sha256": "02033754231e61d22680b9392ef41337c99246bc28d93bb814239fc4b125f79f",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44900498981678877,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.6195225607106032,
+    "payload_spread_n": 1.2437480456069365
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0008221876717842136,
+    "force_range_n": [
+     11.064389868423273,
+     15.350861030813402
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.449286576149197,
+    "load_after_n": 0.5389244458642484,
+    "load_spread_n": 0.3673897052703989
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_drop",
+   "seed": 3,
+   "sha256": "d9dab75b4455fc7e7aee167d475f7a26a2b7ec8cc3a6a9665bd1d0a1e75e8e7d",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44804614842918944,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.4519086559144423,
+    "payload_spread_n": 0.9859216438749591
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.000357143286586481,
+    "force_range_n": [
+     12.278031036832449,
+     14.682211938723212
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.448668381066306,
+    "load_after_n": 0.379964516460646,
+    "load_spread_n": 0.28124358672197747
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_drop",
+   "seed": 4,
+   "sha256": "074f767a8eda7804792c40afd8ab3036b481308fa9b0e5f8f858e30ae48d1fdb",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44796363743204387,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.3870568746312557,
+    "payload_spread_n": 0.9878483618309213
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0003543348622723763,
+    "force_range_n": [
+     12.27905305390313,
+     14.684603142111184
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.4485920376021972,
+    "load_after_n": 0.4484310656701904,
+    "load_spread_n": 0.5113130364836139
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_drop",
+   "seed": 5,
+   "sha256": "930b73cb5a1e73922834a7c0322528cdb19a8c33b8053a63c84e9c9041242b2b",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4480383083817399,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.45505215281137623,
+    "payload_spread_n": 0.9879033615524592
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00035554860330583304,
+    "force_range_n": [
+     12.28053935232864,
+     14.681362664581762
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.4486558219283663,
+    "load_after_n": 0.3806349470856141,
+    "load_spread_n": 0.28367557126566273
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_drop",
+   "seed": 6,
+   "sha256": "3c760e05de3c2e6aef371f2b71f05b08d49855ca8c7becf5389a89a61e0542f3",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44820092238724285,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.4269223265865847,
+    "payload_spread_n": 0.9865381188641081
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00035997422777472865,
+    "force_range_n": [
+     12.279736793189935,
+     14.682977519697618
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.4486960062314489,
+    "load_after_n": 0.40606779901292533,
+    "load_spread_n": 0.36254974901710463
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_drop",
+   "seed": 7,
+   "sha256": "ba9a4276c3e71683c181cfb240a6f7609676ca4c566e3a5b5165736b14e2a5d9",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4480302761462467,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.38478762574568925,
+    "payload_spread_n": 0.9912624496550941
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 2.4122188687747403e-05,
+    "force_range_n": [
+     13.206467729583332,
+     16.470329663789524
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.4489619069349086,
+    "load_after_n": 0.45348862618667596,
+    "load_spread_n": 0.4813344275819502
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_drop",
+   "seed": 8,
+   "sha256": "e2e05121a9fafd0af9c45170c072c37a23cc26fa9675fcc0b1d382d8bbf8c16e",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44910034651574005,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.669151327631905,
+    "payload_spread_n": 1.246001912453446
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0008286899152136207,
+    "force_range_n": [
+     11.066663909079194,
+     15.355446668913116
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.449315056913084,
+    "load_after_n": 0.496078186728921,
+    "load_spread_n": 0.17514956238512921
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_drop",
+   "seed": 9,
+   "sha256": "ba2b5c38c8145866a7ec2a6c214dac2eedcb4e25a7a36f736aec37de26b20771",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4656666196504326,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.36729006775630957,
+    "payload_spread_n": 1.0364369113795786
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0014821108682741002,
+    "force_range_n": [
+     12.279672251526309,
+     15.117952937740483
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.4636426660453114,
+    "load_after_n": 0.45734166452663594,
+    "load_spread_n": 0.3332849937021092
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_place",
+   "seed": 0,
+   "sha256": "7e0f44c58fe9e25e46d81d6984048a7e793c6fda56f34108a10458adb0afb5d0",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4479355904163052,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.38990273994252433,
+    "payload_spread_n": 0.9902412116383515
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00039393104678925317,
+    "force_range_n": [
+     13.276949428348475,
+     16.091250254032158
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.44910932522475205,
+    "load_after_n": -0.18578818378433049,
+    "load_spread_n": 0.43384625266788246
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_place",
+   "seed": 1,
+   "sha256": "0f1b76b45f679c58e5cc1c024c5a1841a86769ecbf711cabc4037c4654a402e8",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44800056910818875,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.40228305153619104,
+    "payload_spread_n": 0.9907108836557593
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0003937529869286749,
+    "force_range_n": [
+     13.276834588373656,
+     16.086075366130874
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.45404058904031064,
+    "load_after_n": -0.07314553886395281,
+    "load_spread_n": 0.45870464997440424
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_place",
+   "seed": 2,
+   "sha256": "5e9740c40fc0e03416b7fa12aac13b32d56e82ab8f290f1fefd8f32d8c424652",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44900498981678877,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.6195225607106032,
+    "payload_spread_n": 1.2437480456069365
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0008692752323453123,
+    "force_range_n": [
+     9.707771320711261,
+     14.431284758836775
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   }
+  },
+  {
+   "case": "partial_open_place",
+   "seed": 3,
+   "sha256": "fbe03d48552d93a1078b590a0fe69dda3e5ad86d676f6597500e4ff709b96b29",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44804614842918944,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.4519086559144423,
+    "payload_spread_n": 0.9859216438749591
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00039395107369094573,
+    "force_range_n": [
+     13.277008173760688,
+     16.17317828156658
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.4489908397201775,
+    "load_after_n": -0.1505888744974957,
+    "load_spread_n": 0.28124358672197747
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_place",
+   "seed": 4,
+   "sha256": "1c2c347023e9014c63d94e8acf872950d97d32f8f44c1b7106fa51956f2f035e",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44796363743204387,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.3870568746312557,
+    "payload_spread_n": 0.9878483618309213
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00039551369839579964,
+    "force_range_n": [
+     13.276794069279942,
+     16.176824982842422
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.4539977971981479,
+    "load_after_n": -0.04958926026797883,
+    "load_spread_n": 0.5113130364836139
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_place",
+   "seed": 5,
+   "sha256": "629504bc5f90486264a1c1d973e853b7a102d880dba31f9d18bd36e41a77f616",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4480383083817399,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.45505215281137623,
+    "payload_spread_n": 0.9879033615524592
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00039597388250067755,
+    "force_range_n": [
+     13.276737726186553,
+     16.173399119625433
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.4489790433306866,
+    "load_after_n": -0.14531814578760383,
+    "load_spread_n": 0.28367557126566273
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_place",
+   "seed": 6,
+   "sha256": "0f0bfdfa568da76c655101e4c430928ee7decc124f27af45ef157aa8fcf89dd5",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44820092238724285,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.4269223265865847,
+    "payload_spread_n": 0.9865381188641081
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0003974822012939305,
+    "force_range_n": [
+     13.276903096224748,
+     16.172771512446808
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.44899241646197524,
+    "load_after_n": -0.017839959499205804,
+    "load_spread_n": 0.36254974901710463
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_place",
+   "seed": 7,
+   "sha256": "428cf00e483ec110e2609eac10aaeea3ee71525590a02cbefa3a3c15918482d9",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4480302761462467,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.38478762574568925,
+    "payload_spread_n": 0.9912624496550941
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00039375562989546475,
+    "force_range_n": [
+     13.276829230068925,
+     16.085949632178423
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.44896511535013667,
+    "load_after_n": -0.02340441335419996,
+    "load_spread_n": 0.4813344275819502
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_place",
+   "seed": 8,
+   "sha256": "307f2a74aa99c518f1cf4818ba0bcc51c6e39fac858a1caa555efcea30e59ff5",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44910034651574005,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.669151327631905,
+    "payload_spread_n": 1.246001912453446
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.003852858066991205,
+    "force_range_n": [
+     6.606076166454079,
+     16.669932539937182
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.4470022949324951,
+    "load_after_n": 0.24084416991381907,
+    "load_spread_n": 0.17514956238512921
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "partial_open_place",
+   "seed": 9,
+   "sha256": "4f68f5d7714173026e932866a1a48edd0e12d347db2d0ec3e4ac8b324075346f",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4656666196504326,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.36729006775630957,
+    "payload_spread_n": 1.0364369113795786
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0003305587384829223,
+    "force_range_n": [
+     12.982535460459573,
+     13.996289674247484
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "stopped_short",
+    "release_opening": 0.46476211972975867,
+    "load_after_n": 0.19185103617468258,
+    "load_spread_n": 0.3332849937021092
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place",
+   "seed": 0,
+   "sha256": "7867ecc3d860dce641f0aa4d8679be5256346b5110267abcbcc57a763359b9a3",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4479355904163052,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.38990273994252433,
+    "payload_spread_n": 0.9902412116383515
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00039393104678925317,
+    "force_range_n": [
+     13.276949428348475,
+     16.091250254032158
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958418988069756,
+    "load_after_n": -0.08676305069048595,
+    "load_spread_n": 0.43384625266788246
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place",
+   "seed": 1,
+   "sha256": "2477e2e28907da0edc4733f70181480c7959c99c4c55ad7b62938d8df2053abd",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44800056910818875,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.40228305153619104,
+    "payload_spread_n": 0.9907108836557593
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0003937529869286749,
+    "force_range_n": [
+     13.276834588373656,
+     16.086075366130874
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958979499274071,
+    "load_after_n": -0.09782584056558896,
+    "load_spread_n": 0.45870464997440424
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place",
+   "seed": 2,
+   "sha256": "5e9740c40fc0e03416b7fa12aac13b32d56e82ab8f290f1fefd8f32d8c424652",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44900498981678877,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.6195225607106032,
+    "payload_spread_n": 1.2437480456069365
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0008692752323453123,
+    "force_range_n": [
+     9.707771320711261,
+     14.431284758836775
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   }
+  },
+  {
+   "case": "place",
+   "seed": 3,
+   "sha256": "8bc7878ca3b2e0a24d6afa029f77ce81b1c8f2315803bab2452fb99b3dc9c0c8",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44804614842918944,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.4519086559144423,
+    "payload_spread_n": 0.9859216438749591
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00039395107369094573,
+    "force_range_n": [
+     13.277008173760688,
+     16.17317828156658
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959093120242544,
+    "load_after_n": -0.1511726045009283,
+    "load_spread_n": 0.28420535656770074
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place",
+   "seed": 4,
+   "sha256": "75088c77f8c573ae6c3e42048fba52daf85bcc5e7a8fa9e0b9b0bd9a86543c88",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44796363743204387,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.3870568746312557,
+    "payload_spread_n": 0.9878483618309213
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00039551369839579964,
+    "force_range_n": [
+     13.276794069279942,
+     16.176824982842422
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959045915923788,
+    "load_after_n": -0.08263253099559797,
+    "load_spread_n": 0.5113130364836139
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place",
+   "seed": 5,
+   "sha256": "d7ca2302db7024270d197e44be323fe1740724839f389185e4122fff3f756caf",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4480383083817399,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.45505215281137623,
+    "payload_spread_n": 0.9879033615524592
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00039597388250067755,
+    "force_range_n": [
+     13.276737726186553,
+     16.173399119625433
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.995901561933788,
+    "load_after_n": -0.15053769943357942,
+    "load_spread_n": 0.28435583027281847
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place",
+   "seed": 6,
+   "sha256": "ccd7e1916097632fa9eb4ae18c3c5f40e347cd07f3cb24e3497edef2531e4566",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44820092238724285,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.4269223265865847,
+    "payload_spread_n": 0.9865381188641081
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0003974822012939305,
+    "force_range_n": [
+     13.276903096224748,
+     16.172771512446808
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958933341197579,
+    "load_after_n": -0.12506808047876916,
+    "load_spread_n": 0.36254974901710463
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place",
+   "seed": 7,
+   "sha256": "1b1af2877089fb29525fbe69a737151e627383fd21ca4aace0d5a4cafc265635",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4480302761462467,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.38478762574568925,
+    "payload_spread_n": 0.9912624496550941
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00039375562989546475,
+    "force_range_n": [
+     13.276829230068925,
+     16.085949632178423
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.995916372387653,
+    "load_after_n": -0.07918481351071804,
+    "load_spread_n": 0.4813344275819502
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place",
+   "seed": 8,
+   "sha256": "96fea47cc27c8870f8fd697e89e3b0234151959df05ff6dbbea82dc7d6b88acf",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44910034651574005,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.669151327631905,
+    "payload_spread_n": 1.246001912453446
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.003852858066991205,
+    "force_range_n": [
+     6.606076166454079,
+     16.669932539937182
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9960655963026681,
+    "load_after_n": -0.028129245896300503,
+    "load_spread_n": 0.2538716648323631
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place",
+   "seed": 9,
+   "sha256": "333e04bbc22778af5598238f0298d728cddd4644cea0973548583705fb27a7f3",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4656666196504326,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.36729006775630957,
+    "payload_spread_n": 1.0364369113795786
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0003305587384829223,
+    "force_range_n": [
+     12.982535460459573,
+     13.996289674247484
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958504920138405,
+    "load_after_n": -0.07118524192363473,
+    "load_spread_n": 0.3332849937021092
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place_heavy",
+   "seed": 0,
+   "sha256": "06d512d8b0a355864e7c1e421066a0b365ba73eba0994367be0e1ca0763ac893",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45202211950608834,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.9606460411012367,
+    "payload_spread_n": 1.2506951319179314
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00018003592765530874,
+    "force_range_n": [
+     15.06328539115365,
+     19.660765298372336
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958678596846191,
+    "load_after_n": -0.11829231500402848,
+    "load_spread_n": 0.30465281010585527
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place_heavy",
+   "seed": 1,
+   "sha256": "3c8226f424751d251b4485c939599aafd3c631a6f4e5b1ecb53a993a357be5d4",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4520992675459548,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.6624671249166223,
+    "payload_spread_n": 2.1804649362415036
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00018010961043002371,
+    "force_range_n": [
+     15.063033760790086,
+     19.65521805431328
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958290459774521,
+    "load_after_n": -0.4148816372606152,
+    "load_spread_n": 2.1804649362415036
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place_heavy",
+   "seed": 2,
+   "sha256": "b6be299095eb0133e7404a5b4cbd8b63cdd02a34aa442f2cb25632254fec658e",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4529918329205543,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.6844665962973053,
+    "payload_spread_n": 1.5573663562507627
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.007163415632997272,
+    "force_range_n": [
+     7.818176586826016,
+     36.121571843152246
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959404808734839,
+    "load_after_n": 0.03892487937207534,
+    "load_spread_n": 0.4263405609302599
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place_heavy",
+   "seed": 3,
+   "sha256": "cc440539b5e9cad476440c038937375277bc42c677abb4847d2b74cbc33f4378",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4520657145742662,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.8481178746341396,
+    "payload_spread_n": 1.2450689694795254
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0001796863817419836,
+    "force_range_n": [
+     15.062424526833468,
+     19.779880329897157
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9960774464201481,
+    "load_after_n": -0.23431415553755564,
+    "load_spread_n": 0.6632393467198253
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place_heavy",
+   "seed": 4,
+   "sha256": "5fac68f428df78e7bf93af276cff72c2b39f40f74d6763845ee7a5cdbce97116",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45197765524656375,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.888193634774897,
+    "payload_spread_n": 1.24709444795963
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0001805769122728007,
+    "force_range_n": [
+     15.065355098448988,
+     19.785774996361557
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958372236878301,
+    "load_after_n": -0.18970011640920426,
+    "load_spread_n": 0.3366041072057056
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place_heavy",
+   "seed": 5,
+   "sha256": "e5d52dd01e446a300a6d8d84b1db4452723fe249e59e3e1f37129350e4485636",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45202409670027616,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.8516339274621156,
+    "payload_spread_n": 1.2471379442633772
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0001810082130201951,
+    "force_range_n": [
+     15.063691867152862,
+     19.781046063247118
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9960644564201734,
+    "load_after_n": -0.22612056211434783,
+    "load_spread_n": 0.5956461174767477
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place_heavy",
+   "seed": 6,
+   "sha256": "db761bbeae169332e9162acefbda08a0fa978828f7a27afb8489cf17e4874795",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4521209877229071,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.8564956933928567,
+    "payload_spread_n": 1.2456854744287875
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.000179259431026646,
+    "force_range_n": [
+     15.063208964486986,
+     19.780813999318525
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9960537387161164,
+    "load_after_n": -0.2246445444685996,
+    "load_spread_n": 0.5834406367787295
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place_heavy",
+   "seed": 7,
+   "sha256": "97316696981ec4155a3c6017e8ba5f1000fe460a652efb7919268f1884192afe",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45208239557277746,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.923236510253272,
+    "payload_spread_n": 1.2517496471576697
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0001752549734362896,
+    "force_range_n": [
+     15.063713981595832,
+     19.65318836041935
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958395819595935,
+    "load_after_n": -0.15244200651622286,
+    "load_spread_n": 0.28755534326886867
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place_heavy",
+   "seed": 8,
+   "sha256": "7303ca8e769eb4881c8c15f8e9531b2723a197f4c9df4ff6615b932e58c4efda",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4530103558612714,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.6819881017958256,
+    "payload_spread_n": 1.5600182343125495
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.006941860923855958,
+    "force_range_n": [
+     7.69301915972024,
+     37.99515338463133
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959358712924546,
+    "load_after_n": 0.04506114544411233,
+    "load_spread_n": 0.47078741892744086
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "place_heavy",
+   "seed": 9,
+   "sha256": "d4b8384508c88d135cc205d87c4b9d9348775b9f5055e1c6693a9e71318f376a",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4713870141130272,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.9347370564746615,
+    "payload_spread_n": 1.2006718947547446
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00022433792294079824,
+    "force_range_n": [
+     15.1890244694652,
+     17.82893049960006
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958311908138652,
+    "load_after_n": -0.24837549176069018,
+    "load_spread_n": 0.7590158378499029
+   },
+   "placed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "pulled",
+   "seed": 0,
+   "sha256": "74446dab98eddda0edc1e7813751c7d8bd23726b653abbba6f5f69cd8e63c991",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4479355904163052,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.38990273994252433,
+    "payload_spread_n": 0.9902412116383515
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 504000000,
+    "opening_fall": 0.22287528760702915,
+    "force_range_n": [
+     13.276949428348475,
+     125.3083578198174
+    ],
+    "opening_half_latency_ns": 136000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 136000000
+   }
+  },
+  {
+   "case": "pulled",
+   "seed": 1,
+   "sha256": "28114496ef72f5f264e3901a2e505e7ee90598946f76a41e8e2aa526544bbb38",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44800056910818875,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.40228305153619104,
+    "payload_spread_n": 0.9907108836557593
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 504000000,
+    "opening_fall": 0.2231982382081989,
+    "force_range_n": [
+     13.276834588373656,
+     124.99958337931832
+    ],
+    "opening_half_latency_ns": 136000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 136000000
+   }
+  },
+  {
+   "case": "pulled",
+   "seed": 2,
+   "sha256": "82221d0b640ac43bf3ce83c0827388220abe2d13fd7fc5c896f28e6fe996ff27",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44900498981678877,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.6195225607106032,
+    "payload_spread_n": 1.2437480456069365
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 504000000,
+    "opening_fall": 0.22368266925097013,
+    "force_range_n": [
+     11.806166847443533,
+     56.783038762726015
+    ],
+    "opening_half_latency_ns": 136000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 136000000
+   }
+  },
+  {
+   "case": "pulled",
+   "seed": 3,
+   "sha256": "9456954d1aef10f312fd2a50c5df4c557f723bf4fb19f006220ec5ba1f78240d",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44804614842918944,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.4519086559144423,
+    "payload_spread_n": 0.9859216438749591
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 504000000,
+    "opening_fall": 0.22154817944261035,
+    "force_range_n": [
+     11.130671904517529,
+     151.5616093440616
+    ],
+    "opening_half_latency_ns": 124000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 124000000
+   }
+  },
+  {
+   "case": "pulled",
+   "seed": 4,
+   "sha256": "55b94e02ec01d24b2c2c48df03890ed7dd537ea37c8d095fa23d3cdc4dd793e9",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44796363743204387,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.3870568746312557,
+    "payload_spread_n": 0.9878483618309213
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 504000000,
+    "opening_fall": 0.22047689006459253,
+    "force_range_n": [
+     11.137527788185322,
+     151.9034315489806
+    ],
+    "opening_half_latency_ns": 124000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 124000000
+   }
+  },
+  {
+   "case": "pulled",
+   "seed": 5,
+   "sha256": "873b6c49855bd1c17abd6bdffce36115bc86da8be72edc95bf1e250e6245fa22",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4480383083817399,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.45505215281137623,
+    "payload_spread_n": 0.9879033615524592
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 504000000,
+    "opening_fall": 0.22166605342923631,
+    "force_range_n": [
+     11.137928416418106,
+     151.5831184422226
+    ],
+    "opening_half_latency_ns": 124000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 124000000
+   }
+  },
+  {
+   "case": "pulled",
+   "seed": 6,
+   "sha256": "070e3740aeee8c2ceb806c8b3823b68d57aa6d280826a0fb827c47909f41708a",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44820092238724285,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.4269223265865847,
+    "payload_spread_n": 0.9865381188641081
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 504000000,
+    "opening_fall": 0.22171751826081232,
+    "force_range_n": [
+     11.103849116209535,
+     151.2732061813368
+    ],
+    "opening_half_latency_ns": 138000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 138000000
+   }
+  },
+  {
+   "case": "pulled",
+   "seed": 7,
+   "sha256": "96e694375bf7d8014c55c9c3827ebed82f4518be60d1389b1c8ec66a73a90cd1",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4480302761462467,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.38478762574568925,
+    "payload_spread_n": 0.9912624496550941
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 504000000,
+    "opening_fall": 0.22329128992774294,
+    "force_range_n": [
+     13.276829230068925,
+     124.87482684341225
+    ],
+    "opening_half_latency_ns": 136000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 136000000
+   }
+  },
+  {
+   "case": "pulled",
+   "seed": 8,
+   "sha256": "ff82af736aa09485193d728287cb67b428b1fcfc4dbd4251403759edcc614c63",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44910034651574005,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.669151327631905,
+    "payload_spread_n": 1.246001912453446
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 504000000,
+    "opening_fall": 0.220958859654773,
+    "force_range_n": [
+     11.466350536011234,
+     56.84181437444311
+    ],
+    "opening_half_latency_ns": 110000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 110000000
+   }
+  },
+  {
+   "case": "pulled",
+   "seed": 9,
+   "sha256": "d813480fbb06bd459704dc8f09c08c59e54efdba8aaf6a02d16b1009d4378dda",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4656666196504326,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.36729006775630957,
+    "payload_spread_n": 1.0364369113795786
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 504000000,
+    "opening_fall": 0.23127115809847804,
+    "force_range_n": [
+     11.088087104337244,
+     208.76087439754463
+    ],
+    "opening_half_latency_ns": 148000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 148000000
+   }
+  },
+  {
+   "case": "pulled_heavy",
+   "seed": 0,
+   "sha256": "8197047add1206990499a5bac13e9dc44dd9a8c4bffc0e74fb0c2dd1ed914cb5",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45202211950608834,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.9606460411012367,
+    "payload_spread_n": 1.2506951319179314
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 510000000,
+    "opening_fall": 0.22529813811399352,
+    "force_range_n": [
+     10.424241345360205,
+     279.888899375914
+    ],
+    "opening_half_latency_ns": 166000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 166000000
+   }
+  },
+  {
+   "case": "pulled_heavy",
+   "seed": 1,
+   "sha256": "a228d6c8d037d24547d33acf6cb5f4f4e73f77349d1c31e70592ed2effe59689",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4520992675459548,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.6624671249166223,
+    "payload_spread_n": 2.1804649362415036
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 510000000,
+    "opening_fall": 0.2241901051173933,
+    "force_range_n": [
+     10.422069528152115,
+     210.75860316129626
+    ],
+    "opening_half_latency_ns": 142000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 142000000
+   }
+  },
+  {
+   "case": "pulled_heavy",
+   "seed": 2,
+   "sha256": "711dfde8f91050ed7d0136a44e38bc9c21fa2116033cb1591a4eee21c1dd46e5",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4529918329205543,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.6844665962973053,
+    "payload_spread_n": 1.5573663562507627
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 508000000,
+    "opening_fall": 0.22506697302307602,
+    "force_range_n": [
+     11.142953339917092,
+     140.69833216765113
+    ],
+    "opening_half_latency_ns": 152000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 152000000
+   }
+  },
+  {
+   "case": "pulled_heavy",
+   "seed": 3,
+   "sha256": "ec7dbe97cf4d44b1aa10dffc326debe65a17dce75fff6acd035f42f128c4f651",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4520657145742662,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.8481178746341396,
+    "payload_spread_n": 1.2450689694795254
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 510000000,
+    "opening_fall": 0.2256757042503216,
+    "force_range_n": [
+     8.30820987049605,
+     212.24903573950704
+    ],
+    "opening_half_latency_ns": 166000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 166000000
+   }
+  },
+  {
+   "case": "pulled_heavy",
+   "seed": 4,
+   "sha256": "e8759cf9ca5947aea841b6cfe6976e0454dafec1e92dc4a9c1b5a6718ffea1e5",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45197765524656375,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.888193634774897,
+    "payload_spread_n": 1.24709444795963
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 512000000,
+    "opening_fall": 0.20546196332109967,
+    "force_range_n": [
+     2.2376571468293633,
+     306.44233165410634
+    ],
+    "opening_half_latency_ns": 404000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 404000000
+   }
+  },
+  {
+   "case": "pulled_heavy",
+   "seed": 5,
+   "sha256": "8225282c85d9f5a997cb8b73e63f2904f0eeef9c1cd01826393fcb977a2d123d",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45202409670027616,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.8516339274621156,
+    "payload_spread_n": 1.2471379442633772
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 510000000,
+    "opening_fall": 0.22210827315980908,
+    "force_range_n": [
+     8.322569993777837,
+     212.20479864088944
+    ],
+    "opening_half_latency_ns": 168000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 168000000
+   }
+  },
+  {
+   "case": "pulled_heavy",
+   "seed": 6,
+   "sha256": "9fc38ab004af07f2e10a133286684edd084e64dc04288b66c9a338a5c192aa82",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4521209877229071,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.8564956933928567,
+    "payload_spread_n": 1.2456854744287875
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 512000000,
+    "opening_fall": 0.2172275250464837,
+    "force_range_n": [
+     3.307546356062929,
+     306.6211074087963
+    ],
+    "opening_half_latency_ns": 394000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 394000000
+   }
+  },
+  {
+   "case": "pulled_heavy",
+   "seed": 7,
+   "sha256": "319e4ff848dddd0a87c33ced117760bc87f34902077d8370a9071ccc2a8a79d0",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.45208239557277746,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.923236510253272,
+    "payload_spread_n": 1.2517496471576697
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 510000000,
+    "opening_fall": 0.2251200634120761,
+    "force_range_n": [
+     10.425421822204402,
+     210.71980361421458
+    ],
+    "opening_half_latency_ns": 154000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 154000000
+   }
+  },
+  {
+   "case": "pulled_heavy",
+   "seed": 8,
+   "sha256": "e18e2a4374c3a1181e24bb8bac8e485a293be6e7bf960d218efb96574d3d34bc",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4530103558612714,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.6819881017958256,
+    "payload_spread_n": 1.5600182343125495
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 508000000,
+    "opening_fall": 0.2260735469102925,
+    "force_range_n": [
+     10.98371986621374,
+     124.82787486774905
+    ],
+    "opening_half_latency_ns": 156000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 156000000
+   }
+  },
+  {
+   "case": "pulled_heavy",
+   "seed": 9,
+   "sha256": "099d740e2e8b015521a1afff06d0afa4af47d6cde216e9977ad5dc67580afcc3",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4713870141130272,
+    "reclose_termination": "stopped_short",
+    "payload_n": 2.9347370564746615,
+    "payload_spread_n": 1.2006718947547446
+   },
+   "retained": {
+    "truth": false,
+    "lost_ns": 508000000,
+    "opening_fall": 0.21569916697024577,
+    "force_range_n": [
+     6.587699304874582,
+     282.6369892378982
+    ],
+    "opening_half_latency_ns": 302000000,
+    "estimate": "refuted",
+    "estimate_latency_ns": 302000000
+   }
+  },
+  {
+   "case": "stuck",
+   "seed": 0,
+   "sha256": "67abe9bbbd2c53b3a7245525b36f413b67f25f55403915f4051fa6c91ac28fe1",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4479355904163052,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.38990273994252433,
+    "payload_spread_n": 0.9902412116383515
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 1.9280730461757045e-05,
+    "force_range_n": [
+     13.207960516699309,
+     16.475661772483196
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "reached_target",
+    "release_opening": 0.9960723619607867,
+    "load_after_n": 0.4422467103728245,
+    "load_spread_n": 0.43384625266788246
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "stuck",
+   "seed": 1,
+   "sha256": "c1b578189669eb5e3f3e5a6c05c542edfeb1d4b6bdea352d1e4b8445ada66301",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44800056910818875,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.40228305153619104,
+    "payload_spread_n": 0.9907108836557593
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 1.805584294384266e-05,
+    "force_range_n": [
+     13.205683967835833,
+     16.4657892644916
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "reached_target",
+    "release_opening": 0.9960687758992044,
+    "load_after_n": 0.43112347536921014,
+    "load_spread_n": 0.45870464997440424
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "stuck",
+   "seed": 2,
+   "sha256": "4b5bb84812f7a3354451e1e382fc444bdbdef5ab5ceeebb90af267ac78d418ac",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44900498981678877,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.6195225607106032,
+    "payload_spread_n": 1.2437480456069365
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0008221876717842136,
+    "force_range_n": [
+     11.064389868423273,
+     15.350861030813402
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959459645177235,
+    "load_after_n": 0.5358008787717381,
+    "load_spread_n": 0.3673897052703989
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "stuck",
+   "seed": 3,
+   "sha256": "a34f9638c89279015d70c68be735ed7a8cab684fa6ebc5061e2487ed4a930736",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44804614842918944,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.4519086559144423,
+    "payload_spread_n": 0.9859216438749591
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.000357143286586481,
+    "force_range_n": [
+     12.278031036832449,
+     14.682211938723212
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959055604210583,
+    "load_after_n": 0.37583362497267636,
+    "load_spread_n": 0.28124358672197747
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "stuck",
+   "seed": 4,
+   "sha256": "2a332898a4bc7af49968c503e96c41061951c8b89e35705bbf6712e5d10daa2b",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44796363743204387,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.3870568746312557,
+    "payload_spread_n": 0.9878483618309213
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0003543348622723763,
+    "force_range_n": [
+     12.27905305390313,
+     14.684603142111184
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "reached_target",
+    "release_opening": 0.9960752773505525,
+    "load_after_n": 0.44399475534905974,
+    "load_spread_n": 0.5113130364836139
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "stuck",
+   "seed": 5,
+   "sha256": "e89344da281ebcaa5c9c2434b1007976b27e6be616bcdb4b8aee1da93e79e946",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4480383083817399,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.45505215281137623,
+    "payload_spread_n": 0.9879033615524592
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00035554860330583304,
+    "force_range_n": [
+     12.28053935232864,
+     14.681362664581762
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959975979091817,
+    "load_after_n": 0.3765121599633048,
+    "load_spread_n": 0.28367557126566273
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "stuck",
+   "seed": 6,
+   "sha256": "b953de0026c0f909d4e3c2d2b0e1aeac5520141c923f0a069d39c0b9babb7e9c",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44820092238724285,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.4269223265865847,
+    "payload_spread_n": 0.9865381188641081
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.00035997422777472865,
+    "force_range_n": [
+     12.279736793189935,
+     14.682977519697618
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959247344294232,
+    "load_after_n": 0.40187569523037325,
+    "load_spread_n": 0.36254974901710463
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "stuck",
+   "seed": 7,
+   "sha256": "d3a2406de989694257703ff2171227a09ad2fd7b05305374a68bb02a8e92fb46",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4480302761462467,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.38478762574568925,
+    "payload_spread_n": 0.9912624496550941
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 2.4122188687747403e-05,
+    "force_range_n": [
+     13.206467729583332,
+     16.470329663789524
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958468288511175,
+    "load_after_n": 0.4494911266122994,
+    "load_spread_n": 0.4813344275819502
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "stuck",
+   "seed": 8,
+   "sha256": "6e0372873bcea1926f59b701f4e5719ce2e84b37ec0854d407c312c4f6609e73",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44910034651574005,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.669151327631905,
+    "payload_spread_n": 1.246001912453446
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0008286899152136207,
+    "force_range_n": [
+     11.066663909079194,
+     15.355446668913116
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "reached_target",
+    "release_opening": 0.996022092010396,
+    "load_after_n": 0.4929802579710074,
+    "load_spread_n": 0.17514956238512921
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "stuck",
+   "seed": 9,
+   "sha256": "dd74b5dd1b74ff70b1acfae192e4d4aee858d4ca9e1417a0cc819158d70bd9d4",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4656666196504326,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.36729006775630957,
+    "payload_spread_n": 1.0364369113795786
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0014821108682741002,
+    "force_range_n": [
+     12.279672251526309,
+     15.117952937740483
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": false,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958805356795892,
+    "load_after_n": 0.45272314396954094,
+    "load_spread_n": 0.3332849937021092
+   },
+   "landed": {
+    "truth": false,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "thrown",
+   "seed": 0,
+   "sha256": "4a759ef759fceee1d24cb12818b1ca480cf4a2e68bbd20f47c61cfdea2be5922",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4479355904163052,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.38990273994252433,
+    "payload_spread_n": 0.9902412116383515
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 7.162628383017289e-06,
+    "force_range_n": [
+     13.276949428348475,
+     20.319950390923236
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959674468413725,
+    "load_after_n": -0.10138047422406693,
+    "load_spread_n": 0.43384625266788246
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "thrown",
+   "seed": 1,
+   "sha256": "8bf517ff41eec34b00a2a77386bc0836e7364a525e4f598951e93c17b2fe1bc1",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44800056910818875,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.40228305153619104,
+    "payload_spread_n": 0.9907108836557593
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 6.773728995990158e-06,
+    "force_range_n": [
+     13.276834588373656,
+     20.28531398038604
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959714131585867,
+    "load_after_n": -0.11251180252948423,
+    "load_spread_n": 0.45870464997440424
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "thrown",
+   "seed": 2,
+   "sha256": "6571d6ccfa863ae0c002a94d14e53ea4dccad88395c55a73e51255872c9ecfc6",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44900498981678877,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.6195225607106032,
+    "payload_spread_n": 1.2437480456069365
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0011252263442522725,
+    "force_range_n": [
+     11.04547390862089,
+     17.043594949328558
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.995943614983971,
+    "load_after_n": -0.002061724133413989,
+    "load_spread_n": 0.3673897052703989
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "thrown",
+   "seed": 3,
+   "sha256": "08347294034c2a9f14412775154be406064036f2c1918975698dc30cc27694e4",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44804614842918944,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.4519086559144423,
+    "payload_spread_n": 0.9859216438749591
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 2.9120160963069797e-05,
+    "force_range_n": [
+     12.22169513229621,
+     16.212125855615987
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.995895850940821,
+    "load_after_n": -0.161211285962656,
+    "load_spread_n": 0.35120824389167793
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "thrown",
+   "seed": 4,
+   "sha256": "54aa64152820c9f468e2265cf16f0b3a78af36c00540ea384c390d3511ec51d8",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44796363743204387,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.3870568746312557,
+    "payload_spread_n": 0.9878483618309213
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 2.9425690121986925e-05,
+    "force_range_n": [
+     12.226071064157985,
+     16.216292519597513
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958893687520951,
+    "load_after_n": -0.09273366127566085,
+    "load_spread_n": 0.5113130364836139
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "thrown",
+   "seed": 5,
+   "sha256": "2b5540af4d0db1455a3b30b4a1c1937443b539d94c02a488a1529316193b3dbc",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4480383083817399,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.45505215281137623,
+    "payload_spread_n": 0.9879033615524592
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 2.8946834424281587e-05,
+    "force_range_n": [
+     12.221851905593658,
+     16.208353332317888
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958948312753284,
+    "load_after_n": -0.1605435432191129,
+    "load_spread_n": 0.35120826764086877
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "thrown",
+   "seed": 6,
+   "sha256": "4c04b3bb5e16816c088298c705a40f62409210c91d89c64770e03d4480e4b96b",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44820092238724285,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.4269223265865847,
+    "payload_spread_n": 0.9865381188641081
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 3.369231529176675e-05,
+    "force_range_n": [
+     12.225874044181962,
+     16.21132515407077
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9958982466172878,
+    "load_after_n": -0.13511846893372947,
+    "load_spread_n": 0.36254974901710463
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "thrown",
+   "seed": 7,
+   "sha256": "3a5e7e4fa0bbc48e2ec3ad12ec8ef341a2ec39d148260adb071554ae5729eede",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4480302761462467,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.38478762574568925,
+    "payload_spread_n": 0.9912624496550941
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 6.811705103748622e-06,
+    "force_range_n": [
+     13.276829230068925,
+     20.295219738092058
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959734635945394,
+    "load_after_n": -0.09402349768332563,
+    "load_spread_n": 0.4813344275819502
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "thrown",
+   "seed": 8,
+   "sha256": "bb280e246bfc32945735066c98c29c0e154557ab99785283a65bd2b67b063402",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.44910034651574005,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.669151327631905,
+    "payload_spread_n": 1.246001912453446
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.001133230826603493,
+    "force_range_n": [
+     11.056749931909433,
+     17.045045891783076
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9959458087228233,
+    "load_after_n": -0.04488976624102747,
+    "load_spread_n": 0.3567811592373573
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  },
+  {
+   "case": "thrown",
+   "seed": 9,
+   "sha256": "d143a399243f53a2ac5c5cfcb4583ce081c2086ab62dcd22cb640b3fb04ac983",
+   "acquired": {
+    "truth": true,
+    "close_termination": "stopped_short",
+    "close_opening": 0.4656666196504326,
+    "reclose_termination": "stopped_short",
+    "payload_n": -0.36729006775630957,
+    "payload_spread_n": 1.0364369113795786
+   },
+   "retained": {
+    "truth": true,
+    "lost_ns": null,
+    "opening_fall": 0.0015393271380302886,
+    "force_range_n": [
+     11.856325341790134,
+     16.273525763363054
+    ],
+    "opening_half_latency_ns": null,
+    "estimate": "confirmed",
+    "estimate_latency_ns": null
+   },
+   "released": {
+    "truth": true,
+    "release_termination": "reached_target",
+    "release_opening": 0.9960073681340857,
+    "load_after_n": -0.08513490445931993,
+    "load_spread_n": 0.3567798836769618
+   },
+   "landed": {
+    "truth": true,
+    "portable": "none: the object's pose after release is not a portable signal"
+   }
+  }
+ ],
+ "sensor_noise": {
+  "force_n": 3.5,
+  "torque_nm": 0.2,
+  "source": "geodude_assets models/geodude/geodude.xml (UR5e F/T datasheet precision)"
+ },
+ "transitions": {
+  "acquired": {
+   "cases": [
+    "drop",
+    "drop_heavy",
+    "lost",
+    "missed",
+    "obstructed",
+    "outside_bin",
+    "outside_region",
+    "partial_open_drop",
+    "partial_open_place",
+    "place",
+    "place_heavy",
+    "pulled",
+    "pulled_heavy",
+    "stuck",
+    "thrown"
+   ],
+   "true": 120,
+   "false": 30,
+   "separation": {
+    "close_opening": {
+     "true": [
+      0.4479355904163052,
+      0.4713870141130272
+     ],
+     "false": [
+      0.004534197406340862,
+      0.48284924122087064
+     ],
+     "gap": -0.03491365080456543
+    },
+    "payload_n": {
+     "true": [
+      -0.669151327631905,
+      2.9606460411012367
+     ],
+     "false": [
+      -1.1131976379781765,
+      -0.8886353771870024
+     ],
+     "gap": 0.21948404955509737
+    }
+   },
+   "by_case": {
+    "drop": {
+     "true": 10,
+     "false": 0,
+     "close_opening": [
+      0.4479355904163052,
+      0.4656666196504326
+     ],
+     "payload_n": [
+      -0.669151327631905,
+      -0.36729006775630957
+     ],
+     "close_termination": [
+      "stopped_short"
+     ],
+     "reclose_termination": [
+      "stopped_short"
+     ]
+    },
+    "drop_heavy": {
+     "true": 10,
+     "false": 0,
+     "close_opening": [
+      0.45197765524656375,
+      0.4713870141130272
+     ],
+     "payload_n": [
+      2.6624671249166223,
+      2.9606460411012367
+     ],
+     "close_termination": [
+      "stopped_short"
+     ],
+     "reclose_termination": [
+      "stopped_short"
+     ]
+    },
+    "lost": {
+     "true": 0,
+     "false": 10,
+     "close_opening": [
+      0.4535997768229166,
+      0.48284924122087064
+     ],
+     "payload_n": [
+      -1.1131976379781765,
+      -0.8886353771870024
+     ],
+     "close_termination": [
+      "stopped_short"
+     ],
+     "reclose_termination": [
+      "reached_target"
+     ]
+    },
+    "missed": {
+     "true": 0,
+     "false": 10,
+     "close_opening": [
+      0.004534197406340862,
+      0.00476987518254094
+     ],
+     "close_termination": [
+      "reached_target"
+     ]
+    },
+    "obstructed": {
+     "true": 0,
+     "false": 10,
+     "close_opening": [
+      0.45193801375035053,
+      0.45566308045057624
+     ],
+     "close_termination": [
+      "stopped_short"
+     ]
+    },
+    "outside_bin": {
+     "true": 10,
+     "false": 0,
+     "close_opening": [
+      0.4479355904163052,
+      0.4656666196504326
+     ],
+     "payload_n": [
+      -0.669151327631905,
+      -0.36729006775630957
+     ],
+     "close_termination": [
+      "stopped_short"
+     ],
+     "reclose_termination": [
+      "stopped_short"
+     ]
+    },
+    "outside_region": {
+     "true": 10,
+     "false": 0,
+     "close_opening": [
+      0.4479355904163052,
+      0.4656666196504326
+     ],
+     "payload_n": [
+      -0.669151327631905,
+      -0.36729006775630957
+     ],
+     "close_termination": [
+      "stopped_short"
+     ],
+     "reclose_termination": [
+      "stopped_short"
+     ]
+    },
+    "partial_open_drop": {
+     "true": 10,
+     "false": 0,
+     "close_opening": [
+      0.4479355904163052,
+      0.4656666196504326
+     ],
+     "payload_n": [
+      -0.669151327631905,
+      -0.36729006775630957
+     ],
+     "close_termination": [
+      "stopped_short"
+     ],
+     "reclose_termination": [
+      "stopped_short"
+     ]
+    },
+    "partial_open_place": {
+     "true": 10,
+     "false": 0,
+     "close_opening": [
+      0.4479355904163052,
+      0.4656666196504326
+     ],
+     "payload_n": [
+      -0.669151327631905,
+      -0.36729006775630957
+     ],
+     "close_termination": [
+      "stopped_short"
+     ],
+     "reclose_termination": [
+      "stopped_short"
+     ]
+    },
+    "place": {
+     "true": 10,
+     "false": 0,
+     "close_opening": [
+      0.4479355904163052,
+      0.4656666196504326
+     ],
+     "payload_n": [
+      -0.669151327631905,
+      -0.36729006775630957
+     ],
+     "close_termination": [
+      "stopped_short"
+     ],
+     "reclose_termination": [
+      "stopped_short"
+     ]
+    },
+    "place_heavy": {
+     "true": 10,
+     "false": 0,
+     "close_opening": [
+      0.45197765524656375,
+      0.4713870141130272
+     ],
+     "payload_n": [
+      2.6624671249166223,
+      2.9606460411012367
+     ],
+     "close_termination": [
+      "stopped_short"
+     ],
+     "reclose_termination": [
+      "stopped_short"
+     ]
+    },
+    "pulled": {
+     "true": 10,
+     "false": 0,
+     "close_opening": [
+      0.4479355904163052,
+      0.4656666196504326
+     ],
+     "payload_n": [
+      -0.669151327631905,
+      -0.36729006775630957
+     ],
+     "close_termination": [
+      "stopped_short"
+     ],
+     "reclose_termination": [
+      "stopped_short"
+     ]
+    },
+    "pulled_heavy": {
+     "true": 10,
+     "false": 0,
+     "close_opening": [
+      0.45197765524656375,
+      0.4713870141130272
+     ],
+     "payload_n": [
+      2.6624671249166223,
+      2.9606460411012367
+     ],
+     "close_termination": [
+      "stopped_short"
+     ],
+     "reclose_termination": [
+      "stopped_short"
+     ]
+    },
+    "stuck": {
+     "true": 10,
+     "false": 0,
+     "close_opening": [
+      0.4479355904163052,
+      0.4656666196504326
+     ],
+     "payload_n": [
+      -0.669151327631905,
+      -0.36729006775630957
+     ],
+     "close_termination": [
+      "stopped_short"
+     ],
+     "reclose_termination": [
+      "stopped_short"
+     ]
+    },
+    "thrown": {
+     "true": 10,
+     "false": 0,
+     "close_opening": [
+      0.4479355904163052,
+      0.4656666196504326
+     ],
+     "payload_n": [
+      -0.669151327631905,
+      -0.36729006775630957
+     ],
+     "close_termination": [
+      "stopped_short"
+     ],
+     "reclose_termination": [
+      "stopped_short"
+     ]
+    }
+   },
+   "terminations": {
+    "stopped_short": {
+     "true": 120,
+     "false": 20
+    },
+    "reached_target": {
+     "true": 0,
+     "false": 10
+    }
+   },
+   "estimates": null
+  },
+  "retained": {
+   "cases": [
+    "drop",
+    "drop_heavy",
+    "outside_bin",
+    "outside_region",
+    "partial_open_drop",
+    "partial_open_place",
+    "place",
+    "place_heavy",
+    "pulled",
+    "pulled_heavy",
+    "stuck",
+    "thrown"
+   ],
+   "true": 98,
+   "false": 20,
+   "separation": {
+    "opening_fall": {
+     "true": [
+      6.773728995990158e-06,
+      0.007163415632997272
+     ],
+     "false": [
+      0.20546196332109967,
+      0.23127115809847804
+     ],
+     "gap": 0.1982985476881024
+    }
+   },
+   "by_case": {
+    "drop": {
+     "true": 10,
+     "false": 0,
+     "opening_fall": [
+      1.805584294384266e-05,
+      0.0014821108682741002
+     ]
+    },
+    "drop_heavy": {
+     "true": 10,
+     "false": 0,
+     "opening_fall": [
+      1.4436237449233502e-05,
+      0.0032909614286186217
+     ]
+    },
+    "outside_bin": {
+     "true": 10,
+     "false": 0,
+     "opening_fall": [
+      8.348566462101914e-05,
+      0.006133298458605663
+     ]
+    },
+    "outside_region": {
+     "true": 8,
+     "false": 0,
+     "opening_fall": [
+      0.0003587635704159764,
+      0.0011873267551048006
+     ]
+    },
+    "partial_open_drop": {
+     "true": 10,
+     "false": 0,
+     "opening_fall": [
+      1.805584294384266e-05,
+      0.0014821108682741002
+     ]
+    },
+    "partial_open_place": {
+     "true": 10,
+     "false": 0,
+     "opening_fall": [
+      0.0003305587384829223,
+      0.003852858066991205
+     ]
+    },
+    "place": {
+     "true": 10,
+     "false": 0,
+     "opening_fall": [
+      0.0003305587384829223,
+      0.003852858066991205
+     ]
+    },
+    "place_heavy": {
+     "true": 10,
+     "false": 0,
+     "opening_fall": [
+      0.0001752549734362896,
+      0.007163415632997272
+     ]
+    },
+    "pulled": {
+     "true": 0,
+     "false": 10,
+     "opening_fall": [
+      0.22047689006459253,
+      0.23127115809847804
+     ],
+     "opening_half_latency_ns": [
+      110000000,
+      148000000
+     ]
+    },
+    "pulled_heavy": {
+     "true": 0,
+     "false": 10,
+     "opening_fall": [
+      0.20546196332109967,
+      0.2260735469102925
+     ],
+     "opening_half_latency_ns": [
+      142000000,
+      404000000
+     ]
+    },
+    "stuck": {
+     "true": 10,
+     "false": 0,
+     "opening_fall": [
+      1.805584294384266e-05,
+      0.0014821108682741002
+     ]
+    },
+    "thrown": {
+     "true": 10,
+     "false": 0,
+     "opening_fall": [
+      6.773728995990158e-06,
+      0.0015393271380302886
+     ]
+    }
+   },
+   "terminations": {},
+   "estimates": {
+    "by_outcome": {
+     "confirmed": {
+      "true": 98,
+      "false": 0
+     },
+     "refuted": {
+      "true": 0,
+      "false": 20
+     }
+    },
+    "latency_ns": [
+     110000000,
+     404000000
+    ]
+   }
+  },
+  "released": {
+   "cases": [
+    "drop",
+    "drop_heavy",
+    "outside_bin",
+    "outside_region",
+    "partial_open_drop",
+    "partial_open_place",
+    "place",
+    "place_heavy",
+    "stuck",
+    "thrown"
+   ],
+   "true": 67,
+   "false": 29,
+   "separation": {
+    "release_opening": {
+     "true": [
+      0.9958290459774521,
+      0.9960774464201481
+     ],
+     "false": [
+      0.4470022949324951,
+      0.9960752773505525
+     ],
+     "gap": -0.00024623137310031407
+    },
+    "load_after_n": {
+     "true": [
+      -0.4311001770773739,
+      0.04506114544411233
+     ],
+     "false": [
+      -0.18578818378433049,
+      0.5389244458642484
+     ],
+     "gap": -0.2308493292284428
+    }
+   },
+   "by_case": {
+    "drop": {
+     "true": 10,
+     "false": 0,
+     "release_opening": [
+      0.9958537154579172,
+      0.9960078273383299
+     ],
+     "load_after_n": [
+      -0.162165811379408,
+      -0.0020626393701448364
+     ],
+     "release_termination": [
+      "reached_target"
+     ]
+    },
+    "drop_heavy": {
+     "true": 10,
+     "false": 0,
+     "release_opening": [
+      0.9958846957070412,
+      0.9960288005694206
+     ],
+     "load_after_n": [
+      -0.4311001770773739,
+      0.02848691006149906
+     ],
+     "release_termination": [
+      "reached_target"
+     ]
+    },
+    "outside_bin": {
+     "true": 10,
+     "false": 0,
+     "release_opening": [
+      0.9958758675150275,
+      0.9959638330821333
+     ],
+     "load_after_n": [
+      -0.16878566685144847,
+      -0.006177238261605211
+     ],
+     "release_termination": [
+      "reached_target"
+     ]
+    },
+    "outside_region": {
+     "true": 8,
+     "false": 0,
+     "release_opening": [
+      0.9958946040411527,
+      0.9959711347008859
+     ],
+     "load_after_n": [
+      -0.1545292340707487,
+      -0.07708175384841098
+     ],
+     "release_termination": [
+      "reached_target"
+     ]
+    },
+    "partial_open_drop": {
+     "true": 0,
+     "false": 10,
+     "release_opening": [
+      0.4485920376021972,
+      0.4636426660453114
+     ],
+     "load_after_n": [
+      0.379964516460646,
+      0.5389244458642484
+     ],
+     "release_termination": [
+      "stopped_short"
+     ]
+    },
+    "partial_open_place": {
+     "true": 0,
+     "false": 9,
+     "release_opening": [
+      0.4470022949324951,
+      0.46476211972975867
+     ],
+     "load_after_n": [
+      -0.18578818378433049,
+      0.24084416991381907
+     ],
+     "release_termination": [
+      "stopped_short"
+     ]
+    },
+    "place": {
+     "true": 9,
+     "false": 0,
+     "release_opening": [
+      0.9958418988069756,
+      0.9960655963026681
+     ],
+     "load_after_n": [
+      -0.1511726045009283,
+      -0.028129245896300503
+     ],
+     "release_termination": [
+      "reached_target"
+     ]
+    },
+    "place_heavy": {
+     "true": 10,
+     "false": 0,
+     "release_opening": [
+      0.9958290459774521,
+      0.9960774464201481
+     ],
+     "load_after_n": [
+      -0.4148816372606152,
+      0.04506114544411233
+     ],
+     "release_termination": [
+      "reached_target"
+     ]
+    },
+    "stuck": {
+     "true": 0,
+     "false": 10,
+     "release_opening": [
+      0.9958468288511175,
+      0.9960752773505525
+     ],
+     "load_after_n": [
+      0.37583362497267636,
+      0.5358008787717381
+     ],
+     "release_termination": [
+      "reached_target"
+     ]
+    },
+    "thrown": {
+     "true": 10,
+     "false": 0,
+     "release_opening": [
+      0.9958893687520951,
+      0.9960073681340857
+     ],
+     "load_after_n": [
+      -0.161211285962656,
+      -0.002061724133413989
+     ],
+     "release_termination": [
+      "reached_target"
+     ]
+    }
+   },
+   "terminations": {
+    "reached_target": {
+     "true": 67,
+     "false": 10
+    },
+    "stopped_short": {
+     "true": 0,
+     "false": 19
+    }
+   },
+   "estimates": null
+  },
+  "landed": {
+   "cases": [
+    "drop",
+    "drop_heavy",
+    "outside_bin",
+    "partial_open_drop",
+    "stuck",
+    "thrown"
+   ],
+   "true": 30,
+   "false": 30,
+   "separation": {},
+   "by_case": {
+    "drop": {
+     "true": 10,
+     "false": 0
+    },
+    "drop_heavy": {
+     "true": 10,
+     "false": 0
+    },
+    "outside_bin": {
+     "true": 0,
+     "false": 10
+    },
+    "partial_open_drop": {
+     "true": 0,
+     "false": 10
+    },
+    "stuck": {
+     "true": 0,
+     "false": 10
+    },
+    "thrown": {
+     "true": 10,
+     "false": 0
+    }
+   },
+   "terminations": {},
+   "estimates": null
+  },
+  "placed": {
+   "cases": [
+    "outside_region",
+    "partial_open_place",
+    "place",
+    "place_heavy"
+   ],
+   "true": 28,
+   "false": 8,
+   "separation": {},
+   "by_case": {
+    "outside_region": {
+     "true": 0,
+     "false": 8
+    },
+    "partial_open_place": {
+     "true": 9,
+     "false": 0
+    },
+    "place": {
+     "true": 9,
+     "false": 0
+    },
+    "place_heavy": {
+     "true": 10,
+     "false": 0
+    }
+   },
+   "terminations": {},
+   "estimates": null
+  }
+ }
+}

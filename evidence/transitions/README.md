@@ -7,6 +7,8 @@ and the smallest runtime monitor the evidence requires. No skill changes here.
 
 `summary.json` holds every run's truth and features, grouped by transition and case,
 with the recording's provenance. `scripts/study_transitions.py` records and scores it.
+`guarded.json` is the same grid recorded once the skills guard every carry on the
+opening (*With the opening guard*, below), scored for the skills' own estimates.
 
 ## Method
 
@@ -146,6 +148,27 @@ readings are noiseless.
 - **`placed` and `landed`** need a re-registered pose source. Without one they are
   `unobserved`, as #28 states.
 
+## With the opening guard
+
+The skills now carry under an ssrobot `OpeningGuard` midway between the opening the
+object is held at and the closing target, and estimate `retained` from it (#28's
+second slice). `guarded.json` is the grid recorded at that commit, with each transfer's
+estimate scored against the same truth as above:
+
+| Estimate | Truly retained | Truly lost |
+| --- | --- | --- |
+| `confirmed` | 98 | 0 |
+| `refuted` | 0 | 20 |
+
+- Every pull (`pulled`, `pulled_heavy`) was refuted, 110–404 ms after the can had
+  slipped 1 cm, and stopped the transfer there.
+- Every other transfer that started with the can in hand, the 0.411 kg and full-limit
+  carries included, was confirmed.
+- Only transfers are scored. A lift's estimate has no separate truth here: `acquired`'s
+  re-close decides the lift.
+- This is the simulated gripper's result. It rests on the post-slip response noted in
+  *Limitations*.
+
 ## Limitations
 
 - **The simulation is noiseless.** Margins are compared with the declared precision, but
@@ -172,12 +195,12 @@ readings are noiseless.
 
 ## Reproduce
 
-From a clean checkout of the commit `summary.json` names (`recorded.commit`), with
-`OPENBLAS_CORETYPE=Haswell`:
+Each file is reproduced from a clean checkout of the commit it names
+(`recorded.commit`), with `OPENBLAS_CORETYPE=Haswell`:
 
 ```sh
 uv run python scripts/study_transitions.py run OUT --jobs 32
-uv run python scripts/study_transitions.py score OUT evidence/transitions/summary.json
+uv run python scripts/study_transitions.py score OUT evidence/transitions/summary.json  # or guarded.json
 ```
 
 `run` refuses an `OUT` that is not empty, and exits nonzero without writing
