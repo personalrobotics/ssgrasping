@@ -11,9 +11,11 @@ when there is one, for an application to act on; and as ``detail``, prose for a 
 The reason and cause are the protocol; the detail may be reworded at any time.
 
 A skill also estimates the manipulation transitions it passes through (#28) from the
-signals a physical robot reports, as ``TransitionEstimate``s. Privileged ground truth
-never enters an estimate: where the simulator has it, it is kept beside the estimate in
-a ``TransitionEvaluation``, for scoring, and never decides a stage.
+signals a physical robot reports, as ``TransitionEstimate``s. Privileged state never
+enters an estimate: where the simulator has a privileged reference, it is kept beside
+the estimate in a ``TransitionEvaluation``, for scoring, and never decides a stage. A
+reference is not ground truth: the attachment monitor, for one, can report an object
+lost that is still in the hand.
 """
 
 from __future__ import annotations
@@ -148,14 +150,16 @@ class TransitionEvaluation:
     simulation only: never read by a stage."""
 
     estimate: TransitionEstimate
-    ground_truth: TransitionOutcome
+    reference: TransitionOutcome
     """``confirmed`` or ``refuted``, as the privileged reference judged it."""
+    source: str
+    """What judged ``reference``, such as ``attachment_monitor``."""
     evidence: tuple[Observed, ...]
-    """The privileged readings behind ``ground_truth``."""
+    """The privileged readings behind ``reference``."""
 
     @property
     def agrees(self) -> bool:
-        return self.estimate.outcome is self.ground_truth
+        return self.estimate.outcome is self.reference
 
 
 @dataclass(frozen=True, slots=True)

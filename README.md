@@ -135,9 +135,13 @@ opening falls by at least 0.448 after every slip and at most 0.007 while held. T
 depends on the simulated 2F-140 closing on after the object leaves, which is not yet
 confirmed on the physical gripper.
 
-Privileged state never decides a stage. Where the runtime has simulator truth of the
+Privileged state never decides a stage. Where the runtime has simulator state of the
 object, the attachment monitor's report is kept beside each estimate in a
-`TransitionEvaluation` (`SkillResult.evaluations`), for scoring estimates against it.
+`TransitionEvaluation` (`SkillResult.evaluations`) as its `reference`, with `source`
+`attachment_monitor`. The reference is privileged, not ground truth: in Geodude's
+development corpus the monitor reported a box lost that had only swung in the hand,
+while the opening correctly showed it held. Ground truth is reserved for physical
+state, as the study above judges it.
 
 ## Passive execution
 

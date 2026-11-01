@@ -323,7 +323,8 @@ def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> No
             "transition": "retained",
             "stage": "transfer",
             "estimate": "refuted",
-            "ground_truth": "refuted",
+            "reference": "refuted",
+            "source": "attachment_monitor",
             "agrees": True,
         }
     ]
@@ -341,7 +342,8 @@ def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> No
             "transition": "retained",
             "stage": "transfer",
             "estimate": "confirmed",
-            "ground_truth": "refuted",
+            "reference": "refuted",
+            "source": "attachment_monitor",
             "agrees": False,
         }
     ]

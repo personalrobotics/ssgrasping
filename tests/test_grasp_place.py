@@ -341,7 +341,8 @@ def _report(result: SkillResult) -> dict[str, Any]:
                 "transition": e.estimate.transition.value,
                 "stage": e.estimate.stage,
                 "estimate": e.estimate.outcome.value,
-                "ground_truth": e.ground_truth.value,
+                "reference": e.reference.value,
+                "source": e.source,
                 "agrees": e.agrees,
             }
             for e in result.evaluations
@@ -581,7 +582,8 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
                 "transition": "retained",
                 "stage": stage,
                 "estimate": "confirmed",
-                "ground_truth": "confirmed",
+                "reference": "confirmed",
+                "source": "attachment_monitor",
                 "agrees": True,
             }
         ]

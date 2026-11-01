@@ -118,6 +118,8 @@ ssrobot's gate before anything moves again, was not established (not observed at
 within ``rest_timeout_ns``, or unobservable). Nothing is submitted around them. Every other refusal
 (a small arrival mismatch, a rebase the planner cannot make or that is invalid in the
 actual scene) is replanned from the actual state."""
+MONITOR = "attachment_monitor"
+"""The privileged reference a ``retained`` estimate is scored against, where there is one."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -531,8 +533,8 @@ class Run:
         """Estimate ``retained`` over the carry ``execution`` ran: confirmed if its opening
         guard did not trigger, refuted if it did, which fails ``name`` with the object
         reported not held, and unobserved without a guard. Where the runtime has
-        simulator truth of the object, the attachment monitor's report is kept beside the
-        estimate, for evaluation only."""
+        simulator state of the object, the attachment monitor's report is kept beside the
+        estimate as a privileged reference, for evaluation only."""
         status = execution.status
         evidence: tuple[Observed, ...] = ()
         if retain.guard is None:
@@ -554,14 +556,16 @@ class Run:
         if attachment is not None and any(
             c.source == self.obj for c in self.ctx.info.scene_channels
         ):
-            truth = TransitionOutcome.CONFIRMED if attachment.held else TransitionOutcome.REFUTED
+            reference = (
+                TransitionOutcome.CONFIRMED if attachment.held else TransitionOutcome.REFUTED
+            )
             monitor = Observed(
-                "attachment_monitor",
+                MONITOR,
                 self.ctx.now.time_ns,
                 (float(attachment.held),),
                 Evidence.PRIVILEGED,
             )
-            self.evaluations.append(TransitionEvaluation(estimate, truth, (monitor,)))
+            self.evaluations.append(TransitionEvaluation(estimate, reference, MONITOR, (monitor,)))
         if outcome is TransitionOutcome.REFUTED:
             assert retain.guard is not None
             self.held = False

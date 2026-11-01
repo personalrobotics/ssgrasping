@@ -14,7 +14,8 @@ Skills estimate the manipulation transitions they pass through
   refuted and the stage fails with the object reported not held.
 - **Privileged state decides nothing.** `grasp`'s `retained` stage is the lift's
   estimate, and `drop`'s release no longer gates on the attachment monitor; the monitor
-  is kept as ground truth in `SkillResult.evaluations`. `restrict` and `allow_target`
+  is kept as a privileged reference (`TransitionEvaluation.reference`, not ground
+  truth) in `SkillResult.evaluations`. `restrict` and `allow_target`
   still refuse to re-declare an attachment the monitor reports lost
   (personalrobotics/geodude#248).
 
