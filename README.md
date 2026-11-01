@@ -39,7 +39,8 @@ Before anything is commanded, a `preflight` stage confirms that every frame, com
 and channel the skill will use is available. A missed grasp reopens the gripper,
 because that cleanup has an unambiguous meaning. Once an object has been declared
 attached, a later failure leaves the attachment in place and reports the object as
-held, because that is the physically conservative assumption. Retrying and recovery
+held, because that is the physically conservative assumption, unless the gripper opening
+showed the object leave the hand during a carry. Retrying and recovery
 belong to the application.
 
 ### Why a stage failed
@@ -61,7 +62,7 @@ The reason names the vocabulary of its cause, and a cause is a code, never prose
 | `cancelled` | The skill was cancelled (`SkillExecution.cancel`) | the stage in progress | None |
 | `not_attached` | The object must be attached and is not | `transfer`, an allowance change | None |
 | `still_attached` | The object must be released and is still attached | `landed` | None |
-| `attachment_lost` | The attachment monitor reports the object left its declared transform | `retained`, `release`, an allowance change | None |
+| `attachment_lost` | The attachment monitor reports the object left its declared transform | an allowance change | None |
 | `missed` | The fingers closed to their target: nothing is between them | `obstructed` | None |
 | `lost` | After the lift, the fingers closed to their target | `acquired` | None |
 | `in_contact` | After the lift, the arm or the object is in contact with the scene | `clear` | None |
@@ -69,6 +70,7 @@ The reason names the vocabulary of its cause, and a cause is a code, never prose
 | `not_at_rest` | The arm was not observed at rest before the tare | `descend` | The `RestOutcome` |
 | `no_contact` | The guarded descent ended without its guard triggering | `descend` | The `GuardCause` |
 | `outside_regions` | The object is outside every target region | `contact`, `placed`, `landed` | None |
+| `transition_refuted` | Portable evidence refuted a manipulation transition the stage needs: for `retained`, the opening guard stopped a carry when the fingers closed past the object's width | `lift`, `transfer` | The `Transition` |
 
 A stage that replans after a refusal and then succeeds has no reason; the refusal is in
 its lookahead log. A race's candidates record each plan's `plan_status`, the planner's
@@ -107,9 +109,35 @@ evidence it relied on:
 The distinction determines what a skill may rely on. Whether a grasp succeeded is
 decided by `acquired`, from how the gripper's close ends after the lift, which a physical
 gripper reports. The close before the lift only shows the fingers are `obstructed`: the
-support could stop them too. The later `retained` stage reads the simulator's
-attachment monitor and is recorded as privileged; it adds information in simulation but
-never substitutes for `acquired`.
+support could stop them too.
+
+### Manipulation transitions
+
+A skill also estimates the transitions it passes through (#28) as
+`TransitionEstimate`s in `SkillResult.transitions`: the transition, the stage, an
+outcome (`confirmed`, `refuted` or `unobserved`), a stable `EstimateReason`, the
+portable readings it used, and the criteria that decided it, each with its source.
+`unobserved` is not success: nothing available decided it, and what to do then is the
+application's.
+
+Today one transition is estimated: `retained`, over every carry (`grasp`'s `lift`, and
+the `transfer` of `drop` and `place`). The carry runs under an ssrobot `OpeningGuard`
+midway between the opening the object is held at and the closing target. An object that
+leaves the hand lets the fingers run on toward the target, so the guard stops the arm
+where the loss was seen, `retained` is refuted, and the stage fails at once
+(`transition_refuted`), with the object reported not held and still declared attached:
+detaching it is the application's choice. `place`'s descent runs under its wrench
+guard alone, so `retained` is not monitored through it.
+
+The evidence for this is
+[`evidence/transitions/`](evidence/transitions/README.md). In Geodude's MuJoCo model the
+opening falls by at least 0.448 after every slip and at most 0.007 while held. That
+depends on the simulated 2F-140 closing on after the object leaves, which is not yet
+confirmed on the physical gripper.
+
+Privileged state never decides a stage. Where the runtime has simulator truth of the
+object, the attachment monitor's report is kept beside each estimate in a
+`TransitionEvaluation` (`SkillResult.evaluations`), for scoring estimates against it.
 
 ## Passive execution
 
@@ -312,6 +340,7 @@ attachment monitor tolerates the can swinging between the pads as the arm accele
 | Grasp, place under a force guard, and drop into a container | Implemented; demonstrated on Geodude in MuJoCo |
 | Portable grasp verification and conservative failure reporting | Implemented; missed grasps, slips, and unconfirmed releases are tested on Geodude |
 | Planning ahead within a skill, and continuing the kept approach | Implemented; demonstrated on Geodude |
+| Estimating `retained` from the gripper opening, stopping a carry that loses its object | Implemented; demonstrated on Geodude in MuJoCo. `acquired`, `released`, `placed` and `landed` are planned (#28) |
 | Racing grasp candidates across arms, including during an earlier motion | Implemented; used by Geodude's four-can recycling demo |
 | Skills on ADA | Planned; the ADA package opens in the test environment, but no skill has been demonstrated on it |
 | Physical robots and learned policies | Not yet supported; they depend on ssrobot's hardware runtimes and policy execution |

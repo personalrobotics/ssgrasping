@@ -3,14 +3,19 @@
 ``place`` returns a passive ``SkillExecution`` (see ``ssgrasping.execution``) that runs
 these stages, recording each. Every straight move is along the support's explicit
 outward ``normal``: away from it to pre-place and retreat, toward it to descend.
-1. ``preflight``: every reference resolves, and every command, channel, and the guard
-   the placement uses is available. Nothing is commanded before it passes.
+1. ``preflight``: every reference resolves, and every command, channel, and the guards
+   the placement uses are available. Nothing is commanded before it passes.
 2. ``transfer``: plan the end effector into the placement regions moved ``preplace_m``
    along the normal, with the hand alone allowed, at ``carry_scaling`` of the joints'
    velocity and acceleration limits, and execute. A plan is kept only if
    the descent, with the target allowed, also plans from where it ends; up to
    ``transfer_attempts`` seeds are tried. The regions are given for the object; the
    held object's attachment transform turns them into regions for the end effector.
+   The transfer carries the object under an opening guard midway between the opening
+   it is held at when the placement begins and ``close_opening``: if the guard stops it,
+   ``retained`` is refuted, and the transfer fails with the object reported not held.
+   The descent runs under the wrench guard alone, so ``retained`` is not monitored
+   through it.
 3. ``allow_target``: replace the allowance with the hand and the target support, for
    the terminal descent only, keeping the attachment's transform.
 4. ``descend``: wait until the arm's joints are observed at rest, by the criteria the
@@ -32,7 +37,8 @@ outward ``normal``: away from it to pre-place and retreat, toward it to descend.
 8. ``placed``: the object rests in one of the regions, within ``region_tolerance`` of
    all six bounds, by its privileged pose.
 
-A failure before ``release`` leaves the object attached and held.
+A failure before ``release`` leaves the object attached, and held unless the transfer
+refuted ``retained``.
 """
 
 from __future__ import annotations
@@ -66,10 +72,11 @@ from ssgrasping._skill import (
     check_spec,
     preflight,
     rest_evidence,
+    retention,
     unit,
 )
 from ssgrasping.execution import SkillExecution
-from ssgrasping.outcomes import Evidence, Reason
+from ssgrasping.outcomes import Criterion, Evidence, Reason
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +111,9 @@ class PlaceSpec:
     """How far, in metres and radians, a placed object may lie outside a region's
     bounds and still count as in it: it settles after release."""
     open_opening: float = 1.0
+    close_opening: float = 0.0
+    """The closing target the object is held with: the grasp's ``close_opening``. The
+    fingers run on toward it if the object leaves the hand."""
     released_opening: float = 0.9
     """The opening that confirms the fingers have let go."""
     gripper_timeout_ns: int = GRIPPER_TIMEOUT_NS
@@ -139,7 +149,7 @@ class PlaceSpec:
         check_spec(self.terminal_m <= self.preplace_m, "at most preplace_m", "terminal_m")
         metres, radians = self.region_tolerance
         check_spec(metres >= 0 and radians >= 0, "non-negative", "region_tolerance")
-        for name in ("open_opening", "released_opening"):
+        for name in ("open_opening", "close_opening", "released_opening"):
             check_spec(0.0 <= getattr(self, name) <= 1.0, "between 0 and 1", name)
         check_spec(self.transfer_attempts >= 1, "at least 1", "transfer_attempts")
         check_spec(0.0 < self.carry_scaling <= 1.0, "in (0, 1]", "carry_scaling")
@@ -184,6 +194,7 @@ def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Bod
         support=spec.target,
         channels={spec.opening_channel: (1,), spec.guard.channel: (6,)},
         guard=spec.guard,
+        carries=spec.opening_channel,
     )
     if attachment is None:
         run.record(
@@ -216,7 +227,16 @@ def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Bod
         spec.transfer_attempts,
         planner=planner,
     )
-    yield from run.move("transfer", transfer, planner)
+    carry = retention(
+        spec.opening_channel,
+        Criterion(
+            "held_opening",
+            float(run.observe(spec.opening_channel)[0]),
+            "observed: the opening when the placement began",
+        ),
+        Criterion("close_opening", spec.close_opening, "PlaceSpec.close_opening"),
+    )
+    yield from run.move("transfer", transfer, planner, retain=carry)
 
     run.boundary("allow_target", "allows the target: a scene change; the descent is guarded")
     run.begin("allow_target")

@@ -9,6 +9,11 @@ state is shared.
 A failed stage says why twice: as a ``Reason``, with the ssrobot ``cause`` behind it
 when there is one, for an application to act on; and as ``detail``, prose for a person.
 The reason and cause are the protocol; the detail may be reworded at any time.
+
+A skill also estimates the manipulation transitions it passes through (#28) from the
+signals a physical robot reports, as ``TransitionEstimate``s. Privileged ground truth
+never enters an estimate: where the simulator has it, it is kept beside the estimate in
+a ``TransitionEvaluation``, for scoring, and never decides a stage.
 """
 
 from __future__ import annotations
@@ -65,6 +70,92 @@ class Reason(enum.StrEnum):
     NOT_AT_REST = "not_at_rest"
     NO_CONTACT = "no_contact"
     OUTSIDE_REGIONS = "outside_regions"
+    TRANSITION_REFUTED = "transition_refuted"
+
+
+class Transition(enum.StrEnum):
+    """A manipulation transition: of the hand and the object, or of the task's outcome."""
+
+    ACQUIRED = "acquired"
+    """The fingers closed on the object."""
+    RETAINED = "retained"
+    """The object is still in hand, throughout a carry."""
+    RELEASED = "released"
+    """The object has left the hand."""
+    PLACED = "placed"
+    """The object rests as the placement intended."""
+    LANDED = "landed"
+    """The object came to rest in the intended container region."""
+
+
+class TransitionOutcome(enum.StrEnum):
+    """What the evidence says of a transition. ``unobserved`` is not success: nothing
+    available confirmed or refuted it, and what to do then is the application's."""
+
+    CONFIRMED = "confirmed"
+    REFUTED = "refuted"
+    UNOBSERVED = "unobserved"
+
+
+class EstimateReason(enum.StrEnum):
+    """Why an estimate came out as it did, stable across releases."""
+
+    OPENING_HELD = "opening_held"
+    """The gripper opening stayed at or above the guard's bound through the motion."""
+    OPENING_FELL = "opening_fell"
+    """The gripper opening fell below the guard's bound: the fingers closed past the
+    object's width."""
+    NO_OPENING_MARGIN = "no_opening_margin"
+    """The opening the object was held at is not above the closing target, so the
+    fingers have nowhere to close to if it leaves."""
+
+
+@dataclass(frozen=True, slots=True)
+class Observed:
+    """A reading an estimate or an evaluation used."""
+
+    channel: str
+    time_ns: int
+    value: tuple[float, ...]
+    evidence: Evidence
+    """``portable`` or ``privileged``."""
+
+
+@dataclass(frozen=True, slots=True)
+class Criterion:
+    """A value an estimate was decided by, and where it came from."""
+
+    name: str
+    value: float
+    source: str
+
+
+@dataclass(frozen=True, slots=True)
+class TransitionEstimate:
+    """A transition, estimated in ``stage`` from portable evidence only."""
+
+    transition: Transition
+    stage: str
+    outcome: TransitionOutcome
+    reason: EstimateReason
+    evidence: tuple[Observed, ...]
+    criteria: tuple[Criterion, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TransitionEvaluation:
+    """An estimate and the privileged reference it is scored against, for evaluation in
+    simulation only: never read by a stage."""
+
+    estimate: TransitionEstimate
+    ground_truth: TransitionOutcome
+    """``confirmed`` or ``refuted``, as the privileged reference judged it."""
+    evidence: tuple[Observed, ...]
+    """The privileged readings behind ``ground_truth``."""
+
+    @property
+    def agrees(self) -> bool:
+        return self.estimate.outcome is self.ground_truth
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +190,10 @@ class SkillResult:
     """The object's attachment as the scene declared it at the end, if any."""
     values: dict[str, object] = field(default_factory=dict)
     """Measured values worth keeping, by name: an opening, a reached distance."""
+    transitions: tuple[TransitionEstimate, ...] = ()
+    """The transitions estimated, in order."""
+    evaluations: tuple[TransitionEvaluation, ...] = ()
+    """Each estimate the runtime had a privileged reference for, scored against it."""
 
     @property
     def stage(self) -> Stage:

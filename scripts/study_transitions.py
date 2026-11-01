@@ -479,12 +479,27 @@ def _run_scores(meta: dict[str, Any], d: Any) -> dict[str, Any]:
             after = P[lost[0] :, OPENING]
             fell = np.flatnonzero(after < start_opening / 2)
             drop_at = None if not len(fell) else int(t[lost[0] + fell[0]] - t[lost[0]])
+        estimate = next(
+            (
+                e
+                for e in meta["results"][then].get("transitions", [])
+                if (e["transition"], e["stage"]) == ("retained", "transfer")
+            ),
+            None,
+        )
+        outcome = None if estimate is None else estimate["outcome"]
+        decided = None if estimate is None or not estimate["evidence"] else estimate["evidence"][0]
         scores["retained"] = {
             "truth": not len(lost),
             "lost_ns": None if not len(lost) else int(t[lost[0]] - t[ticks[0]]),
             "opening_fall": float(start_opening - P[ticks][:, OPENING].min()),
             "force_range_n": [float(force.min()), float(force.max())],
             "opening_half_latency_ns": drop_at,
+            # The skill's own estimate, where the skill made one (an opening guard).
+            "estimate": outcome,
+            "estimate_latency_ns": None
+            if not len(lost) or decided is None or outcome != "refuted"
+            else int(decided["time_ns"] - t[lost[0]]),
         }
     release = _stage(meta, d, f"{then}.release")
     if release.any():
@@ -593,6 +608,7 @@ def score(out: Path, summary: Path) -> dict[str, Any]:
                 "separation": {f: _separation(rows, f) for f in features.get(name, ())},
                 "by_case": _by_case(rows, features.get(name, ())),
                 "terminations": _terminations(rows),
+                "estimates": _estimates(rows),
             }
             for name, rows in by.items()
         },
@@ -618,6 +634,21 @@ def _by_case(rows: list[dict[str, Any]], features: tuple[str, ...]) -> dict[str,
             elif values:
                 out[case][f] = _span(values)
     return out
+
+
+def _estimates(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The skill's estimates against the truth: how often each outcome came with each
+    truth, and, for a refuted estimate of a true loss, how long after the loss it was
+    decided. None where the skill made no estimate."""
+    made = [r for r in rows if r.get("estimate") is not None]
+    if not made:
+        return None
+    counts: dict[str, dict[str, int]] = {}
+    for r in made:
+        row = counts.setdefault(r["estimate"], {"true": 0, "false": 0})
+        row["true" if r["truth"] else "false"] += 1
+    latency = [r["estimate_latency_ns"] for r in made if r.get("estimate_latency_ns") is not None]
+    return {"by_outcome": counts, "latency_ns": _span(latency)}
 
 
 def _terminations(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
