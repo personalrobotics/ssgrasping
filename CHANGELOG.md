@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+A failed stage reports a stable, machine-readable reason
+(personalrobotics/ssgrasping#34): `Stage.reason`, a new `Reason`, and `Stage.cause`, the
+ssrobot code behind it. The README tabulates every reason. Each candidate a race tried
+records each plan's `plan_status`, the planner's own status.
+
+### Compatibility
+
+- `Stage.reason` and `Stage.cause` are new fields at the end, defaulting to None, so
+  existing construction of `Stage` is unchanged. Every stage name, detail, evidence kind,
+  and held and attached state is as before.
+- Applications that chose recovery or classified failures by parsing `Stage.detail`, or
+  a race candidate's `detail`, should use the reason, the cause, and `plan_status`
+  instead: detail is prose, and may be reworded in any release.
+
 Waits on the robot are on observed rest, not fixed durations
 (personalrobotics/ssgrasping#35). ssrobot is pinned at 9a0195b, whose continuation gate
 takes a rest watch's result.

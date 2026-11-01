@@ -45,7 +45,7 @@ from ssrobot import (
     dumps,
 )
 
-from ssgrasping.outcomes import Evidence, SkillResult, SkillState, Stage
+from ssgrasping.outcomes import Evidence, Reason, SkillResult, SkillState, Stage
 
 
 @dataclass(frozen=True, slots=True)
@@ -351,19 +351,34 @@ class Run:
         """Name the stage now in progress, for a failure or cancellation inside it."""
         self.stage = name
 
-    def record(self, name: str, succeeded: bool, detail: str, evidence: Evidence) -> None:
+    def record(
+        self,
+        name: str,
+        succeeded: bool,
+        detail: str,
+        evidence: Evidence,
+        reason: Reason | None = None,
+        cause: str | None = None,
+    ) -> None:
+        """Record ``name`` as ended; a failure, with its ``reason`` (and ``cause``), ends
+        the skill."""
         self.stage = name
-        self._append(name, succeeded, detail, evidence)
+        self._append(name, succeeded, detail, evidence, reason, cause)
         if not succeeded:
             raise Failed(f"{name}: {detail}")
 
-    def fail(self, detail: str) -> None:
-        """Record the stage in progress as failed by an expected ssrobot refusal."""
-        self._append(self.stage or "start", False, detail, Evidence.COMMANDED)
+    def fail(self, detail: str, cause: str) -> None:
+        """Record the stage in progress as failed by an expected ssrobot refusal, ``cause``
+        its code."""
+        self._append(
+            self.stage or "start", False, detail, Evidence.COMMANDED, Reason.REFUSED, cause
+        )
 
-    def cancelled(self, reason: str) -> None:
+    def cancelled(self, detail: str) -> None:
         """Record the stage in progress as cancelled."""
-        self._append(self.stage or "start", False, reason, Evidence.COMMANDED)
+        self._append(
+            self.stage or "start", False, detail, Evidence.COMMANDED, Reason.CANCELLED, None
+        )
 
     def ok(self) -> SkillState:
         good = bool(self.stages) and all(s.succeeded for s in self.stages)
@@ -378,7 +393,18 @@ class Run:
             values=dict(self.values),
         )
 
-    def _append(self, name: str, succeeded: bool, detail: str, evidence: Evidence) -> None:
+    def _append(
+        self,
+        name: str,
+        succeeded: bool,
+        detail: str,
+        evidence: Evidence,
+        reason: Reason | None,
+        cause: str | None,
+    ) -> None:
+        # A failure always says why, a success never does, and a cause qualifies a reason.
+        assert (reason is None) == succeeded, (name, succeeded, reason)
+        assert cause is None or reason is not None, (name, cause)
         self.stages.append(
             Stage(
                 name=name,
@@ -389,6 +415,8 @@ class Run:
                 held=self.held,
                 attached=self.attached(),
                 evidence=evidence,
+                reason=reason,
+                cause=cause,
             )
         )
 
@@ -421,9 +449,16 @@ class Run:
                 execution = self.ctx.execute(plan, planner=planner)
             except SsrobotError as e:
                 if e.code != "start_mismatch":
-                    self.record(name, False, f"{e.code}: {e.message}", Evidence.PLANNED)
+                    self.record(
+                        name,
+                        False,
+                        f"{e.code}: {e.message}",
+                        Evidence.PLANNED,
+                        Reason.REFUSED,
+                        e.code,
+                    )
                 execution, detail = self._replanned(
-                    name, replan, planner, "replanned: start_mismatch"
+                    name, replan, planner, "replanned: start_mismatch", Reason.REFUSED, e.code
                 )
         else:
             execution = self._execute(name, plan, planner)
@@ -436,11 +471,20 @@ class Run:
     def _execute(self, name: str, plan: PlanResult, planner: Planner) -> Execution:
         if not plan.succeeded:
             reason = "; ".join(d.message for d in plan.diagnostics) or plan.status.value
-            self.record(name, False, f"planning {plan.status.value}: {reason}", Evidence.PLANNED)
+            self.record(
+                name,
+                False,
+                f"planning {plan.status.value}: {reason}",
+                Evidence.PLANNED,
+                Reason.NOT_PLANNED,
+                plan.status.value,
+            )
         try:
             return self.ctx.execute(plan, planner=planner)
         except SsrobotError as e:
-            self.record(name, False, f"{e.code}: {e.message}", Evidence.PLANNED)
+            self.record(
+                name, False, f"{e.code}: {e.message}", Evidence.PLANNED, Reason.REFUSED, e.code
+            )
         raise AssertionError  # unreachable: record raised
 
     def _continue(
@@ -456,7 +500,9 @@ class Run:
         plan = ahead.future.result()
         if not plan.succeeded:
             log["decision"] = f"replanned: planning on the prediction {plan.status.value}"
-            return self._replanned(name, replan, planner, log["decision"])
+            return self._replanned(
+                name, replan, planner, log["decision"], Reason.NOT_PLANNED, plan.status.value
+            )
         continuation = ahead.continuation or ctx.continuation(
             plan, planner=ahead.planner, prediction=ahead.prediction
         )
@@ -486,9 +532,11 @@ class Run:
                 else Evidence.PLANNED
             )
             refused = f"continuation refused, {report.refusal}: {report.detail}"
-            self.record(name, False, refused, evidence)
+            self.record(name, False, refused, evidence, Reason.REFUSED, report.refusal)
         log["decision"] = f"replanned: {report.refusal}"
-        return self._replanned(name, replan, planner, log["decision"])
+        return self._replanned(
+            name, replan, planner, log["decision"], Reason.REFUSED, report.refusal
+        )
 
     def rest(self, component: str, timeout_ns: int) -> Generator[Wait, None, RestResult]:
         """Watch ``component``'s joints until they are observed at rest, by the criteria
@@ -501,11 +549,21 @@ class Run:
         return watch.result
 
     def _replanned(
-        self, name: str, replan: Callable[[], PlanResult] | None, planner: Planner, why: object
+        self,
+        name: str,
+        replan: Callable[[], PlanResult] | None,
+        planner: Planner,
+        why: object,
+        reason: Reason,
+        cause: str | None,
     ) -> tuple[Execution, str]:
-        """Plan ``name`` again from the actual state, with ``replan``, and execute it."""
+        """Plan ``name`` again from the actual state, with ``replan``, and execute it.
+        Without ``replan``, ``name`` fails with the ``reason`` and ``cause`` that made it
+        replan; ``why`` is their prose."""
         if replan is None:
-            self.record(name, False, f"{why}, and nothing to replan with", Evidence.PLANNED)
+            self.record(
+                name, False, f"{why}, and nothing to replan with", Evidence.PLANNED, reason, cause
+            )
         assert replan is not None
         plan = replan()
         self.begin(name)
@@ -518,7 +576,15 @@ class Run:
             detail = status.state.value
             if status.diagnostic is not None:
                 detail += f": {status.diagnostic.code}"
-            self.record(name, False, detail, Evidence.COMMANDED)
+            canceled = status.state is ExecutionState.CANCELED
+            self.record(
+                name,
+                False,
+                detail,
+                Evidence.COMMANDED,
+                Reason.COMMAND_CANCELED if canceled else Reason.COMMAND_FAILED,
+                status.state.value if status.diagnostic is None else status.diagnostic.code,
+            )
 
     def grip(self, name: str, gripper: str, opening: float, timeout_ns: int) -> Body:
         """Command ``gripper`` to ``opening`` and wait for the command to end, which it
@@ -548,7 +614,9 @@ class Run:
         would refuse the transform anyway."""
         attachment = self.ctx.scene.attachment(self.obj)
         if attachment is None:
-            self.record(name, False, f"{self.obj!r} is not attached", Evidence.PLANNED)
+            self.record(
+                name, False, f"{self.obj!r} is not attached", Evidence.PLANNED, Reason.NOT_ATTACHED
+            )
         assert attachment is not None
         if not attachment.held:
             self.record(
@@ -556,6 +624,7 @@ class Run:
                 False,
                 "attachment monitor: the object left its declared transform",
                 Evidence.PRIVILEGED,
+                Reason.ATTACHMENT_LOST,
             )
         known = {f.name for f in self.ctx.description.frames} | set(self.ctx.info.fixtures)
         unknown = sorted(set(allow) - known)
@@ -565,6 +634,7 @@ class Run:
                 False,
                 f"neither robot frames nor fixtures: {', '.join(unknown)}",
                 Evidence.PLANNED,
+                Reason.UNAVAILABLE,
             )
         self.ctx.detach(self.obj)
         self.ctx.attach(self.obj, end_effector, transform=attachment.transform, allow=tuple(allow))
@@ -620,7 +690,7 @@ class Run:
         detail = f"no plan in {attempts} seeds" + (
             "" if then is None else f" from which {then} plans"
         )
-        self.record(name, False, detail, Evidence.PLANNED)
+        self.record(name, False, detail, Evidence.PLANNED, Reason.NOT_PLANNED)
         raise AssertionError  # unreachable: record raised
 
 
@@ -695,6 +765,7 @@ def preflight(
         )
         + " available",
         Evidence.PLANNED,
+        Reason.UNAVAILABLE if problems else None,
     )
 
 

@@ -12,8 +12,8 @@ The data comes from the libraries that own it:
   sscbirrt for the skills' checks that a straight move also plans from a candidate goal.
 
 Each scenario is one contract case, recorded in ``grasp_place.json`` with every stage's
-time, scene revision, held and attached state, and evidence kind, and the attachment
-the skill left declared:
+time, scene revision, held and attached state, evidence kind, and, for a failed stage,
+its reason and cause, and the attachment the skill left declared:
 - ``success``: grasp, then place, on a manual clock; run twice, byte-identical.
 - ``missed``: a grasp where there is no can fails ``obstructed`` with nothing attached.
 - ``obstructed``: a grasp where there is no can, but a fixed post stops the fingers, as
@@ -44,6 +44,8 @@ the skill left declared:
   every tick: it must stay within ``TARE_SETTLED_FRACTION`` of the guard's threshold of
   its value at rest, so taring then shifts the contact the guard detects by at most
   that fraction.
+Every failed stage, in every scenario, says why as a ``Reason``, with a cause in the
+vocabulary its reason names (the README's table); no successful stage does (``_reasons``).
 The environment the artifact was made in is recorded with it; byte-identity is claimed
 within one environment.
 
@@ -57,6 +59,7 @@ import importlib.metadata
 import json
 import math
 import platform
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -65,10 +68,13 @@ import numpy as np
 from sscbirrt import CBiRRTConfig
 from ssrobot import (
     ClockMode,
+    GuardCause,
     ObservationRequest,
     Planner,
     PlanResult,
+    PlanStatus,
     Pose,
+    RestOutcome,
     RobotContext,
     Tsr,
     WrenchGuard,
@@ -83,6 +89,7 @@ from tsr.placement.stable_placer import StablePlacer
 from ssgrasping import (
     GraspSpec,
     PlaceSpec,
+    Reason,
     SkillExecution,
     SkillResult,
     SkillState,
@@ -311,6 +318,8 @@ def _report(result: SkillResult) -> dict[str, Any]:
                 "held": s.held,
                 "attached": s.attached,
                 "evidence": s.evidence.value,
+                "reason": None if s.reason is None else s.reason.value,
+                "cause": s.cause,
             }
             for s in result.stages
         ],
@@ -445,6 +454,56 @@ def _environment() -> dict[str, str]:
     return {"python": platform.python_version(), **versions}
 
 
+CAUSES: dict[str, set[str] | None] = {
+    Reason.NOT_PLANNED: {s.value for s in PlanStatus},
+    Reason.NOT_AT_REST: {o.value for o in RestOutcome},
+    Reason.NO_CONTACT: {c.value for c in GuardCause},
+    Reason.REFUSED: None,  # an ssrobot error or refusal code
+    Reason.COMMAND_FAILED: None,  # an execution diagnostic code, or the execution state
+    Reason.COMMAND_CANCELED: None,
+}
+"""The vocabulary of each reason's cause: an ssrobot enum's values, or any ssrobot code
+(None). A reason not listed has no cause."""
+
+
+def _reasons(report: Any) -> list[tuple[str, str, str | None]]:
+    """Check every stage recorded anywhere in ``report``: a success says no reason, a
+    failure a ``Reason``, with a cause only where its reason names one, in that
+    vocabulary, and never prose. The failures' (stage, reason, cause)."""
+    failures = []
+
+    def walk(o: Any) -> None:
+        if isinstance(o, dict):
+            if {"name", "succeeded", "reason", "cause"} <= o.keys():
+                reason, cause = o["reason"], o["cause"]
+                if o["succeeded"]:
+                    assert reason is None and cause is None, o
+                else:
+                    assert reason in set(Reason), o
+                    if reason not in CAUSES:
+                        assert cause is None, o
+                    elif cause is not None:
+                        vocabulary = CAUSES[reason]
+                        assert re.fullmatch(r"[a-z][a-z0-9_]*", cause), o
+                        assert vocabulary is None or cause in vocabulary, o
+                    failures.append((o["name"], reason, cause))
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+
+    walk(report)
+    return failures
+
+
+def _failed(report: dict[str, Any]) -> tuple[str, str, str | None, bool | None, bool]:
+    """A failed skill's deciding stage: its name, reason, cause, held, and attached."""
+    s = report["stages"][-1]
+    assert not s["succeeded"], s
+    return s["name"], s["reason"], s["cause"], s["held"], s["attached"]
+
+
 def _states(report: dict[str, Any], part: str) -> list[tuple[str, bool]]:
     return [(s["name"], s["succeeded"]) for s in report[part]["stages"]]
 
@@ -484,6 +543,7 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     (artifacts / "grasp_place.json").write_text(json.dumps(report, indent=2) + "\n")
 
     assert first == again, "two runs in one environment differ"
+    _reasons(scenarios)
 
     success = scenarios["success"]
     assert success["grasp"]["state"] == SkillState.SUCCEEDED
@@ -511,18 +571,20 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     # TARE_SETTLED_FRACTION of the guard's threshold over the hold that follows.
     settled = scenarios["tare_settled"]
     assert settled["place"]["state"] == SkillState.CANCELLED
-    assert settled["place"]["stages"][-1]["name"] == "descend"
+    assert _failed(settled["place"])[:2] == ("descend", Reason.CANCELLED)
     assert settled["max_change_n"] < TARE_SETTLED_FRACTION * CONTACT_N, settled
 
     missed = scenarios["missed"]["grasp"]
     assert missed["state"] == SkillState.FAILED and missed["attachment"] is None
-    assert missed["stages"][-1]["name"] == "obstructed"
-    assert missed["stages"][-1]["detail"].startswith("missed")
+    assert _failed(missed) == ("obstructed", Reason.MISSED, None, False, False)
 
     # Fingers stopped by something other than the object never make the grasp acquired.
     obstructed = scenarios["obstructed"]["grasp"]
     assert obstructed["state"] == SkillState.FAILED, obstructed["stages"]
     assert "acquired" not in [s["name"] for s in obstructed["stages"]]
+    # A lift that cannot plan, with the object held and declared attached: the arm has
+    # not moved since the close.
+    assert _failed(obstructed) == ("lift", Reason.NOT_PLANNED, "infeasible", True, True)
     assert [(s["name"], s["succeeded"]) for s in obstructed["stages"][-3:]] == [
         ("obstructed", True),
         ("attach", True),
@@ -530,33 +592,33 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     ]
     lost = scenarios["lost"]["grasp"]
     assert lost["state"] == SkillState.FAILED, lost["stages"]
-    assert (lost["stages"][-1]["name"], lost["stages"][-1]["evidence"]) == ("acquired", "portable")
-    assert lost["stages"][-1]["detail"].startswith("lost")
+    assert lost["stages"][-1]["evidence"] == "portable"
+    assert _failed(lost) == ("acquired", Reason.LOST, None, True, True)
 
     pre = scenarios["preflight"]["grasp"]
     assert pre["state"] == SkillState.FAILED and [s["name"] for s in pre["stages"]] == ["preflight"]
     assert pre["stages"][0]["time_ns"] == 0  # nothing ran
+    assert _failed(pre)[:2] == ("preflight", Reason.UNAVAILABLE)
 
     assert scenarios["external"]["grasp"]["state"] == SkillState.SUCCEEDED
     assert scenarios["external"]["grasp"]["stages"][-1]["name"] == "retained"
 
     cancelled = scenarios["cancelled"]
     assert cancelled["grasp"]["state"] == SkillState.CANCELLED
-    assert cancelled["grasp"]["stages"][-1]["name"] == "approach"
+    assert _failed(cancelled["grasp"])[:3] == ("approach", Reason.CANCELLED, None)
     assert cancelled["cancelled_command"] == "canceled"
     assert cancelled["grasp"]["attachment"] is None
 
     drifted = scenarios["drifted"]["grasp"]
     assert drifted["state"] == SkillState.FAILED, drifted["stages"]
-    assert drifted["stages"][-1]["name"] == "restrict"
     assert drifted["stages"][-1]["evidence"] == "privileged"
-    assert drifted["stages"][-1]["held"] is True  # conservative: it may still be in hand
+    # Conservatively held: it may still be in the hand.
+    assert _failed(drifted) == ("restrict", Reason.ATTACHMENT_LOST, None, True, True)
     assert drifted["attachment"] is not None and drifted["attachment"]["held"] is False
 
     unconfirmed = scenarios["unconfirmed_release"]["place"]
     assert unconfirmed["state"] == SkillState.FAILED, unconfirmed["stages"]
-    assert unconfirmed["stages"][-1]["name"] == "release"
-    assert unconfirmed["stages"][-1]["held"] is None
+    assert _failed(unconfirmed) == ("release", Reason.RELEASE_UNCONFIRMED, None, None, True)
     assert unconfirmed["attachment"] is not None
 
     assert scenarios["trajectory_only"]["grasp"]["state"] == SkillState.SUCCEEDED
@@ -577,5 +639,4 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     # A gripper deadline is a failure bound: a close that has not ended by it fails.
     timed = scenarios["gripper_timeout"]["grasp"]
     assert timed["state"] == SkillState.FAILED, timed["stages"]
-    assert timed["stages"][-1]["name"] == "close"
-    assert timed["stages"][-1]["detail"] == "timed_out: deadline_exceeded"
+    assert _failed(timed)[:3] == ("close", Reason.COMMAND_FAILED, "deadline_exceeded")

@@ -87,7 +87,7 @@ from ssgrasping._skill import (
     unit,
 )
 from ssgrasping.execution import SkillExecution
-from ssgrasping.outcomes import Evidence
+from ssgrasping.outcomes import Evidence, Reason
 
 
 @dataclass(frozen=True, slots=True)
@@ -317,6 +317,7 @@ def _grasp(
             False,
             f"missed: the fingers reached their target, at opening {opening:.3f}",
             Evidence.PORTABLE,
+            Reason.MISSED,
         )
     run.held = True  # conservatively, from here on: it may be in the hand
     run.record(
@@ -366,6 +367,7 @@ def _grasp(
             False,
             f"lost: after the lift, the fingers reached their target, at opening {lifted:.3f}",
             Evidence.PORTABLE,
+            Reason.LOST,
         )
     run.record(
         "acquired",
@@ -382,11 +384,13 @@ def _grasp(
     q = tuple(snapshot.position(j) for j in ctx.description.group(arm.group).joints)
     scene = ctx.planning_scene(snapshot, arm.group)
     contacts = sorted({f"{c.first}/{c.second}" for c in scene.contacts(q)})
+    clear = scene.is_valid(q)
     run.record(
         "clear",
-        scene.is_valid(q),
+        clear,
         "clear of everything" if not contacts else f"in contact: {', '.join(contacts)}",
         Evidence.PLANNED,
+        None if clear else Reason.IN_CONTACT,
     )
 
     after = _object_position(ctx, spec.object)
@@ -399,6 +403,7 @@ def _grasp(
         retained,
         f"attachment monitor: held={retained}, object rose {risen:.4f} m",
         Evidence.PRIVILEGED,
+        None if retained else Reason.ATTACHMENT_LOST,
     )
 
 

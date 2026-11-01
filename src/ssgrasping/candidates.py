@@ -356,7 +356,8 @@ class Candidates:
 
 def _summary(chain: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
     """One candidate, from its chain's record and the race's report: its outcome, why,
-    its cost, and every stage of every seed tried. A candidate whose last stage never
+    its cost, and every stage of every seed tried: how it ended (``status``) and, if the
+    planner returned, the planner's own status (``plan_status``). A candidate whose last stage never
     finished was stopped: by the caller, when the race was (``canceled``); by a strictly
     higher priority's success, when one was chosen and stops lower ones
     (``canceled_by_priority``)."""
@@ -393,6 +394,7 @@ def _summary(chain: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
                 "stage": s["name"],
                 "stage_seed": s["seed"],
                 "status": s["outcome"],
+                "plan_status": s["status"],
                 "duration_s": s["duration_s"],
             }
             for a in attempts

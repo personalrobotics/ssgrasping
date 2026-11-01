@@ -42,6 +42,38 @@ attached, a later failure leaves the attachment in place and reports the object 
 held, because that is the physically conservative assumption. Retrying and recovery
 belong to the application.
 
+### Why a stage failed
+
+A failed stage says why twice. Its `reason`, a `Reason`, and its `cause` are for
+software: an application chooses its recovery from the stage, the reason, and the
+stage's `held` and `attached` state. Its `detail` is prose for a person, and may be
+reworded in any release. A successful stage has no reason and no cause.
+
+The reason names the vocabulary of its cause, and a cause is a code, never prose:
+
+| Reason | Meaning | Reported by | Cause |
+| --- | --- | --- | --- |
+| `unavailable` | Something the skill needs is not declared: a frame, fixture, command, channel, guard, or the object | `preflight`, an allowance change, `landed` | None |
+| `not_planned` | No plan for the stage's motion | any planned motion | The `PlanStatus`; None when every seed of a choice failed (`values[<stage>_attempts]`) |
+| `refused` | ssrobot refused a plan, command, continuation, or watch | any stage | The ssrobot error code, or the continuation's refusal |
+| `command_failed` | A command ended without success: failed, timed out, or rejected | any commanded stage | The execution's diagnostic code, otherwise its state |
+| `command_canceled` | A command was canceled | any commanded stage | The execution's diagnostic code, otherwise its state |
+| `cancelled` | The skill was cancelled (`SkillExecution.cancel`) | the stage in progress | None |
+| `not_attached` | The object must be attached and is not | `transfer`, an allowance change | None |
+| `still_attached` | The object must be released and is still attached | `landed` | None |
+| `attachment_lost` | The attachment monitor reports the object left its declared transform | `retained`, `release`, an allowance change | None |
+| `missed` | The fingers closed to their target: nothing is between them | `obstructed` | None |
+| `lost` | After the lift, the fingers closed to their target | `acquired` | None |
+| `in_contact` | After the lift, the arm or the object is in contact with the scene | `clear` | None |
+| `release_unconfirmed` | The fingers did not reach the released opening | `release` | None |
+| `not_at_rest` | The arm was not observed at rest before the tare | `descend` | The `RestOutcome` |
+| `no_contact` | The guarded descent ended without its guard triggering | `descend` | The `GuardCause` |
+| `outside_regions` | The object is outside every target region | `contact`, `placed`, `landed` | None |
+
+A stage that replans after a refusal and then succeeds has no reason; the refusal is in
+its lookahead log. A race's candidates record each plan's `plan_status`, the planner's
+own status, so a planning timeout is told from an infeasible goal without its detail.
+
 ## Robot-specific choices are data
 
 `GraspSpec`, `PlaceSpec`, `DropSpec`, and `LandingSpec` name everything a skill needs: the manipulator,

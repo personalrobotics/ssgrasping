@@ -81,6 +81,7 @@ from ssrobot import (
     OffsetGoal,
     Planner,
     PlanResult,
+    PlanStatus,
     Pose,
     RobotContext,
     TraceKind,
@@ -96,6 +97,7 @@ from ssgrasping import (
     Candidates,
     Follow,
     Lookahead,
+    Reason,
     SkillState,
     drop,
     grasp,
@@ -114,7 +116,9 @@ from tests.test_grasp_place import (
     SWING_TOLERANCE_RAD,
     _drive,
     _environment,
+    _failed,
     _grasp_spec,
+    _reasons,
     _report,
 )
 
@@ -668,6 +672,7 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     (artifacts / "timing.json").write_text(json.dumps(timing, indent=2) + "\n")
 
     assert first == again, "two runs in one environment differ"
+    _reasons(scenarios)
 
     plain, ahead = scenarios["plain"], scenarios["lookahead"]
     for skill in ("grasp", "drop"):
@@ -706,9 +711,9 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     disturbed = scenarios["transfer_disturbed"]
     assert disturbed["grasp"]["state"] == SkillState.SUCCEEDED
     assert disturbed["drop"]["state"] == SkillState.FAILED
-    last = disturbed["drop"]["stages"][-1]
-    assert last["name"] == "transfer" and not last["succeeded"]
-    assert last["detail"].startswith("continuation refused, unpredicted_scene_change"), last
+    assert _failed(disturbed["drop"]) == (
+        "transfer", Reason.REFUSED, "unpredicted_scene_change", True, True,
+    )  # fmt: skip
     assert _entry(disturbed["drop"], "transfer")["decision"] == "failed: for recovery"
 
     mismatch = scenarios["mismatch"]["grasp"]
@@ -720,9 +725,7 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     changed = scenarios["scene_change"]
     assert changed["injected"]
     assert changed["grasp"]["state"] == SkillState.FAILED
-    last = changed["grasp"]["stages"][-1]
-    assert last["name"] == "approach" and not last["succeeded"]
-    assert last["detail"].startswith("continuation refused, unpredicted_scene_change")
+    assert _failed(changed["grasp"])[:3] == ("approach", Reason.REFUSED, "unpredicted_scene_change")
     assert _entry(changed["grasp"], "approach")["decision"] == "failed: for recovery"
 
     raced = scenarios["race"]
@@ -748,6 +751,11 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
         assert [(s["name"], s["seed"]) for s in tries] == [("transfer", k) for k in transfer_seeds]
         assert all(s["outcome"] != "valid" for s in tries)
     assert chains["left"]["chosen"] is None
+    # Each plan a candidate tried records the planner's own status when it returned one,
+    # so a consumer tells a planning timeout from an infeasible goal without its detail.
+    plans = [p for c in raced["race"]["candidates"] for p in c["plans"]]
+    assert {p["plan_status"] for p in plans} <= {s.value for s in PlanStatus} | {None}
+    assert all(p["plan_status"] == "succeeded" for p in plans if p["status"] == "valid")
     assert raced["grasp"]["state"] == raced["drop"]["state"] == SkillState.SUCCEEDED
 
     race_b = raced["race_b"]
@@ -786,9 +794,7 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     for scenario in ("not_at_rest", "stale_rest"):
         unrested = scenarios[scenario]
         assert unrested["grasp"]["state"] == SkillState.FAILED
-        last = unrested["grasp"]["stages"][-1]
-        assert last["name"] == "approach" and not last["succeeded"]
-        assert last["detail"].startswith("continuation refused, not_at_rest"), last
+        assert _failed(unrested["grasp"])[:3] == ("approach", Reason.REFUSED, "not_at_rest")
         entry = _entry(unrested["grasp"], "approach")
         assert entry["decision"] == "failed: for recovery", entry
         order = unrested["order"]

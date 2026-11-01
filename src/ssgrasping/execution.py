@@ -89,7 +89,7 @@ class SkillExecution:
                 break
             except SsrobotError as e:
                 # An expected operational refusal: the stage in progress fails with it.
-                self._run.fail(f"{e.code}: {e.message}")
+                self._run.fail(f"{e.code}: {e.message}", e.code)
                 self._finish(SkillState.FAILED)
                 break
         return self._state

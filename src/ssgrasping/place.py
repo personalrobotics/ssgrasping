@@ -69,7 +69,7 @@ from ssgrasping._skill import (
     unit,
 )
 from ssgrasping.execution import SkillExecution
-from ssgrasping.outcomes import Evidence
+from ssgrasping.outcomes import Evidence, Reason
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,7 +186,13 @@ def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Bod
         guard=spec.guard,
     )
     if attachment is None:
-        run.record("transfer", False, f"{spec.object!r} is not attached", Evidence.PLANNED)
+        run.record(
+            "transfer",
+            False,
+            f"{spec.object!r} is not attached",
+            Evidence.PLANNED,
+            Reason.NOT_ATTACHED,
+        )
     assert attachment is not None
     arm = ctx.manipulator(spec.manipulator)
     hand = attachment.allow
@@ -240,6 +246,7 @@ def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Bod
         if usable
         else f"stopped outside the terminal band of every region, at {stop.position}",
         Evidence.PORTABLE,
+        None if usable else Reason.OUTSIDE_REGIONS,
     )
 
     yield from run.grip("release", spec.gripper, spec.open_opening, spec.gripper_timeout_ns)
@@ -252,6 +259,7 @@ def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Bod
             False,
             f"opening {opening:.3f} < {spec.released_opening}: release not confirmed",
             Evidence.PORTABLE,
+            Reason.RELEASE_UNCONFIRMED,
         )
     ctx.detach(spec.object)
     run.held = False
@@ -271,6 +279,7 @@ def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Bod
         bool(within),
         f"in region {within[0]}" if within else f"outside every region at {pose.position}",
         Evidence.PRIVILEGED,
+        None if within else Reason.OUTSIDE_REGIONS,
     )
 
 
@@ -284,11 +293,25 @@ def _descend(run: Run, planner: Planner, spec: PlaceSpec) -> Body:
     run.values["tare_rest"] = rest_evidence(rest)
     if rest.outcome is not RestOutcome.AT_REST:
         evidence = Evidence.PRIVILEGED if rest.channel.privileged else Evidence.PORTABLE
-        run.record("descend", False, f"rest {rest.outcome.value}: {rest.detail}", evidence)
+        run.record(
+            "descend",
+            False,
+            f"rest {rest.outcome.value}: {rest.detail}",
+            evidence,
+            Reason.NOT_AT_REST,
+            rest.outcome.value,
+        )
     snapshot = ctx.snapshot()
     plan = _toward(ctx, snapshot, planner, spec)
     if not plan.succeeded:
-        run.record("descend", False, f"planning {plan.status.value}", Evidence.PLANNED)
+        run.record(
+            "descend",
+            False,
+            f"planning {plan.status.value}",
+            Evidence.PLANNED,
+            Reason.NOT_PLANNED,
+            plan.status.value,
+        )
     scene = ctx.planning_scene(snapshot, plan.request.group)
     ready = prepare(
         plan,
@@ -315,6 +338,8 @@ def _descend(run: Run, planner: Planner, spec: PlaceSpec) -> Body:
         f"{outcome.cause.value}: measure {outcome.measure:.3f}"
         + ("" if contact else ", no contact: a failed placement"),
         Evidence.PORTABLE,
+        None if contact else Reason.NO_CONTACT,
+        None if contact else outcome.cause.value,
     )
 
 
