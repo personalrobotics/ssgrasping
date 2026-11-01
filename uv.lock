@@ -957,7 +957,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "ssrobot", git = "https://github.com/personalrobotics/ssrobot?rev=c1a5c002a52135ce608b8852242e9b34b609feb5" }]
+requires-dist = [{ name = "ssrobot", git = "https://github.com/personalrobotics/ssrobot?rev=e27a25a926d5f429b37b4292d38f784164b8b69c" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -966,7 +966,7 @@ dev = [
     { name = "mypy", specifier = ">=1.13" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "ruff", specifier = ">=0.8" },
-    { name = "ssrobot", extras = ["mujoco", "planning"], git = "https://github.com/personalrobotics/ssrobot?rev=c1a5c002a52135ce608b8852242e9b34b609feb5" },
+    { name = "ssrobot", extras = ["mujoco", "planning"], git = "https://github.com/personalrobotics/ssrobot?rev=e27a25a926d5f429b37b4292d38f784164b8b69c" },
 ]
 
 [[package]]
@@ -1004,7 +1004,7 @@ wheels = [
 [[package]]
 name = "ssrobot"
 version = "0.0.0"
-source = { git = "https://github.com/personalrobotics/ssrobot?rev=c1a5c002a52135ce608b8852242e9b34b609feb5#c1a5c002a52135ce608b8852242e9b34b609feb5" }
+source = { git = "https://github.com/personalrobotics/ssrobot?rev=e27a25a926d5f429b37b4292d38f784164b8b69c#e27a25a926d5f429b37b4292d38f784164b8b69c" }
 
 [package.optional-dependencies]
 mujoco = [
