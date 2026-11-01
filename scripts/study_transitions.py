@@ -21,8 +21,10 @@ that keeps the can on a pad when the fingers open.
     uv run python scripts/study_transitions.py score OUT SUMMARY
 
 ``record`` writes ``OUT/<case>-<seed>.npz`` (every tick) and ``.json`` (the skills' results
-and the run's provenance); ``run`` records every case and seed; ``score`` reduces them to
-``SUMMARY``.
+and the recording's sha256); ``run`` records every case and seed into an empty ``OUT``, and
+writes ``OUT/provenance.json`` only if every one succeeded; ``score`` reduces them to
+``SUMMARY``. ``score`` refuses an ``OUT`` without that provenance, with any case and seed
+missing, repeated or unknown, or with a recording whose sha256 no longer matches.
 """
 
 from __future__ import annotations
@@ -346,12 +348,17 @@ def record(name: str, seed: int, out: Path) -> Path:
         "truth": [*TRUTH, "attachment_held"],
         "events": faults.events,
         "results": results,
-        "sha256": hashlib.sha256(
-            b"".join(np.ascontiguousarray(a).tobytes() for a in arrays.values())
-        ).hexdigest(),
+        "sha256": _digest(arrays),
     }
     (out / f"{name}-{seed}.json").write_text(json.dumps(meta, indent=1, default=str) + "\n")
     return path
+
+
+def _digest(arrays: Any) -> str:
+    """A recording's sha256, over its arrays' bytes in the order they were saved."""
+    return hashlib.sha256(
+        b"".join(np.ascontiguousarray(arrays[k]).tobytes() for k in arrays)
+    ).hexdigest()
 
 
 # -- Scoring --------------------------------------------------------------------------
@@ -529,13 +536,30 @@ def _span(values: list[float]) -> list[float] | None:
     return [min(values), max(values)] if values else None
 
 
+class Refused(Exception):
+    """The study's inputs are not one complete, unaltered run of every case and seed."""
+
+
 def score(out: Path, summary: Path) -> dict[str, Any]:
+    provenance = out / "provenance.json"
+    if not provenance.exists():
+        raise Refused(f"{provenance} is missing: `run` did not finish with every case and seed")
+    expected = {(c, s) for c in CASES for s in SEEDS}
+    seen: set[tuple[str, int]] = set()
     runs = []
     for meta_path in sorted(out.glob("*.json")):
-        meta = json.loads(meta_path.read_text())
-        if "case" not in meta:
+        if meta_path == provenance:
             continue
+        meta = json.loads(meta_path.read_text())
+        pair = (meta.get("case"), meta.get("seed"))
+        if pair not in expected or meta_path.stem != f"{pair[0]}-{pair[1]}":
+            raise Refused(f"{meta_path} is not a recording of this study's cases and seeds")
+        if pair in seen:
+            raise Refused(f"{meta_path} repeats {pair}")
+        seen.add(pair)
         d = np.load(meta_path.with_suffix(".npz"))
+        if _digest(d) != meta["sha256"]:
+            raise Refused(f"{meta_path.with_suffix('.npz')} does not match its recorded sha256")
         runs.append(
             {
                 "case": meta["case"],
@@ -544,6 +568,8 @@ def score(out: Path, summary: Path) -> dict[str, Any]:
                 **_run_scores(meta, d),
             }
         )
+    if seen != expected:
+        raise Refused(f"{out} is missing {sorted(expected - seen)}")
     by: dict[str, list[dict[str, Any]]] = {}
     for run in runs:
         for transition in ("acquired", "retained", "released", "placed", "landed"):
@@ -555,9 +581,8 @@ def score(out: Path, summary: Path) -> dict[str, Any]:
         "released": ("release_opening", "load_after_n"),
     }
     noise = _sensor_noise()
-    provenance = out / "provenance.json"
     report = {
-        "recorded": json.loads(provenance.read_text()) if provenance.exists() else None,
+        "recorded": json.loads(provenance.read_text()),
         "runs": runs,
         "sensor_noise": noise,
         "transitions": {
@@ -607,12 +632,19 @@ def _terminations(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
 
 
 def run(out: Path, jobs: int) -> None:
-    """Record every case and seed, each in its own interpreter."""
+    """Record every case and seed, each in its own interpreter, into an empty ``out``."""
     out.mkdir(parents=True, exist_ok=True)
+    if any(out.iterdir()):
+        raise Refused(f"{out} is not empty: record each run into its own directory")
     work = [(c, s) for c in CASES for s in SEEDS]
+    failed = []
     with ProcessPoolExecutor(jobs) as pool:
         for case, seed, code in pool.map(_one, work, [out] * len(work)):
             print(case, seed, "ok" if code == 0 else f"exit {code}", flush=True)
+            if code != 0:
+                failed.append(f"{case}-{seed}")
+    if failed:
+        raise Refused(f"{len(failed)} recordings failed (see their logs in {out}): {failed}")
     provenance = {
         "commit": subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True
@@ -659,13 +691,17 @@ def main() -> int:
     scored.add_argument("out", type=Path)
     scored.add_argument("summary", type=Path)
     args = parser.parse_args()
-    if args.command == "record":
-        args.out.mkdir(parents=True, exist_ok=True)
-        print(record(args.case, args.seed, args.out))
-    elif args.command == "run":
-        run(args.out, args.jobs)
-    else:
-        score(args.out, args.summary)
+    try:
+        if args.command == "record":
+            args.out.mkdir(parents=True, exist_ok=True)
+            print(record(args.case, args.seed, args.out))
+        elif args.command == "run":
+            run(args.out, args.jobs)
+        else:
+            score(args.out, args.summary)
+    except Refused as refused:
+        print(f"refused: {refused}", file=sys.stderr)
+        return 1
     return 0
 
 

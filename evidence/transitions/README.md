@@ -89,8 +89,9 @@ readings are noiseless.
 - **The opening's fall during the carry separates cleanly.**
   - It is at most 0.007 in every retained run, and at least 0.448 in every lost run.
   - That 0.441 gap is over a hundred times the gripper's 1/255 resolution.
-  - The fingers keep closing once the can is gone, because the gripper holds its closing
-    command.
+  - The fingers keep closing once the can is gone, because the simulated gripper holds
+    its closing command. This post-slip response is the model's. It has not been
+    confirmed on the physical 2F-140 (see Limitations).
 - **The opening crosses half its fall 110–148 ms after a 50 g can slips 1 cm,** and
   142–404 ms after a 0.411 kg can does.
 - **No real slip occurred.** A carry at full limits (`thrown`) kept the can in 10 of 10
@@ -124,15 +125,20 @@ readings are noiseless.
 - **`acquired`** can be confirmed, or refuted as a miss or a lost lift, from the
   gripper's two terminal states and the lift's own command status. An obstruction by an object of the grasped width stays
   `unobserved` by these signals.
-- **`retained`** has a strong portable signal: the opening falling. Using it as a stop
-  needs a runtime guard on the gripper opening during a carry. `WrenchGuard` watches only
-  a wrench channel against an upper threshold, so it cannot express this.
+- **`retained`** has a strong portable signal in Geodude's MuJoCo model: the opening
+  falling. Using it as a stop needs a runtime guard on the gripper opening during a carry.
+  `WrenchGuard` watches only a wrench channel against an upper threshold, so it cannot
+  express this. The result holds for the simulated hand until the physical 2F-140's
+  post-slip response confirms it.
 - **`released`**:
   - It is refuted by a release that stops short.
   - Confirming it needs the load's return. For objects whose weight is well below the
-    sensor's precision, that is `unobserved`.
-  - A stuck object is therefore detectable only for heavy enough objects. The attachment
-    should be kept until a release is confirmed.
+    sensor's precision, a release that reaches its target is `unobserved`, not
+    confirmed.
+  - A stuck object is therefore detectable only for heavy enough objects.
+  - The estimate stops at `unobserved`. Whether to detach, retain or assume the release
+    is the application's policy, and the application records which it chose (as #28 and
+    Geodude#248 keep the estimate apart from the decision).
 - **The wrist wrench is not usable as evidence of load without:**
   - an empty-hand model, as a function of the arm's configuration: the tool's mass and
     centre of mass, through forward kinematics;
@@ -151,6 +157,10 @@ readings are noiseless.
   wrist's. Hand-object transitions on ADA wait for a hand-empty ADA (ssrobot#121).
 - **Slips are injected,** as an external pull. A carry at full limits did not throw the
   can.
+- **The slip's signature is the simulated gripper's.** The opening falls after a slip
+  because MuJoCo's 2F-140 keeps driving toward its close target once the can is gone. The
+  physical gripper reports the same opening signal, but its post-slip response has not
+  been measured. Detecting a slip from the opening needs that hardware evidence.
 - **Some seeds never reached the stage being judged:**
 
   | Case | Seeds | How the place ended |
@@ -169,6 +179,11 @@ From a clean checkout of the commit `summary.json` names (`recorded.commit`), wi
 uv run python scripts/study_transitions.py run OUT --jobs 32
 uv run python scripts/study_transitions.py score OUT evidence/transitions/summary.json
 ```
+
+`run` refuses an `OUT` that is not empty, and exits nonzero without writing
+`provenance.json` if any recording fails. `score` refuses an `OUT` without
+`provenance.json`, with any case and seed missing, repeated or unknown, or with a
+recording whose recomputed sha256 differs from the one stored when it was recorded.
 
 Each run is deterministic. Two complete runs of the grid on one host gave
 byte-identical recordings, and each run's sha256 is in `summary.json`. The per-tick
