@@ -44,8 +44,9 @@ these stages, recording each:
 11. ``clear``: the held object is clear of everything, by the planner's validator.
 12. ``retained``: the lift's estimate of ``retained`` (``SkillResult.transitions``),
     confirmed, or unobserved when the opening had nowhere to close to. It never stands
-    in for ``acquired``. The attachment monitor's report is kept beside it, for
-    evaluation only (``SkillResult.evaluations``).
+    in for ``acquired``. Where the runtime has the object's privileged pose, the
+    attachment monitor's report is kept beside it, with the object's pose before and
+    after the lift, for evaluation only (``SkillResult.evaluations``).
 
 After ``attach``, a failure or cancellation leaves the attachment declared and reports
 the object as held: the physically conservative state, since it may be in the hand.
@@ -349,7 +350,6 @@ def _grasp(
     run.values["hand_allowance"] = list(hand)
     run.record("attach", True, f"allowed {', '.join((*hand, spec.support))}", Evidence.PLANNED)
 
-    before = _object_position(ctx, spec.object)
     run.begin("lift")
     lift = arm.plan_to_end_effector_offset(
         spec.normal, spec.lift_m, planner=planner, position_tolerance=spec.line_tolerance_m
@@ -408,9 +408,6 @@ def _grasp(
         None if clear else Reason.IN_CONTACT,
     )
 
-    after = _object_position(ctx, spec.object)
-    risen = sum((a - b) * n for a, b, n in zip(after, before, spec.normal, strict=True))
-    run.values["object_risen_m"] = round(risen, 6)  # for evaluation: a privileged pose
     lifted_estimate = run.transitions[-1]
     run.record(
         "retained",
@@ -504,7 +501,3 @@ def _approach_goal(
         position_tolerance=spec.line_tolerance_m,
         rotation_tolerance=1e-2,
     )
-
-
-def _object_position(ctx: RobotContext, name: str) -> tuple[float, float, float]:
-    return next(o.pose.position for o in ctx.snapshot().objects if o.name == name)

@@ -218,7 +218,7 @@ class Candidates:
             at = previous.projection
             held = self._held(arm, g, at.state, also=(g.support,))
             attachments = tuple(sorted((*at.state.attachments, held), key=lambda a: a.object))
-            state = replace(at.state, attachments=attachments)
+            state = at.state.with_attachments(attachments)
             request = arm.request(
                 OffsetGoal(
                     direction=g.normal,
@@ -245,7 +245,7 @@ class Candidates:
                     replace(a, allow=hand) if a.object == g.object else a
                     for a in at.state.attachments
                 )
-                state = replace(at.state, attachments=attachments)
+                state = at.state.with_attachments(attachments)
                 request = arm.request(
                     TsrGoal(tsrs=tuple(drop.regions)),
                     snapshot=state,
@@ -304,7 +304,7 @@ class Candidates:
         frame = ctx.description.end_effector(g.end_effector).frame
         q = tuple(at.position(j) for j in ctx.description.group(arm.group).joints)
         hand = ctx.planning_scene(at, arm.group).forward_kinematics(q, frame)
-        pose = next(o.pose for o in at.objects if o.name == g.object)
+        pose = next(o.known_pose() for o in at.objects if o.name == g.object)
         return Attachment(
             object=g.object,
             end_effector=g.end_effector,

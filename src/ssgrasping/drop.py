@@ -19,13 +19,17 @@ falls.
 3. ``release``: open the gripper, require the command to succeed and the opening to
    reach ``released_opening``, and detach. An unconfirmed release keeps the attachment
    and reports the object's held state as unknown.
+   A confirmed release then hands the object to the caller's ``released`` policy.
 4. ``retreat``: move straight along the container's outward ``normal`` by
    ``retreat_m``; none when ``retreat_m`` is 0, so the next motion can start, and be
    planned ahead, from where the transfer ends.
 
-The drop ends there: the robot is free to move on while the object falls. Where it
-comes to rest is observed by ``landing`` (``ssgrasping.landing``), alongside whatever the
-robot does next.
+The drop ends there: the robot is free to move on while the object falls. ``landed`` is
+estimated at the confirmed release, and is always ``unobserved``
+(``no_portable_signal``): no portable signal yet tells where the object came to rest,
+and whether to assume it is the application's. Where the runtime has the object's
+privileged pose, ``landing`` (``ssgrasping.landing``) scores that estimate, for
+evaluation only, alongside whatever the robot does next.
 
 A failure before ``release`` leaves the object attached, and held unless the transfer
 refuted ``retained``.
@@ -61,7 +65,7 @@ from ssgrasping._skill import (
     unit,
 )
 from ssgrasping.execution import SkillExecution
-from ssgrasping.outcomes import Criterion, Evidence, Reason
+from ssgrasping.outcomes import Criterion, Evidence, Reason, Transition, TransitionEstimate
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +135,7 @@ def drop(
     check_planner: Planner | None = None,
     lookahead: Lookahead | None = None,
     planned: Ahead | None = None,
+    released: Callable[[TransitionEstimate], None] | None = None,
 ) -> SkillExecution:
     """A pending drop of the held ``spec.object`` into ``spec.container``; see the
     module. Advance it, or drive it with ``run_skill``.
@@ -147,12 +152,18 @@ def drop(
     where the lift ended, or, refused, is planned again as usual; a refusal for recovery
     still fails the transfer. A drop with a retreat refuses ``planned``
     (``invalid_spec``), leaving it to the caller: its transfer is kept only if the retreat
-    plans from where it ends, which a transfer planned alone does not check."""
+    plans from where it ends, which a transfer planned alone does not check.
+
+    ``released`` is the application's policy for the object once the release is
+    confirmed and it is detached: it is called with the estimate the release leaves
+    ``unobserved``, before anything else is planned. With registered object poses
+    (ssrobot's ``ObjectPoses.REGISTERED``) the object's pose is then unknown, and a
+    retreat cannot plan around it until the policy registers or removes it."""
     if planned is not None:
         _check_no_retreat(spec)
     run = Run(ctx, "drop", spec.object, lookahead=lookahead)
     checker = planner if check_planner is None else check_planner
-    return SkillExecution(run, _drop(run, planner, checker, spec, planned))
+    return SkillExecution(run, _drop(run, planner, checker, spec, planned, released))
 
 
 def transfer_request(
@@ -187,7 +198,12 @@ def _check_no_retreat(spec: DropSpec) -> None:
 
 
 def _drop(
-    run: Run, planner: Planner, checker: Planner, spec: DropSpec, planned: Ahead | None = None
+    run: Run,
+    planner: Planner,
+    checker: Planner,
+    spec: DropSpec,
+    planned: Ahead | None,
+    released: Callable[[TransitionEstimate], None] | None,
 ) -> Body:
     ctx = run.ctx
     attachment = ctx.scene.attachment(spec.object)
@@ -264,6 +280,9 @@ def _drop(
     ctx.detach(spec.object)
     run.held = False
     run.record("release", True, f"opening {opening:.3f}; detached", Evidence.PORTABLE)
+    landed = run.unobserved(Transition.LANDED, "release")
+    if released is not None:
+        released(landed)
 
     if retreats:
         run.begin("retreat")

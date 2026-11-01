@@ -13,8 +13,9 @@ Each scenario is one contract case, recorded in ``drop.json`` with every stage's
 scene revision, held and attached state, evidence kind, and, for a failed stage, its
 reason and cause:
 - ``success``: grasp, then drop on a manual clock: the can is released over the bin, the
-  drop ends after its retreat, and ``landing`` then finds it at rest inside the bin, by
-  its privileged pose; run twice, byte-identical.
+  drop ends after its retreat with ``landed`` unobserved, and ``landing`` then scores
+  that against the can's privileged pose, for evaluation only, finding it inside the
+  bin; run twice, byte-identical.
 - ``unconfirmed_release``: the gripper opens only halfway, so ``release`` is not
   confirmed and the can stays attached.
 - ``pulled``: the harness pulls the can down at ``PULL_N`` for ``PULL_NS``,
@@ -26,6 +27,12 @@ reason and cause:
   during the transfer (injected; the can stays in hand). Privileged state decides no
   stage, so the drop succeeds; the evaluation records that the monitor disagreed with
   the estimate.
+- ``registered``: ``success`` in a context with registered object poses
+  (``ObjectPoses.REGISTERED``), the can registered where its privileged pose has it
+  before anything runs, and never read again for control. Released, its pose is
+  unknown, and the test's policy removes it (``released``), as an application that
+  assumes it landed would, so the retreat can plan: the same stages, estimates and
+  evaluations.
 Transfers are planned at ``CARRY_SCALING`` of the limits, as ``test_grasp_place``'s.
 The environment the artifact was made in is recorded with it; byte-identity is claimed
 within one environment.
@@ -43,7 +50,18 @@ from typing import Any
 
 from ssrobot import AttachmentViolation, Planner, Pose, RobotContext, RuntimeUpdate, Tsr
 
-from ssgrasping import DropSpec, LandingSpec, Reason, SkillState, drop, grasp, landing
+from ssgrasping import (
+    DropSpec,
+    LandingSpec,
+    Reason,
+    SkillResult,
+    SkillState,
+    Transition,
+    TransitionEstimate,
+    drop,
+    grasp,
+    landing,
+)
 from tests.test_grasp_place import (
     CAN_XY,
     CARRY_SCALING,
@@ -148,16 +166,33 @@ def _landing_spec() -> LandingSpec:
     return LandingSpec(object="can", inside=[interior])
 
 
-def _pick_and_drop(changes: dict[str, Any] | None = None) -> Any:
+def _kind(entry: dict[str, Any]) -> tuple[Any, ...]:
+    """A transition or evaluation, without the readings that vary between runs."""
+    keys = ("transition", "stage", "outcome", "reason", "estimate", "reference", "source")
+    return tuple(entry.get(k) for k in keys)
+
+
+def _landed(dropped: SkillResult) -> TransitionEstimate:
+    """The drop's ``landed`` estimate, for ``landing`` to score."""
+    return next(t for t in dropped.transitions if t.transition is Transition.LANDED)
+
+
+def _pick_and_drop(changes: dict[str, Any] | None = None, remove: bool = False) -> Any:
     def run(ctx: RobotContext, planner: Planner, checker: Planner, can: Pose) -> dict[str, Any]:
+        def assumed_landed(estimate: TransitionEstimate) -> None:
+            ctx.remove("can", source="assumed_landed")
+
         picked = _drive(ctx, grasp(ctx, planner, _grasp_spec(can), check_planner=checker))
         report = {"grasp": _report(picked)}
         if picked.succeeded:
             spec = _drop_spec(**(changes or {}))
-            dropped = _drive(ctx, drop(ctx, planner, spec, check_planner=checker))
+            released = assumed_landed if remove else None
+            dropping = drop(ctx, planner, spec, check_planner=checker, released=released)
+            dropped = _drive(ctx, dropping)
             report["drop"] = _report(dropped)
             if dropped.succeeded:
-                report["landing"] = _report(_drive(ctx, landing(ctx, _landing_spec())))
+                observing = landing(ctx, _landing_spec(), _landed(dropped))
+                report["landing"] = _report(_drive(ctx, observing))
         return report
 
     return run
@@ -269,6 +304,7 @@ def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> No
         "unconfirmed_release": _session(scene, _pick_and_drop({"open_opening": 0.5})),
         "pulled": _session(scene, _pulled(pulls), wrap=_keeping(pulls)),
         "monitor_only": _session(scene, _slipped(slips), wrap=_wrapping(slips)),
+        "registered": _session(scene, _pick_and_drop(remove=True), registered=True),
     }
     report = {
         "environment": _environment(),
@@ -287,21 +323,49 @@ def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> No
         "preflight", "transfer", "release", "retreat",
     ]  # fmt: skip
     assert success["drop"]["attachment"] is None
-    # The drop ends with the robot free; where the can came to rest is the landing's.
+    # The drop ends with the robot free, and landed unobserved: no portable signal tells
+    # where the can came to rest. The landing scores that against the can's privileged
+    # pose, for evaluation only: it finds the can in the bin.
     assert success["landing"]["state"] == SkillState.SUCCEEDED, success["landing"]["stages"]
     assert [(s["name"], s["evidence"]) for s in success["landing"]["stages"]] == [
-        ("landed", "privileged"),
+        ("observed", "privileged"),
     ]  # fmt: skip
+    assert success["landing"]["evaluations"] == [
+        {
+            "transition": "landed",
+            "stage": "release",
+            "estimate": "unobserved",
+            "reference": "confirmed",
+            "source": "can.pose",
+            "agrees": False,
+        }
+    ]
 
     unconfirmed = scenarios["unconfirmed_release"]["drop"]
     assert unconfirmed["state"] == SkillState.FAILED, unconfirmed["stages"]
     assert _failed(unconfirmed) == ("release", Reason.RELEASE_UNCONFIRMED, None, None, True)
     assert unconfirmed["attachment"] is not None
 
+    # Registered object poses: the can is registered once, where its privileged pose has
+    # it, and nothing reads its pose again for control. The same stages succeed, with the
+    # same estimates, and the same evaluations, though the monitor's reference now comes
+    # from the runtime's report alone (the registered scene keeps the can held).
+    registered = scenarios["registered"]
+    for part in ("grasp", "drop", "landing"):
+        assert registered[part]["state"] == SkillState.SUCCEEDED, registered[part]["stages"]
+        assert [n for n, _ in _states(registered, part)] == [n for n, _ in _states(success, part)]
+        for key in ("transitions", "evaluations"):
+            assert [_kind(e) for e in registered[part][key]] == [
+                _kind(e) for e in success[part][key]
+            ], (part, key)
+
     # The transfer confirms retained from the opening alone, as the monitor does.
-    (carried,) = success["drop"]["transitions"]
+    carried, landed = success["drop"]["transitions"]
     assert (carried["stage"], carried["outcome"], carried["reason"]) == (
         "transfer", "confirmed", "opening_held",
+    )  # fmt: skip
+    assert (landed["transition"], landed["stage"], landed["outcome"], landed["reason"]) == (
+        "landed", "release", "unobserved", "no_portable_signal",
     )  # fmt: skip
     assert [e["agrees"] for e in success["drop"]["evaluations"]] == [True]
 

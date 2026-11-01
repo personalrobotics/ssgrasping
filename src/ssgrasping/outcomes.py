@@ -110,6 +110,9 @@ class EstimateReason(enum.StrEnum):
     NO_OPENING_MARGIN = "no_opening_margin"
     """The opening the object was held at is not above the closing target, so the
     fingers have nowhere to close to if it leaves."""
+    NO_PORTABLE_SIGNAL = "no_portable_signal"
+    """No signal a physical robot reports can tell yet; whether to assume it is the
+    application's policy."""
 
 
 @dataclass(frozen=True, slots=True)

@@ -28,10 +28,13 @@ fingers, before declaring an attachment. It lifts along the support's normal, th
 closes again: only if the fingers still stop short is the object acquired. It finally
 confirms that the object is clear of everything. `place` carries a held object to a target region, waits until the arm
 is observed at rest, so the force guard tares a settled wrist, descends under that guard
-until contact, releases the object, and checks where it rests. `drop`
+until contact, releases the object, and retreats. `drop`
 carries the object over a container and lets it fall. It ends at the confirmed
-release, so the robot can move on at once. `landing` then observes where the object
-comes to rest, alongside whatever the robot does next; it commands nothing. Each module
+release, so the robot can move on at once. Where a placed or dropped object came to
+rest is not something a physical robot observes yet, so it is never a stage (see
+*Manipulation transitions*). `landing` scores a drop's `landed` estimate against the
+object's privileged pose, for evaluation only, alongside whatever the robot does next;
+it commands nothing. Each module
 documents its stages and their exact conditions.
 
 Failure is reported in terms of the physical situation rather than as a bare error.
@@ -54,14 +57,14 @@ The reason names the vocabulary of its cause, and a cause is a code, never prose
 
 | Reason | Meaning | Reported by | Cause |
 | --- | --- | --- | --- |
-| `unavailable` | Something the skill needs is not declared: a frame, fixture, command, channel, guard, or the object | `preflight`, an allowance change, `landed` | None |
+| `unavailable` | Something the skill needs is not declared: a frame, fixture, command, channel, guard, or the object | `preflight`, an allowance change, `observed` | None |
 | `not_planned` | No plan for the stage's motion | any planned motion | The `PlanStatus`; None when every seed of a choice failed (`values[<stage>_attempts]`) |
 | `refused` | ssrobot refused a plan, command, continuation, or watch | any stage | The ssrobot error code, or the continuation's refusal |
 | `command_failed` | A command ended without success: failed, timed out, or rejected | any commanded stage | The execution's diagnostic code, otherwise its state |
 | `command_canceled` | A command was canceled | any commanded stage | The execution's diagnostic code, otherwise its state |
 | `cancelled` | The skill was cancelled (`SkillExecution.cancel`) | the stage in progress | None |
 | `not_attached` | The object must be attached and is not | `transfer`, an allowance change | None |
-| `still_attached` | The object must be released and is still attached | `landed` | None |
+| `still_attached` | The object must be released and is still attached | `observed` | None |
 | `attachment_lost` | The attachment monitor reports the object left its declared transform | an allowance change | None |
 | `missed` | The fingers closed to their target: nothing is between them | `obstructed` | None |
 | `lost` | After the lift, the fingers closed to their target | `acquired` | None |
@@ -69,7 +72,7 @@ The reason names the vocabulary of its cause, and a cause is a code, never prose
 | `release_unconfirmed` | The fingers did not reach the released opening | `release` | None |
 | `not_at_rest` | The arm was not observed at rest before the tare | `descend` | The `RestOutcome` |
 | `no_contact` | The guarded descent ended without its guard triggering | `descend` | The `GuardCause` |
-| `outside_regions` | The object is outside every target region | `contact`, `placed`, `landed` | None |
+| `outside_regions` | The held object is outside every target region | `contact` | None |
 | `transition_refuted` | Portable evidence refuted a manipulation transition the stage needs: for `retained`, the opening guard stopped a carry when the fingers closed past the object's width | `lift`, `transfer` | The `Transition` |
 
 A stage that replans after a refusal and then succeeds has no reason; the refusal is in
@@ -135,10 +138,26 @@ opening falls by at least 0.448 after every slip and at most 0.007 while held. T
 depends on the simulated 2F-140 closing on after the object leaves, which is not yet
 confirmed on the physical gripper.
 
-Privileged state never decides a stage. Where the runtime has simulator state of the
-object, the attachment monitor's report is kept beside each estimate in a
-`TransitionEvaluation` (`SkillResult.evaluations`) as its `reference`, with `source`
-`attachment_monitor`. The reference is privileged, not ground truth: in Geodude's
+`placed` and `landed` are estimated at a confirmed release, and are always `unobserved`
+(`no_portable_signal`): no signal a physical robot reports yet tells where the object
+came to rest. Assuming them, or not, is the application's policy. `drop` and `place`
+hand the object to the caller's `released` policy once the release is confirmed and
+the object detached, before anything else is planned.
+
+The skills run unchanged in a context with registered object poses (ssrobot's
+`ObjectPoses.REGISTERED`), where the scene holds what the application registered, not
+what the simulator measures. There a released object's pose is unknown until the
+`released` policy registers or removes it.
+
+Privileged state never decides a stage. Where the runtime has the object's privileged
+pose, each estimate is scored in a `TransitionEvaluation` (`SkillResult.evaluations`),
+for evaluation only:
+- `retained`: against the runtime's attachment monitor (`ctx.violation`), with
+  `source` `attachment_monitor`, and the object's pose at the carry's start and end;
+- `placed`, after `place`'s retreat, and `landed`, by `landing`: against the object's
+  pose in the target regions, with `source` the pose channel.
+
+For `retained`, the reference is privileged, not ground truth: in Geodude's
 development corpus the monitor reported a box lost that had only swung in the hand,
 while the opening correctly showed it held. Ground truth is reserved for physical
 state, as the study above judges it.
@@ -328,7 +347,7 @@ lift       ok      commanded
 acquired   ok      portable
 restrict   ok      planned
 clear      ok      planned
-retained   ok      privileged
+retained   ok      portable
 ```
 
 Run it with `uv run python` from the repository root, where it writes `can.xml`. CI runs
@@ -344,7 +363,7 @@ attachment monitor tolerates the can swinging between the pads as the arm accele
 | Grasp, place under a force guard, and drop into a container | Implemented; demonstrated on Geodude in MuJoCo |
 | Portable grasp verification and conservative failure reporting | Implemented; missed grasps, slips, and unconfirmed releases are tested on Geodude |
 | Planning ahead within a skill, and continuing the kept approach | Implemented; demonstrated on Geodude |
-| Estimating `retained` from the gripper opening, stopping a carry that loses its object | Implemented; demonstrated on Geodude in MuJoCo. `acquired`, `released`, `placed` and `landed` are planned (#28) |
+| Estimating `retained` from the gripper opening, stopping a carry that loses its object | Implemented; demonstrated on Geodude in MuJoCo. `placed` and `landed` are recorded `unobserved`, scored against privileged poses; `acquired` and `released` estimates are planned (#28) |
 | Racing grasp candidates across arms, including during an earlier motion | Implemented; used by Geodude's four-can recycling demo |
 | Skills on ADA | Planned; the ADA package opens in the test environment, but no skill has been demonstrated on it |
 | Physical robots and learned policies | Not yet supported; they depend on ssrobot's hardware runtimes and policy execution |

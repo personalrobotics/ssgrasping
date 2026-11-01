@@ -18,6 +18,16 @@ Skills estimate the manipulation transitions they pass through
   truth) in `SkillResult.evaluations`. `restrict` and `allow_target`
   still refuse to re-declare an attachment the monitor reports lost
   (personalrobotics/geodude#248).
+- **`placed` and `landed` are estimates, never stages** (personalrobotics/geodude#248).
+  Both are recorded `unobserved` (`EstimateReason.NO_PORTABLE_SIGNAL`) at the confirmed
+  release. Where the runtime has the object's privileged pose, `place` scores `placed`
+  after its retreat, and `landing` scores the drop's `landed`, against the target
+  regions, as evaluations only. The `retained` evaluation reads the runtime's violation
+  report (`ctx.violation`) and records the object's pose at the carry's start and end.
+- **Registered object poses.** The skills run in a context with ssrobot's
+  `ObjectPoses.REGISTERED` (personalrobotics/ssrobot#230). `drop` and `place` take a
+  `released` policy, called with the unobserved estimate once the release is confirmed,
+  so the application can register or remove the object before anything else plans.
 
 ### Compatibility
 
@@ -27,7 +37,13 @@ Skills estimate the manipulation transitions they pass through
   opening channel; a runtime that cannot fails `preflight` with `unavailable`.
 - A slip during a transfer now fails `transfer` with `transition_refuted` (cause
   `retained`) and `held` False, not `release` with `attachment_lost` and `held` True.
-- ssrobot is pinned at the commit of personalrobotics/ssrobot#228.
+- `place` has no `placed` stage, and ends after `retreat`; `values["placed_pose"]` is
+  gone. `landing(ctx, spec, estimate)` takes the drop's `landed` estimate; its one stage
+  is `observed`, and fails only if the object is still attached or has no privileged
+  pose. `outside_regions` is now produced only by `place`'s `contact`.
+- `grasp`'s `values["object_risen_m"]` is gone: the lift's evaluation holds the object's
+  poses.
+- ssrobot is pinned at the head of personalrobotics/ssrobot#232.
 
 A failed stage reports a stable, machine-readable reason
 (personalrobotics/ssgrasping#34): `Stage.reason`, a new `Reason`, and `Stage.cause`, the
