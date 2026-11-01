@@ -3,7 +3,8 @@
 ``grasp`` returns a passive ``SkillExecution`` (see ``ssgrasping.execution``) that runs
 these stages, recording each:
 1. ``preflight``: every reference resolves and every command and channel the grasp
-   uses is available. Nothing is commanded before it passes.
+   uses is available, with a guard on the opening channel for the lift. Nothing is
+   commanded before it passes.
 2. ``open``: open the gripper, so the pregrasp is planned with the fingers as they will
    approach. The command must succeed: it ends when the fingers' motion ends, and its
    ``GripperResult`` is kept in ``values["gripper"]``, as for every gripper stage.
@@ -29,7 +30,11 @@ these stages, recording each:
    object's width is personalrobotics/ssgrasping#28's.
 7. ``attach``: declare the object attached, allowed to touch the hand and its support:
    the hypothesis the lift is planned under, not yet a claim that it is held.
-8. ``lift``: move straight along ``normal``, away from the support, by ``lift_m``.
+8. ``lift``: move straight along ``normal``, away from the support, by ``lift_m``,
+   under an opening guard midway between the opening the close stopped short at and
+   ``close_opening``. If the guard stops the lift, the fingers closed past the object's
+   width: ``retained`` is refuted, and the lift fails with the object reported not
+   held.
 9. ``acquired``: close the gripper again. If it still stops short, what stopped the
    fingers rose with them; if it reaches its target, it stayed behind, and the grasp
    fails. This is portable evidence, and the grasp's only claim that it holds the
@@ -37,9 +42,10 @@ these stages, recording each:
 10. ``restrict``: replace the allowance with the hand alone, keeping the attachment's
     transform, so nothing else may be touched from now on.
 11. ``clear``: the held object is clear of everything, by the planner's validator.
-12. ``retained``: the attachment monitor still reports the object held at the
-    transform declared at ``attach``. This is privileged evidence about the motion; it
-    never stands in for ``acquired``.
+12. ``retained``: the lift's estimate of ``retained`` (``SkillResult.transitions``),
+    confirmed, or unobserved when the opening had nowhere to close to. It never stands
+    in for ``acquired``. The attachment monitor's report is kept beside it, for
+    evaluation only (``SkillResult.evaluations``).
 
 After ``attach``, a failure or cancellation leaves the attachment declared and reports
 the object as held: the physically conservative state, since it may be in the hand.
@@ -84,10 +90,11 @@ from ssgrasping._skill import (
     Run,
     check_spec,
     preflight,
+    retention,
     unit,
 )
 from ssgrasping.execution import SkillExecution
-from ssgrasping.outcomes import Evidence, Reason
+from ssgrasping.outcomes import Criterion, Evidence, Reason
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,6 +231,7 @@ def _grasp(
         gripper=spec.gripper,
         support=spec.support,
         channels={spec.opening_channel: (1,)},
+        carries=spec.opening_channel,
     )
     arm = ctx.manipulator(spec.manipulator)
 
@@ -355,7 +363,14 @@ def _grasp(
             follow.stage, execution, follow.request, follow.planner, allowances={spec.object: hand}
         )
 
-    yield from run.move("lift", lift, planner, then=None if follow is None else hand_on)
+    carry = retention(
+        spec.opening_channel,
+        Criterion("held_opening", opening, "observed: the opening the close stopped short at"),
+        Criterion("close_opening", spec.close_opening, "GraspSpec.close_opening"),
+    )
+    yield from run.move(
+        "lift", lift, planner, then=None if follow is None else hand_on, retain=carry
+    )
 
     yield from run.grip("acquired", spec.gripper, spec.close_opening, spec.gripper_timeout_ns)
     lifted = float(run.observe(spec.opening_channel)[0])
@@ -395,15 +410,13 @@ def _grasp(
 
     after = _object_position(ctx, spec.object)
     risen = sum((a - b) * n for a, b, n in zip(after, before, spec.normal, strict=True))
-    run.values["object_risen_m"] = round(risen, 6)
-    current = ctx.scene.attachment(spec.object)
-    retained = current is not None and current.held
+    run.values["object_risen_m"] = round(risen, 6)  # for evaluation: a privileged pose
+    lifted_estimate = run.transitions[-1]
     run.record(
         "retained",
-        retained,
-        f"attachment monitor: held={retained}, object rose {risen:.4f} m",
-        Evidence.PRIVILEGED,
-        None if retained else Reason.ATTACHMENT_LOST,
+        True,
+        f"{lifted_estimate.outcome.value} through the lift: {lifted_estimate.reason.value}",
+        Evidence.PORTABLE,
     )
 
 

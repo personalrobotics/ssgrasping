@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+Skills estimate the manipulation transitions they pass through
+(personalrobotics/ssgrasping#28), starting with `retained`.
+- **Types.** `TransitionEstimate`, `TransitionEvaluation`, `Transition`,
+  `TransitionOutcome`, `EstimateReason`, `Observed`, `Criterion`; `SkillResult.transitions`
+  and `SkillResult.evaluations`; `Reason.TRANSITION_REFUTED`, whose cause is the
+  `Transition`.
+- **Retention.** `grasp`'s lift and the transfers of `drop` and `place` run under an
+  ssrobot `OpeningGuard` (personalrobotics/ssrobot#227) midway between the opening the
+  object is held at and the closing target. If it stops the carry, `retained` is
+  refuted and the stage fails with the object reported not held.
+- **Privileged state decides nothing.** `grasp`'s `retained` stage is the lift's
+  estimate, and `drop`'s release no longer gates on the attachment monitor; the monitor
+  is kept as a privileged reference (`TransitionEvaluation.reference`, not ground
+  truth) in `SkillResult.evaluations`. `restrict` and `allow_target`
+  still refuse to re-declare an attachment the monitor reports lost
+  (personalrobotics/geodude#248).
+
+### Compatibility
+
+- `DropSpec` and `PlaceSpec` gain `close_opening` (default 0.0, `GraspSpec`'s default):
+  the closing target the object is held with.
+- `preflight` of `grasp`, `drop` and `place` requires the runtime to guard the arm on the
+  opening channel; a runtime that cannot fails `preflight` with `unavailable`.
+- A slip during a transfer now fails `transfer` with `transition_refuted` (cause
+  `retained`) and `held` False, not `release` with `attachment_lost` and `held` True.
+- ssrobot is pinned at the commit of personalrobotics/ssrobot#228.
+
 A failed stage reports a stable, machine-readable reason
 (personalrobotics/ssgrasping#34): `Stage.reason`, a new `Reason`, and `Stage.cause`, the
 ssrobot code behind it. The README tabulates every reason. Each candidate a race tried

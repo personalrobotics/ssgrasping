@@ -44,7 +44,9 @@ its reason and cause, and the attachment the skill left declared:
   every tick: it must stay within ``TARE_SETTLED_FRACTION`` of the guard's threshold of
   its value at rest, so taring then shifts the contact the guard detects by at most
   that fraction.
-Every failed stage, in every scenario, says why as a ``Reason``, with a cause in the
+The lift and the place's transfer each estimate ``retained`` from an opening guard, with
+the attachment monitor kept beside it for evaluation only (``success``). Every failed
+stage, in every scenario, says why as a ``Reason``, with a cause in the
 vocabulary its reason names (the README's table); no successful stage does (``_reasons``).
 The environment the artifact was made in is recorded with it; byte-identity is claimed
 within one environment.
@@ -93,6 +95,7 @@ from ssgrasping import (
     SkillExecution,
     SkillResult,
     SkillState,
+    Transition,
     grasp,
     place,
     run_skill,
@@ -332,6 +335,18 @@ def _report(result: SkillResult) -> dict[str, Any]:
             "held": a.held,
         },
         "values": result.values,
+        "transitions": [json.loads(json.dumps(dataclasses.asdict(t))) for t in result.transitions],
+        "evaluations": [
+            {
+                "transition": e.estimate.transition.value,
+                "stage": e.estimate.stage,
+                "estimate": e.estimate.outcome.value,
+                "reference": e.reference.value,
+                "source": e.source,
+                "agrees": e.agrees,
+            }
+            for e in result.evaluations
+        ],
     }
 
 
@@ -461,6 +476,7 @@ CAUSES: dict[str, set[str] | None] = {
     Reason.REFUSED: None,  # an ssrobot error or refusal code
     Reason.COMMAND_FAILED: None,  # an execution diagnostic code, or the execution state
     Reason.COMMAND_CANCELED: None,
+    Reason.TRANSITION_REFUTED: {t.value for t in Transition},
 }
 """The vocabulary of each reason's cause: an ssrobot enum's values, or any ssrobot code
 (None). A reason not listed has no cause."""
@@ -551,6 +567,26 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
         "preflight", "open", "pregrasp", "approach", "close", "obstructed",
         "attach", "lift", "acquired", "restrict", "clear", "retained",
     ]  # fmt: skip
+    # The lift and the place's transfer carry the can under an opening guard: each
+    # confirms retained, from the opening alone, and the attachment monitor agrees.
+    for part, stage in (("grasp", "lift"), ("place", "transfer")):
+        (estimate,) = success[part]["transitions"]
+        assert (estimate["transition"], estimate["stage"], estimate["outcome"]) == (
+            "retained", stage, "confirmed",
+        ), estimate  # fmt: skip
+        assert [e["evidence"] for e in estimate["evidence"]] == ["portable"]
+        below = next(c for c in estimate["criteria"] if c["name"] == "below")
+        assert estimate["evidence"][0]["value"][0] >= below["value"]
+        assert success[part]["evaluations"] == [
+            {
+                "transition": "retained",
+                "stage": stage,
+                "estimate": "confirmed",
+                "reference": "confirmed",
+                "source": "attachment_monitor",
+                "agrees": True,
+            }
+        ]
     declared = success["grasp"]["values"]["attach_transform"]
     assert success["grasp"]["attachment"]["transform"] == declared  # kept through restrict
     assert success["place"]["state"] == SkillState.SUCCEEDED, success["place"]["stages"]

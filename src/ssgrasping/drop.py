@@ -5,18 +5,20 @@
 each. Nothing is lowered under a guard and nothing touches the container; the object
 falls.
 1. ``preflight``: every reference resolves, and every command and channel the drop uses
-   is available. Nothing is commanded before it passes.
+   is available, with a guard on the opening channel for the transfer. Nothing is
+   commanded before it passes.
 2. ``transfer``: plan the end effector into the drop regions, with the hand alone
    allowed, at ``carry_scaling`` of the joints' velocity and acceleration limits, and
    execute. With a retreat, a plan is kept only if the retreat also plans from where it
    ends; up to ``transfer_attempts`` seeds are tried. The regions are given for the end
    effector, as a container's drop zone usually is: the hand over the opening, pointing
-   in.
-3. ``release``: first, the attachment monitor must still report the object held: one
-   that left the grasp during the transfer fails here, with the attachment kept and
-   the object conservatively reported held. Then open the gripper, require the command
-   to succeed and the opening to reach ``released_opening``, and detach. An unconfirmed
-   release keeps the attachment and reports the object's held state as unknown.
+   in. The transfer carries the object under an opening guard midway between the
+   opening it is held at when the drop begins and ``close_opening``: if the guard stops
+   it, ``retained`` is refuted, and the transfer fails with the object reported not
+   held.
+3. ``release``: open the gripper, require the command to succeed and the opening to
+   reach ``released_opening``, and detach. An unconfirmed release keeps the attachment
+   and reports the object's held state as unknown.
 4. ``retreat``: move straight along the container's outward ``normal`` by
    ``retreat_m``; none when ``retreat_m`` is 0, so the next motion can start, and be
    planned ahead, from where the transfer ends.
@@ -25,7 +27,8 @@ The drop ends there: the robot is free to move on while the object falls. Where 
 comes to rest is observed by ``landing`` (``ssgrasping.landing``), alongside whatever the
 robot does next.
 
-A failure before ``release`` leaves the object attached and held.
+A failure before ``release`` leaves the object attached, and held unless the transfer
+refuted ``retained``.
 """
 
 from __future__ import annotations
@@ -54,10 +57,11 @@ from ssgrasping._skill import (
     Run,
     check_spec,
     preflight,
+    retention,
     unit,
 )
 from ssgrasping.execution import SkillExecution
-from ssgrasping.outcomes import Evidence, Reason
+from ssgrasping.outcomes import Criterion, Evidence, Reason
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +85,9 @@ class DropSpec:
     """Where the end effector may be when it lets go, in the world."""
     retreat_m: float
     open_opening: float = 1.0
+    close_opening: float = 0.0
+    """The closing target the object is held with: the grasp's ``close_opening``. The
+    fingers run on toward it if the object leaves the hand."""
     released_opening: float = 0.9
     """The opening that confirms the fingers have let go."""
     gripper_timeout_ns: int = GRIPPER_TIMEOUT_NS
@@ -105,7 +112,7 @@ class DropSpec:
         check_spec(self.retreat_m >= 0, "must be non-negative", "retreat_m")
         check_spec(self.line_tolerance_m > 0, "must be positive", "line_tolerance_m")
         check_spec(self.gripper_timeout_ns > 0, "must be positive", "gripper_timeout_ns")
-        for name in ("open_opening", "released_opening"):
+        for name in ("open_opening", "close_opening", "released_opening"):
             check_spec(0.0 <= getattr(self, name) <= 1.0, "between 0 and 1", name)
         check_spec(self.transfer_attempts >= 1, "at least 1", "transfer_attempts")
         check_spec(0.0 < self.carry_scaling <= 1.0, "in (0, 1]", "carry_scaling")
@@ -192,6 +199,7 @@ def _drop(
         gripper=spec.gripper,
         support=spec.container,
         channels={spec.opening_channel: (1,)},
+        carries=spec.opening_channel,
     )
     if attachment is None:
         run.record(
@@ -223,25 +231,24 @@ def _drop(
         )
         return transfer
 
+    carry = retention(
+        spec.opening_channel,
+        Criterion(
+            "held_opening",
+            float(run.observe(spec.opening_channel)[0]),
+            "observed: the opening when the drop began",
+        ),
+        Criterion("close_opening", spec.close_opening, "DropSpec.close_opening"),
+    )
     if planned is None:
-        yield from run.move("transfer", choose(), planner)
+        yield from run.move("transfer", choose(), planner, retain=carry)
     else:
         run.adopt(planned)
-        yield from run.move("transfer", planned, planner, replan=choose)
+        yield from run.move("transfer", planned, planner, replan=choose, retain=carry)
 
     run.boundary(
         "release", "whether the fingers let go decides what follows; detaching changes the scene"
     )
-    run.begin("release")
-    carried = ctx.scene.attachment(spec.object)
-    if carried is None or not carried.held:
-        run.record(
-            "release",
-            False,
-            "attachment monitor: the object left its declared transform during the transfer",
-            Evidence.PRIVILEGED,
-            Reason.ATTACHMENT_LOST,
-        )
     yield from run.grip("release", spec.gripper, spec.open_opening, spec.gripper_timeout_ns)
     opening = float(run.observe(spec.opening_channel)[0])
     run.values["released_opening"] = opening

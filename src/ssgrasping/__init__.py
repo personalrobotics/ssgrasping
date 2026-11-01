@@ -12,18 +12,34 @@ from ssgrasping.drop import DropSpec, drop
 from ssgrasping.execution import SkillExecution, run_skill, run_together
 from ssgrasping.grasp import GraspSpec, grasp
 from ssgrasping.landing import LandingSpec, landing
-from ssgrasping.outcomes import Evidence, Reason, SkillResult, SkillState, Stage
+from ssgrasping.outcomes import (
+    Criterion,
+    EstimateReason,
+    Evidence,
+    Observed,
+    Reason,
+    SkillResult,
+    SkillState,
+    Stage,
+    Transition,
+    TransitionEstimate,
+    TransitionEvaluation,
+    TransitionOutcome,
+)
 from ssgrasping.place import PlaceSpec, place
 
 __all__ = [
     "Candidate",
     "Candidates",
+    "Criterion",
     "DropSpec",
+    "EstimateReason",
     "Evidence",
     "Follow",
     "GraspSpec",
     "LandingSpec",
     "Lookahead",
+    "Observed",
     "PlaceSpec",
     "Reason",
     "Selection",
@@ -31,6 +47,10 @@ __all__ = [
     "SkillResult",
     "SkillState",
     "Stage",
+    "Transition",
+    "TransitionEstimate",
+    "TransitionEvaluation",
+    "TransitionOutcome",
     "drop",
     "grasp",
     "landing",

@@ -5,6 +5,10 @@ on planning running on a worker; the helpers here that wait are generators too, 
 with ``yield from``. Every motion goes through ssrobot's public planning and execution
 calls. Nothing here plans, solves IK, retimes, advances a clock, or touches MuJoCo.
 
+A carry runs under an opening guard (``Retention``), and its ``retained`` transition is
+estimated from how the guard ended: a guard that stops the carry refutes it and fails
+the stage at once, with the object reported not held.
+
 Given a ``Lookahead``, a stage whose successor's request is fully determined plans that
 successor while its own motion executes, on ``ctx.predict`` of it (``Run.ahead``), and
 the successor runs as a continuation (``Run.move`` given an ``Ahead``). Every lookahead,
@@ -28,8 +32,10 @@ from ssrobot import (
     Execution,
     ExecutionState,
     GripperCommand,
+    GuardCause,
     JointRest,
     ObservationRequest,
+    OpeningGuard,
     Planner,
     PlanningRequest,
     PlanProjection,
@@ -45,7 +51,20 @@ from ssrobot import (
     dumps,
 )
 
-from ssgrasping.outcomes import Evidence, Reason, SkillResult, SkillState, Stage
+from ssgrasping.outcomes import (
+    Criterion,
+    EstimateReason,
+    Evidence,
+    Observed,
+    Reason,
+    SkillResult,
+    SkillState,
+    Stage,
+    Transition,
+    TransitionEstimate,
+    TransitionEvaluation,
+    TransitionOutcome,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +118,8 @@ ssrobot's gate before anything moves again, was not established (not observed at
 within ``rest_timeout_ns``, or unobservable). Nothing is submitted around them. Every other refusal
 (a small arrival mismatch, a rebase the planner cannot make or that is invalid in the
 actual scene) is replanned from the actual state."""
+MONITOR = "attachment_monitor"
+"""The privileged reference a ``retained`` estimate is scored against, where there is one."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +149,29 @@ class Lookahead:
                 "must be finite and non-negative",
                 "arrival_tolerance",
             )
+
+
+@dataclass(frozen=True, slots=True)
+class Retention:
+    """How a carry's ``retained`` is estimated: the opening guard it runs under, or None
+    when the opening cannot tell (``no_opening_margin``), and the criteria behind it."""
+
+    guard: OpeningGuard | None
+    criteria: tuple[Criterion, ...]
+
+
+def retention(channel: str, held: Criterion, target: Criterion) -> Retention:
+    """The opening guard for a carry of an object held at ``held``, by fingers closing on
+    ``target``: midway between them. An object that leaves lets the fingers run on toward
+    the target; one still in hand keeps them at its width."""
+    if held.value <= target.value:
+        return Retention(None, (held, target))
+    below = Criterion(
+        "below",
+        (held.value + target.value) / 2,
+        f"midway between {held.name} and {target.name}",
+    )
+    return Retention(OpeningGuard(channel=channel, below=below.value), (held, target, below))
 
 
 @dataclass(frozen=True, slots=True)
@@ -234,6 +278,8 @@ class Run:
         self.stages: list[Stage] = []
         self.values: dict[str, object] = {}
         self.held: bool | None = None
+        self.transitions: list[TransitionEstimate] = []
+        self.evaluations: list[TransitionEvaluation] = []
         self.lookahead = lookahead
         self._aheads: list[Ahead] = []
         self.upcoming: Ahead | None = None
@@ -391,6 +437,8 @@ class Run:
             stages=tuple(self.stages),
             attachment=self.ctx.scene.attachment(self.obj),
             values=dict(self.values),
+            transitions=tuple(self.transitions),
+            evaluations=tuple(self.evaluations),
         )
 
     def _append(
@@ -428,6 +476,7 @@ class Run:
         *,
         replan: Callable[[], PlanResult] | None = None,
         then: Callable[[Execution], Ahead | None] | None = None,
+        retain: Retention | None = None,
     ) -> Generator[Wait, None, Ahead | None]:
         """Execute ``plan`` and wait for it to finish.
 
@@ -438,15 +487,19 @@ class Run:
         is replanned with ``replan`` from the actual state, and recorded so.
 
         ``then``, called once this motion is submitted, may start planning the next
-        stage ahead; its ``Ahead`` is returned."""
+        stage ahead; its ``Ahead`` is returned.
+
+        Given ``retain``, the motion carries the object: it runs under the opening guard,
+        and its ``retained`` is estimated (``_retained``)."""
         self.begin(name)
         detail = "succeeded"
+        guard = None if retain is None else retain.guard
         if isinstance(plan, Ahead):
-            execution, detail = yield from self._continue(name, plan, planner, replan)
+            execution, detail = yield from self._continue(name, plan, planner, replan, guard)
         elif replan is not None and plan.succeeded:
             # A plan made beforehand: if the robot is no longer where it starts, plan again.
             try:
-                execution = self.ctx.execute(plan, planner=planner)
+                execution = self.ctx.execute(plan, planner=planner, guard=guard)
             except SsrobotError as e:
                 if e.code != "start_mismatch":
                     self.record(
@@ -458,17 +511,76 @@ class Run:
                         e.code,
                     )
                 execution, detail = self._replanned(
-                    name, replan, planner, "replanned: start_mismatch", Reason.REFUSED, e.code
+                    name,
+                    replan,
+                    planner,
+                    "replanned: start_mismatch",
+                    Reason.REFUSED,
+                    e.code,
+                    guard,
                 )
         else:
-            execution = self._execute(name, plan, planner)
+            execution = self._execute(name, plan, planner, guard)
         upcoming = None if then is None else then(execution)
         yield Wait(execution=execution)
         self.finished(name, execution)
+        if retain is not None:
+            self._retained(name, execution, retain)
         self.record(name, True, detail, Evidence.COMMANDED)
         return upcoming
 
-    def _execute(self, name: str, plan: PlanResult, planner: Planner) -> Execution:
+    def _retained(self, name: str, execution: Execution, retain: Retention) -> None:
+        """Estimate ``retained`` over the carry ``execution`` ran: confirmed if its opening
+        guard did not trigger, refuted if it did, which fails ``name`` with the object
+        reported not held, and unobserved without a guard. Where the runtime has
+        simulator state of the object, the attachment monitor's report is kept beside the
+        estimate as a privileged reference, for evaluation only."""
+        status = execution.status
+        evidence: tuple[Observed, ...] = ()
+        if retain.guard is None:
+            outcome, why = TransitionOutcome.UNOBSERVED, EstimateReason.NO_OPENING_MARGIN
+        else:
+            assert status.guard is not None  # a guarded trajectory's success carries one
+            fell = status.guard.cause is GuardCause.GUARD_TRIGGERED
+            outcome = TransitionOutcome.REFUTED if fell else TransitionOutcome.CONFIRMED
+            why = EstimateReason.OPENING_FELL if fell else EstimateReason.OPENING_HELD
+            last = status.guard.window[-1]
+            evidence = (
+                Observed(retain.guard.channel, status.stamp.time_ns, last, Evidence.PORTABLE),
+            )
+        estimate = TransitionEstimate(
+            Transition.RETAINED, name, outcome, why, evidence, retain.criteria
+        )
+        self.transitions.append(estimate)
+        attachment = self.ctx.scene.attachment(self.obj)
+        if attachment is not None and any(
+            c.source == self.obj for c in self.ctx.info.scene_channels
+        ):
+            reference = (
+                TransitionOutcome.CONFIRMED if attachment.held else TransitionOutcome.REFUTED
+            )
+            monitor = Observed(
+                MONITOR,
+                self.ctx.now.time_ns,
+                (float(attachment.held),),
+                Evidence.PRIVILEGED,
+            )
+            self.evaluations.append(TransitionEvaluation(estimate, reference, MONITOR, (monitor,)))
+        if outcome is TransitionOutcome.REFUTED:
+            assert retain.guard is not None
+            self.held = False
+            self.record(
+                name,
+                False,
+                f"the opening fell below {retain.guard.below:.3f}: the object left the hand",
+                Evidence.PORTABLE,
+                Reason.TRANSITION_REFUTED,
+                Transition.RETAINED.value,
+            )
+
+    def _execute(
+        self, name: str, plan: PlanResult, planner: Planner, guard: OpeningGuard | None = None
+    ) -> Execution:
         if not plan.succeeded:
             reason = "; ".join(d.message for d in plan.diagnostics) or plan.status.value
             self.record(
@@ -480,7 +592,7 @@ class Run:
                 plan.status.value,
             )
         try:
-            return self.ctx.execute(plan, planner=planner)
+            return self.ctx.execute(plan, planner=planner, guard=guard)
         except SsrobotError as e:
             self.record(
                 name, False, f"{e.code}: {e.message}", Evidence.PLANNED, Reason.REFUSED, e.code
@@ -493,6 +605,7 @@ class Run:
         ahead: Ahead,
         planner: Planner,
         replan: Callable[[], PlanResult] | None,
+        guard: OpeningGuard | None,
     ) -> Generator[Wait, None, tuple[Execution, str]]:
         ctx, log = self.ctx, ahead.log
         if not ahead.future.done():
@@ -501,7 +614,13 @@ class Run:
         if not plan.succeeded:
             log["decision"] = f"replanned: planning on the prediction {plan.status.value}"
             return self._replanned(
-                name, replan, planner, log["decision"], Reason.NOT_PLANNED, plan.status.value
+                name,
+                replan,
+                planner,
+                log["decision"],
+                Reason.NOT_PLANNED,
+                plan.status.value,
+                guard,
             )
         continuation = ahead.continuation or ctx.continuation(
             plan, planner=ahead.planner, prediction=ahead.prediction
@@ -510,7 +629,7 @@ class Run:
         since = ctx.now.time_ns
         rest = yield from self.rest(plan.request.group, look.rest_timeout_ns)
         result = ctx.execute_continuation(
-            continuation, rest=rest, arrival_tolerance=look.arrival_tolerance
+            continuation, rest=rest, arrival_tolerance=look.arrival_tolerance, guard=guard
         )
         report = result.report
         log.update(
@@ -535,7 +654,7 @@ class Run:
             self.record(name, False, refused, evidence, Reason.REFUSED, report.refusal)
         log["decision"] = f"replanned: {report.refusal}"
         return self._replanned(
-            name, replan, planner, log["decision"], Reason.REFUSED, report.refusal
+            name, replan, planner, log["decision"], Reason.REFUSED, report.refusal, guard
         )
 
     def rest(self, component: str, timeout_ns: int) -> Generator[Wait, None, RestResult]:
@@ -556,6 +675,7 @@ class Run:
         why: object,
         reason: Reason,
         cause: str | None,
+        guard: OpeningGuard | None = None,
     ) -> tuple[Execution, str]:
         """Plan ``name`` again from the actual state, with ``replan``, and execute it.
         Without ``replan``, ``name`` fails with the ``reason`` and ``cause`` that made it
@@ -567,7 +687,7 @@ class Run:
         assert replan is not None
         plan = replan()
         self.begin(name)
-        return self._execute(name, plan, planner), f"succeeded ({why})"
+        return self._execute(name, plan, planner, guard), f"succeeded ({why})"
 
     def finished(self, name: str, execution: Execution) -> None:
         """Fail ``name`` unless ``execution`` succeeded."""
@@ -721,9 +841,12 @@ def preflight(
     support: str,
     channels: dict[str, tuple[int, ...]],
     guard: WrenchGuard | None = None,
+    carries: str | None = None,
 ) -> None:
     """Record ``preflight``: every reference resolves, and every command, channel, and
-    guard the skill will use is declared available, before anything is commanded."""
+    guard the skill will use is declared available, before anything is commanded. A skill
+    that carries the object names the opening channel its carries are guarded on
+    (``carries``)."""
     ctx = run.ctx
     d, info = ctx.description, ctx.info
     problems = []
@@ -754,14 +877,17 @@ def preflight(
         guards = [g for g in info.guards if g.component == arm.group]
         if not any(guard.channel in g.channels and (g.tare or not guard.tare) for g in guards):
             problems.append(f"no guard on {arm.group!r} reads {guard.channel!r} as asked")
+    if carries is not None and arm is not None:
+        if not any(g.component == arm.group and carries in g.channels for g in info.guards):
+            problems.append(f"no guard on {arm.group!r} reads {carries!r}")
     run.record(
         "preflight",
         not problems,
         "; ".join(problems)
         or (
             "references, commands, and channels"
-            if guard is None
-            else "references, commands, channels, and guard"
+            if guard is None and carries is None
+            else "references, commands, channels, and guards"
         )
         + " available",
         Evidence.PLANNED,

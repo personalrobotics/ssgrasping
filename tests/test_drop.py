@@ -17,10 +17,15 @@ reason and cause:
   its privileged pose; run twice, byte-identical.
 - ``unconfirmed_release``: the gripper opens only halfway, so ``release`` is not
   confirmed and the can stays attached.
-- ``slipped``: the attachment monitor reports the can leaving the fingers during the
-  transfer (injected, as a slip would report it; the can stays in hand). ``release``
-  fails before the gripper is commanded, the attachment is kept, and the can is
-  reported held: it may still be in hand.
+- ``pulled``: the harness pulls the can down at ``PULL_N`` for ``PULL_NS``,
+  ``PULL_AFTER_NS`` into the transfer, through the runtime's MuJoCo data, and it leaves
+  the fingers. They close past its width, the transfer's opening guard stops the arm,
+  ``retained`` is refuted, and the transfer fails with the can reported not held and
+  still declared attached; the attachment monitor agrees.
+- ``monitor_only``: the attachment monitor alone reports the can leaving the fingers
+  during the transfer (injected; the can stays in hand). Privileged state decides no
+  stage, so the drop succeeds; the evaluation records that the monitor disagreed with
+  the estimate.
 Transfers are planned at ``CARRY_SCALING`` of the limits, as ``test_grasp_place``'s.
 The environment the artifact was made in is recorded with it; byte-identity is claimed
 within one environment.
@@ -66,6 +71,11 @@ DROP_MARGIN = 0.05
 BIN_INNER_HALF = 0.119
 BIN_FLOOR = 0.006
 DOWN = (0.0, 1.0, 0.0, 0.0)  # x along the world's, z pointing down
+# ssgrasping's transition study's external pull (evidence/transitions/): down on the can,
+# well past what the grip holds, briefly, partway into the transfer.
+PULL_N = 200.0
+PULL_NS = 100_000_000
+PULL_AFTER_NS = 500_000_000
 
 
 def _scene() -> str:
@@ -185,6 +195,30 @@ class SlipDuringTransfer:
         return getattr(self._inner, name)
 
 
+def _pulled(runtimes: list[Any]) -> Any:
+    def run(ctx: RobotContext, planner: Planner, checker: Planner, can: Pose) -> dict[str, Any]:
+        picked = _drive(ctx, grasp(ctx, planner, _grasp_spec(can), check_planner=checker))
+        execution = drop(ctx, planner, _drop_spec(), check_planner=checker)
+        runtime = runtimes[-1]
+        body = runtime._model.body("can").id
+        started = None
+        for _ in range(MAX_TICKS):
+            execution.advance()
+            if execution.done:
+                break
+            if started is None and execution.stage == "transfer" and execution.active is not None:
+                started = ctx.now.time_ns
+            since = None if started is None else ctx.now.time_ns - started
+            pulling = since is not None and PULL_AFTER_NS <= since < PULL_AFTER_NS + PULL_NS
+            runtime._data.xfrc_applied[body, 2] = -PULL_N if pulling else 0.0
+            ctx.step()
+        runtime._data.xfrc_applied[body, 2] = 0.0
+        assert execution.result is not None
+        return {"grasp": _report(picked), "drop": _report(execution.result)}
+
+    return run
+
+
 def _slipped(runtimes: list[SlipDuringTransfer]) -> Any:
     def run(ctx: RobotContext, planner: Planner, checker: Planner, can: Pose) -> dict[str, Any]:
         picked = _drive(ctx, grasp(ctx, planner, _grasp_spec(can), check_planner=checker))
@@ -212,17 +246,29 @@ def _wrapping(runtimes: list[SlipDuringTransfer]) -> Any:
     return wrap
 
 
+def _keeping(runtimes: list[Any]) -> Any:
+    """Keep a session's runtime in ``runtimes``, unwrapped, for the harness to reach."""
+
+    def keep(runtime: Any) -> Any:
+        runtimes.append(runtime)
+        return runtime
+
+    return keep
+
+
 def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> None:
     scene = tmp_path / "can_and_bin.xml"
     scene.write_text(_scene())
     slips: list[SlipDuringTransfer] = []
+    pulls: list[Any] = []
 
     first = json.dumps(_session(scene, _pick_and_drop()), indent=2)
     again = json.dumps(_session(scene, _pick_and_drop()), indent=2)
     scenarios = {
         "success": json.loads(first),
         "unconfirmed_release": _session(scene, _pick_and_drop({"open_opening": 0.5})),
-        "slipped": _session(scene, _slipped(slips), wrap=_wrapping(slips)),
+        "pulled": _session(scene, _pulled(pulls), wrap=_keeping(pulls)),
+        "monitor_only": _session(scene, _slipped(slips), wrap=_wrapping(slips)),
     }
     report = {
         "environment": _environment(),
@@ -252,14 +298,52 @@ def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> No
     assert _failed(unconfirmed) == ("release", Reason.RELEASE_UNCONFIRMED, None, None, True)
     assert unconfirmed["attachment"] is not None
 
-    slipped = scenarios["slipped"]["drop"]
-    assert slipped["state"] == SkillState.FAILED, slipped["stages"]
-    assert [(s["name"], s["succeeded"]) for s in slipped["stages"]][-2:] == [
-        ("transfer", True), ("release", False),
-    ]  # fmt: skip
-    assert slipped["stages"][-1]["evidence"] == "privileged"
-    # Conservatively held: it may still be in the hand. Still declared attached, so an
-    # application may release it where the transfer ended.
-    assert _failed(slipped) == ("release", Reason.ATTACHMENT_LOST, None, True, True)
-    assert "released_opening" not in slipped["values"]  # the gripper was never opened
-    assert slipped["attachment"] is not None and slipped["attachment"]["held"] is False
+    # The transfer confirms retained from the opening alone, as the monitor does.
+    (carried,) = success["drop"]["transitions"]
+    assert (carried["stage"], carried["outcome"], carried["reason"]) == (
+        "transfer", "confirmed", "opening_held",
+    )  # fmt: skip
+    assert [e["agrees"] for e in success["drop"]["evaluations"]] == [True]
+
+    # A can pulled out of the fingers mid-transfer: the opening guard stops the arm there.
+    pulled = scenarios["pulled"]["drop"]
+    assert pulled["state"] == SkillState.FAILED, pulled["stages"]
+    assert _failed(pulled) == ("transfer", Reason.TRANSITION_REFUTED, "retained", False, True)
+    assert pulled["stages"][-1]["evidence"] == "portable"
+    (lost,) = pulled["transitions"]
+    assert (lost["stage"], lost["outcome"], lost["reason"]) == (
+        "transfer",
+        "refuted",
+        "opening_fell",
+    )
+    below = next(c for c in lost["criteria"] if c["name"] == "below")
+    assert lost["evidence"][0]["value"][0] < below["value"]
+    assert pulled["evaluations"] == [
+        {
+            "transition": "retained",
+            "stage": "transfer",
+            "estimate": "refuted",
+            "reference": "refuted",
+            "source": "attachment_monitor",
+            "agrees": True,
+        }
+    ]
+    stopped = pulled["stages"][-1]["time_ns"]
+    arrived = next(s for s in success["drop"]["stages"] if s["name"] == "transfer")["time_ns"]
+    assert stopped < arrived  # stopped short of the drop zone, not judged at its end
+    assert "released_opening" not in pulled["values"]  # the gripper was never opened
+
+    # The monitor alone never decides a stage: the can stayed in hand, and the drop
+    # succeeds; the evaluation records the disagreement.
+    monitored = scenarios["monitor_only"]["drop"]
+    assert monitored["state"] == SkillState.SUCCEEDED, monitored["stages"]
+    assert monitored["evaluations"] == [
+        {
+            "transition": "retained",
+            "stage": "transfer",
+            "estimate": "confirmed",
+            "reference": "refuted",
+            "source": "attachment_monitor",
+            "agrees": False,
+        }
+    ]
