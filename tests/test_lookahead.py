@@ -105,7 +105,7 @@ from ssgrasping import (
     run_together,
 )
 from ssgrasping.drop import transfer_request
-from tests.test_drop import BIN, BIN_FLOOR, _drop_spec, _landing_spec
+from tests.test_drop import BIN, BIN_FLOOR, _drop_spec, _landed, _landing_spec
 from tests.test_drop import _scene as _can_and_bin
 from tests.test_grasp_place import (
     CHECK_ITERATIONS,
@@ -472,7 +472,7 @@ def _raced(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
     later = Lookahead(unsettled=("can",))
     before_grasp_b = len(calls)
     # Where can comes to rest is observed alongside can_b's grasp, not before it.
-    landing_a = landing(ctx, _landing_spec())
+    landing_a = landing(ctx, _landing_spec(), _landed(dropping.result))
     grasping_b = chosen.grasp(ctx, lookahead=later)
     assert run_together(ctx, [grasping_b, landing_a], max_ticks=MAX_TICKS)
     assert grasping_b.result is not None and landing_a.result is not None
@@ -771,7 +771,7 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     assert raced["grasp_b"]["stages"][0]["time_ns"] == released_ns
     assert raced["landing"]["state"] == SkillState.SUCCEEDED, raced["landing"]["stages"]
     landed = raced["landing"]["stages"][0]
-    assert (landed["name"], landed["evidence"]) == ("landed", "privileged")
+    assert (landed["name"], landed["evidence"]) == ("observed", "privileged")
     assert landed["time_ns"] == released_ns + _landing_spec().land_ns
     feasible = [c for c in race_b["candidates"] if c["outcome"] == "succeeded"]
     rule = min(feasible, key=lambda c: (-c["priority"], c["cost_s"]))

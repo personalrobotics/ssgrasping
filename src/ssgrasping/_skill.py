@@ -40,7 +40,9 @@ from ssrobot import (
     PlanningRequest,
     PlanProjection,
     PlanResult,
+    Pose,
     PredictedSnapshot,
+    Quantity,
     RestResult,
     RestWatch,
     RobotContext,
@@ -230,6 +232,7 @@ def lookahead_entry(stage: str, prediction: PredictedSnapshot, **more: object) -
             "held": [o.name for o in prediction.held],
             "unsettled": list(prediction.unsettled),
             "releases": list(prediction.releases),
+            "removals": list(prediction.removals),
             "allowances": list(prediction.allowances),
         },
         **more,
@@ -494,6 +497,7 @@ class Run:
         self.begin(name)
         detail = "succeeded"
         guard = None if retain is None else retain.guard
+        start = None if retain is None else self.privileged_pose()
         if isinstance(plan, Ahead):
             execution, detail = yield from self._continue(name, plan, planner, replan, guard)
         elif replan is not None and plan.succeeded:
@@ -525,16 +529,19 @@ class Run:
         yield Wait(execution=execution)
         self.finished(name, execution)
         if retain is not None:
-            self._retained(name, execution, retain)
+            self._retained(name, execution, retain, start)
         self.record(name, True, detail, Evidence.COMMANDED)
         return upcoming
 
-    def _retained(self, name: str, execution: Execution, retain: Retention) -> None:
+    def _retained(
+        self, name: str, execution: Execution, retain: Retention, start: Observed | None
+    ) -> None:
         """Estimate ``retained`` over the carry ``execution`` ran: confirmed if its opening
         guard did not trigger, refuted if it did, which fails ``name`` with the object
-        reported not held, and unobserved without a guard. Where the runtime has
-        simulator state of the object, the attachment monitor's report is kept beside the
-        estimate as a privileged reference, for evaluation only."""
+        reported not held, and unobserved without a guard. Where the runtime has the
+        object's privileged pose channel, the attachment monitor's report is kept beside
+        the estimate as a privileged reference, for evaluation only, with the object's
+        pose at the carry's ``start`` and end."""
         status = execution.status
         evidence: tuple[Observed, ...] = ()
         if retain.guard is None:
@@ -552,20 +559,17 @@ class Run:
             Transition.RETAINED, name, outcome, why, evidence, retain.criteria
         )
         self.transitions.append(estimate)
-        attachment = self.ctx.scene.attachment(self.obj)
-        if attachment is not None and any(
-            c.source == self.obj for c in self.ctx.info.scene_channels
-        ):
-            reference = (
-                TransitionOutcome.CONFIRMED if attachment.held else TransitionOutcome.REFUTED
-            )
+        end = self.privileged_pose()
+        if end is not None and self.ctx.scene.attachment(self.obj) is not None:
+            left = self.ctx.violation(self.obj) is not None
+            reference = TransitionOutcome.REFUTED if left else TransitionOutcome.CONFIRMED
             monitor = Observed(
-                MONITOR,
-                self.ctx.now.time_ns,
-                (float(attachment.held),),
-                Evidence.PRIVILEGED,
+                MONITOR, self.ctx.now.time_ns, (float(not left),), Evidence.PRIVILEGED
             )
-            self.evaluations.append(TransitionEvaluation(estimate, reference, MONITOR, (monitor,)))
+            poses = tuple(p for p in (start, end) if p is not None)
+            self.evaluations.append(
+                TransitionEvaluation(estimate, reference, MONITOR, (monitor, *poses))
+            )
         if outcome is TransitionOutcome.REFUTED:
             assert retain.guard is not None
             self.held = False
@@ -722,6 +726,53 @@ class Run:
 
     def observe(self, channel: str) -> Any:
         return self.ctx.observe(ObservationRequest(channels=(channel,))).readings[0].value
+
+    def privileged_pose(self) -> Observed | None:
+        """The object's pose from its privileged pose channel, for evaluation only; None
+        where the runtime declares none."""
+        channel = next(
+            (
+                c.name
+                for c in self.ctx.info.scene_channels
+                if c.source == self.obj and c.quantity is Quantity.POSE and c.privileged
+            ),
+            None,
+        )
+        if channel is None:
+            return None
+        observation = self.ctx.observe(ObservationRequest(channels=(channel,)))
+        reading = observation.readings[0].value
+        assert isinstance(reading, tuple)  # a pose is seven floats
+        value = tuple(float(v) for v in reading)
+        return Observed(channel, observation.stamp.time_ns, value, Evidence.PRIVILEGED)
+
+    def unobserved(self, transition: Transition, stage: str) -> TransitionEstimate:
+        """Record ``transition`` as estimated in ``stage`` with no portable signal that can
+        tell: ``unobserved``, for the application's policy to assume or not."""
+        estimate = TransitionEstimate(
+            transition,
+            stage,
+            TransitionOutcome.UNOBSERVED,
+            EstimateReason.NO_PORTABLE_SIGNAL,
+            (),
+            (),
+        )
+        self.transitions.append(estimate)
+        return estimate
+
+    def evaluate(self, estimate: TransitionEstimate, judge: Callable[[Pose], bool]) -> None:
+        """Score ``estimate`` against the object's privileged pose, as ``judge`` reads it,
+        where the runtime declares the pose channel: a ``TransitionEvaluation`` for
+        evaluation only. Nothing is returned, so no stage can branch on it."""
+        observed = self.privileged_pose()
+        if observed is None:
+            return
+        x, y, z, w, i, j, k = observed.value
+        pose = Pose(position=(x, y, z), quat_wxyz=(w, i, j, k))
+        reference = TransitionOutcome.CONFIRMED if judge(pose) else TransitionOutcome.REFUTED
+        self.evaluations.append(
+            TransitionEvaluation(estimate, reference, observed.channel, (observed,))
+        )
 
     def replace_allowance(self, name: str, end_effector: str, allow: Sequence[str]) -> None:
         """Re-declare the held object's attachment with ``allow``, as a scene change and

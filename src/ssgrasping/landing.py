@@ -1,16 +1,23 @@
-"""Observe where a dropped object comes to rest, alongside whatever the robot does next.
+"""Score a dropped object's ``landed`` estimate against where it came to rest, alongside
+whatever the robot does next: evaluation only.
 
-A ``drop`` ends at the confirmed release, so the robot is free to move on at once.
-Whether the object then landed where it should is a separate question, and ``landing``
-answers it: a passive ``SkillExecution`` (see ``ssgrasping.execution``) that commands
-nothing and plans nothing, so it runs alongside any other skill. It has one stage:
-1. ``landed``: after ``land_ns`` (a temporary fixed wait, until ssrobot can report the
-   object at rest: personalrobotics/ssrobot#221), the object rests in one of the
-   ``inside`` regions, within ``region_tolerance`` of all six bounds, by its privileged
-   pose. An object still attached, or no longer in the scene, has not landed.
+A ``drop`` ends at the confirmed release, so the robot is free to move on at once, and
+records ``landed`` as ``unobserved``: no portable signal yet tells where the object came
+to rest. ``landing`` scores that estimate where the runtime has the object's privileged
+pose: a passive ``SkillExecution`` (see ``ssgrasping.execution``) that commands nothing
+and plans nothing, so it runs alongside any other skill. Its reference decides nothing:
+it is a ``TransitionEvaluation`` in its result, never a stage's outcome. It has one
+stage:
+1. ``observed``: after ``land_ns`` (a temporary fixed wait, until a landing can be judged
+   on observed object rest: personalrobotics/ssgrasping#36), the object's privileged
+   pose is read, and the estimate is scored: confirmed if the object rests in one of
+   the ``inside`` regions, within ``region_tolerance`` of all six bounds. The stage
+   fails only if nothing can be read: the object is still attached, or the runtime
+   declares no pose channel for it.
 
-Create the landing as soon as the drop returns: ``land_ns`` counts from then. Advance it
-with ``run_together``, beside the next skill, or from the driver's own step loop.
+Create the landing as soon as the drop returns, with the drop's ``landed`` estimate:
+``land_ns`` counts from then. Advance it with ``run_together``, beside the next skill,
+or from the driver's own step loop.
 """
 
 from __future__ import annotations
@@ -23,7 +30,7 @@ from ssrobot import RobotContext, Tsr
 from ssgrasping._poses import inside
 from ssgrasping._skill import Body, Run, Wait, check_spec
 from ssgrasping.execution import SkillExecution
-from ssgrasping.outcomes import Evidence, Reason
+from ssgrasping.outcomes import Evidence, Reason, Transition, TransitionEstimate
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,44 +57,38 @@ class LandingSpec:
         check_spec(metres >= 0 and radians >= 0, "non-negative", "region_tolerance")
 
 
-def landing(ctx: RobotContext, spec: LandingSpec) -> SkillExecution:
-    """A pending observation of where ``spec.object`` comes to rest; see the module.
+def landing(ctx: RobotContext, spec: LandingSpec, estimate: TransitionEstimate) -> SkillExecution:
+    """A pending evaluation of ``estimate``, the drop's ``landed``, against where
+    ``spec.object`` comes to rest; see the module.
+
     Advance it, or drive it with ``run_skill`` or ``run_together``."""
+    if estimate.transition is not Transition.LANDED:
+        raise ValueError(f"landing scores a landed estimate, not {estimate.transition.value}")
     run = Run(ctx, "landing", spec.object)
-    return SkillExecution(run, _landing(run, spec))
+    return SkillExecution(run, _landing(run, spec, estimate))
 
 
-def _landing(run: Run, spec: LandingSpec) -> Body:
+def _landing(run: Run, spec: LandingSpec, estimate: TransitionEstimate) -> Body:
     ctx = run.ctx
-    run.begin("landed")
+    run.begin("observed")
     yield Wait(until_ns=ctx.now.time_ns + spec.land_ns)
     if run.attached():
         run.record(
-            "landed",
+            "observed",
             False,
             f"{spec.object!r} is still attached",
             Evidence.PLANNED,
             Reason.STILL_ATTACHED,
         )
-    pose = next((o.pose for o in ctx.snapshot().objects if o.name == spec.object), None)
-    if pose is None:
+    run.evaluate(
+        estimate, lambda pose: any(inside(pose, r, spec.region_tolerance) for r in spec.inside)
+    )
+    if not run.evaluations:
         run.record(
-            "landed",
+            "observed",
             False,
-            f"{spec.object!r} is not in the scene",
-            Evidence.PRIVILEGED,
+            f"the runtime declares no privileged pose of {spec.object!r}",
+            Evidence.PLANNED,
             Reason.UNAVAILABLE,
         )
-    assert pose is not None
-    run.values["landed_pose"] = {
-        "position": list(pose.position),
-        "quat_wxyz": list(pose.quat_wxyz),
-    }
-    within = [i for i, r in enumerate(spec.inside) if inside(pose, r, spec.region_tolerance)]
-    run.record(
-        "landed",
-        bool(within),
-        f"in region {within[0]}" if within else f"outside every region at {pose.position}",
-        Evidence.PRIVILEGED,
-        None if within else Reason.OUTSIDE_REGIONS,
-    )
+    run.record("observed", True, "scored against the privileged pose", Evidence.PRIVILEGED)

@@ -33,9 +33,15 @@ outward ``normal``: away from it to pre-place and retreat, toward it to descend.
 6. ``release``: open the gripper, require the command to succeed and the opening to
    reach ``released_opening``, then detach. An unconfirmed release keeps the attachment
    and reports the object's held state as unknown.
+   A confirmed release then hands the object to the caller's ``released`` policy.
 7. ``retreat``: move straight along the normal by ``retreat_m``.
-8. ``placed``: the object rests in one of the regions, within ``region_tolerance`` of
-   all six bounds, by its privileged pose.
+
+``placed`` is estimated at the confirmed release, and is always ``unobserved``
+(``no_portable_signal``): no portable signal yet tells where the object came to rest.
+Whether to assume it is the application's. Where the runtime has the object's
+privileged pose, after the retreat the estimate is scored against it (the object in one
+of the regions, within ``region_tolerance`` of all six bounds), for evaluation only;
+that decides no stage.
 
 A failure before ``release`` leaves the object attached, and held unless the transfer
 refuted ``retained``.
@@ -44,7 +50,7 @@ refuted ``retained``.
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 
 from ssrobot import (
@@ -76,7 +82,7 @@ from ssgrasping._skill import (
     unit,
 )
 from ssgrasping.execution import SkillExecution
-from ssgrasping.outcomes import Criterion, Evidence, Reason
+from ssgrasping.outcomes import Criterion, Evidence, Reason, Transition, TransitionEstimate
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +173,7 @@ def place(
     *,
     check_planner: Planner | None = None,
     lookahead: Lookahead | None = None,
+    released: Callable[[TransitionEstimate], None] | None = None,
 ) -> SkillExecution:
     """A pending placement of the held ``spec.object`` on ``spec.target``; see the
     module. Advance it, or drive it with ``run_skill``.
@@ -176,13 +183,25 @@ def place(
 
     With ``lookahead``, the boundaries where the placement cannot look ahead are logged in
     ``values["lookahead"]``: its stages after the transfer depend on outcomes not yet
-    known."""
+    known.
+
+    ``released`` is the application's policy for the object once the release is
+    confirmed and it is detached: it is called with the estimate the release leaves
+    ``unobserved``, before anything else is planned. With registered object poses
+    (ssrobot's ``ObjectPoses.REGISTERED``) the object's pose is then unknown, and a
+    retreat cannot plan around it until the policy registers or removes it."""
     run = Run(ctx, "place", spec.object, lookahead=lookahead)
     checker = planner if check_planner is None else check_planner
-    return SkillExecution(run, _place(run, planner, checker, spec))
+    return SkillExecution(run, _place(run, planner, checker, spec, released))
 
 
-def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Body:
+def _place(
+    run: Run,
+    planner: Planner,
+    checker: Planner,
+    spec: PlaceSpec,
+    released: Callable[[TransitionEstimate], None] | None,
+) -> Body:
     ctx = run.ctx
     attachment = ctx.scene.attachment(spec.object)
     run.held = None if attachment is None else True
@@ -284,22 +303,17 @@ def _place(run: Run, planner: Planner, checker: Planner, spec: PlaceSpec) -> Bod
     ctx.detach(spec.object)
     run.held = False
     run.record("release", True, f"opening {opening:.3f}; detached", Evidence.PORTABLE)
+    placed = run.unobserved(Transition.PLACED, "release")
+    if released is not None:
+        released(placed)
 
     run.begin("retreat")
     retreat = arm.plan_to_end_effector_offset(
         spec.normal, spec.retreat_m, planner=planner, position_tolerance=spec.line_tolerance_m
     )
     yield from run.move("retreat", retreat, planner)
-
-    pose = next(o.pose for o in ctx.snapshot().objects if o.name == spec.object)
-    run.values["placed_pose"] = {"position": list(pose.position), "quat_wxyz": list(pose.quat_wxyz)}
-    within = [i for i, r in enumerate(spec.regions) if inside(pose, r, spec.region_tolerance)]
-    run.record(
-        "placed",
-        bool(within),
-        f"in region {within[0]}" if within else f"outside every region at {pose.position}",
-        Evidence.PRIVILEGED,
-        None if within else Reason.OUTSIDE_REGIONS,
+    run.evaluate(
+        placed, lambda pose: any(inside(pose, r, spec.region_tolerance) for r in spec.regions)
     )
 
 
@@ -400,7 +414,7 @@ def _allowing(snapshot: SceneSnapshot, spec: PlaceSpec) -> SceneSnapshot:
         replace(a, allow=tuple(sorted({*a.allow, spec.target}))) if a.object == spec.object else a
         for a in snapshot.attachments
     )
-    return replace(snapshot, attachments=attachments)
+    return snapshot.with_attachments(attachments)
 
 
 def _for_hand(region: Tsr, object_to_hand: Pose) -> Tsr:

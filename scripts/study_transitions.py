@@ -308,7 +308,7 @@ def record(name: str, seed: int, out: Path) -> Path:
     with RobotContext(package.description, runtime) as ctx:
         rec = Recorder(ctx)
         faults = Faults(runtime, case)
-        can = next(o.pose for o in ctx.snapshot().objects if o.name == "can")
+        can = next(o.known_pose() for o in ctx.snapshot().objects if o.name == "can")
         aim = can
         if case.missed:
             aim = Pose(

@@ -45,11 +45,12 @@ its reason and cause, and the attachment the skill left declared:
   its value at rest, so taring then shifts the contact the guard detects by at most
   that fraction.
 The lift and the place's transfer each estimate ``retained`` from an opening guard, with
-the attachment monitor kept beside it for evaluation only (``success``). Every failed
-stage, in every scenario, says why as a ``Reason``, with a cause in the
-vocabulary its reason names (the README's table); no successful stage does (``_reasons``).
-The environment the artifact was made in is recorded with it; byte-identity is claimed
-within one environment.
+the attachment monitor kept beside it for evaluation only (``success``). The place
+records ``placed`` as ``unobserved``, scored against the can's privileged pose for
+evaluation only. Every failed stage, in every scenario, says why as a ``Reason``, with a
+cause in the vocabulary its reason names (the README's table); no successful stage does
+(``_reasons``). The environment the artifact was made in is recorded with it;
+byte-identity is claimed within one environment.
 
 Reproduce with ``uv run pytest tests/test_grasp_place.py``.
 """
@@ -71,6 +72,7 @@ from sscbirrt import CBiRRTConfig
 from ssrobot import (
     ClockMode,
     GuardCause,
+    ObjectPoses,
     ObservationRequest,
     Planner,
     PlanResult,
@@ -361,6 +363,7 @@ def _session(
     strip: bool = False,
     runtime_options: dict[str, Any] | None = None,
     wrap: Callable[[Any], Any] | None = None,
+    registered: bool = False,
 ) -> Any:
     package = load_installed_package("geodude_assets")
     planner, checker = _planners(package)
@@ -372,8 +375,15 @@ def _session(
         runtime = ExternalClock(runtime)
     if wrap is not None:
         runtime = wrap(runtime)
-    with RobotContext(package.description, runtime) as ctx:
-        can = next(o.pose for o in ctx.snapshot().objects if o.name == "can")
+    poses = ObjectPoses.REGISTERED if registered else ObjectPoses.LIVE
+    with RobotContext(package.description, runtime, object_poses=poses) as ctx:
+        if registered:  # each object where its privileged pose has it: the registration
+            for name in ctx.info.objects:
+                observation = ctx.observe(ObservationRequest(channels=(f"{name}.pose",)))
+                x, y, z, w, i, j, k = observation.readings[0].value  # type: ignore[misc]
+                at = Pose(position=(x, y, z), quat_wxyz=(w, i, j, k))
+                ctx.register(name, at, stamp=observation.stamp, source="pose_channel")
+        can = next(o.known_pose() for o in ctx.snapshot().objects if o.name == "can")
         return run(ctx, planner, checker, can)
 
 
@@ -568,31 +578,42 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
         "attach", "lift", "acquired", "restrict", "clear", "retained",
     ]  # fmt: skip
     # The lift and the place's transfer carry the can under an opening guard: each
-    # confirms retained, from the opening alone, and the attachment monitor agrees.
+    # confirms retained, from the opening alone, and the attachment monitor agrees. The
+    # place's release leaves placed unobserved: no portable signal tells where the can
+    # rests, and its privileged pose, which finds it placed, decides nothing.
     for part, stage in (("grasp", "lift"), ("place", "transfer")):
-        (estimate,) = success[part]["transitions"]
+        estimate = success[part]["transitions"][0]
         assert (estimate["transition"], estimate["stage"], estimate["outcome"]) == (
             "retained", stage, "confirmed",
         ), estimate  # fmt: skip
         assert [e["evidence"] for e in estimate["evidence"]] == ["portable"]
         below = next(c for c in estimate["criteria"] if c["name"] == "below")
         assert estimate["evidence"][0]["value"][0] >= below["value"]
-        assert success[part]["evaluations"] == [
-            {
-                "transition": "retained",
-                "stage": stage,
-                "estimate": "confirmed",
-                "reference": "confirmed",
-                "source": "attachment_monitor",
-                "agrees": True,
-            }
-        ]
+        assert success[part]["evaluations"][0] == {
+            "transition": "retained",
+            "stage": stage,
+            "estimate": "confirmed",
+            "reference": "confirmed",
+            "source": "attachment_monitor",
+            "agrees": True,
+        }
+    placed = success["place"]["transitions"][1]
+    assert (placed["transition"], placed["stage"], placed["outcome"], placed["reason"]) == (
+        "placed", "release", "unobserved", "no_portable_signal",
+    )  # fmt: skip
+    assert success["place"]["evaluations"][1] == {
+        "transition": "placed",
+        "stage": "release",
+        "estimate": "unobserved",
+        "reference": "confirmed",
+        "source": "can.pose",
+        "agrees": None,
+    }
     declared = success["grasp"]["values"]["attach_transform"]
     assert success["grasp"]["attachment"]["transform"] == declared  # kept through restrict
     assert success["place"]["state"] == SkillState.SUCCEEDED, success["place"]["stages"]
     assert [n for n, _ in _states(success, "place")] == [
         "preflight", "transfer", "allow_target", "descend", "contact", "release", "retreat",
-        "placed",
     ]  # fmt: skip
     assert success["place"]["attachment"] is None
     # The descent, which tares the wrist, starts only once the arm is observed at rest
