@@ -161,7 +161,11 @@ class TransitionEvaluation:
     """The privileged readings behind ``reference``."""
 
     @property
-    def agrees(self) -> bool:
+    def agrees(self) -> bool | None:
+        """Whether the estimate matches the reference; None for an ``unobserved``
+        estimate, which made no claim to agree or disagree with."""
+        if self.estimate.outcome is TransitionOutcome.UNOBSERVED:
+            return None
         return self.estimate.outcome is self.reference
 
 

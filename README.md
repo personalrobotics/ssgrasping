@@ -157,6 +157,10 @@ for evaluation only:
 - `placed`, after `place`'s retreat, and `landed`, by `landing`: against the object's
   pose in the target regions, with `source` the pose channel.
 
+`TransitionEvaluation.agrees` is whether a `confirmed` or `refuted` estimate matches its
+reference, and None for an `unobserved` one, which made no claim to agree or disagree
+with.
+
 For `retained`, the reference is privileged, not ground truth: in Geodude's
 development corpus the monitor reported a box lost that had only swung in the hand,
 while the opening correctly showed it held. Ground truth is reserved for physical

@@ -607,7 +607,7 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
         "estimate": "unobserved",
         "reference": "confirmed",
         "source": "can.pose",
-        "agrees": False,
+        "agrees": None,
     }
     declared = success["grasp"]["values"]["attach_transform"]
     assert success["grasp"]["attachment"]["transform"] == declared  # kept through restrict

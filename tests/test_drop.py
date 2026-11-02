@@ -337,7 +337,7 @@ def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> No
             "estimate": "unobserved",
             "reference": "confirmed",
             "source": "can.pose",
-            "agrees": False,
+            "agrees": None,
         }
     ]
 

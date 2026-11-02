@@ -28,6 +28,7 @@ Skills estimate the manipulation transitions they pass through
   `ObjectPoses.REGISTERED` (personalrobotics/ssrobot#230). `drop` and `place` take a
   `released` policy, called with the unobserved estimate once the release is confirmed,
   so the application can register or remove the object before anything else plans.
+  `TransitionEvaluation.agrees` is None for an `unobserved` estimate.
   `Candidates` takes `removals`, held objects a race's prediction expects released and
   then removed.
 
