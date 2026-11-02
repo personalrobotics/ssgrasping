@@ -64,7 +64,6 @@ class Reason(enum.StrEnum):
     CANCELLED = "cancelled"
     NOT_ATTACHED = "not_attached"
     STILL_ATTACHED = "still_attached"
-    ATTACHMENT_LOST = "attachment_lost"
     MISSED = "missed"
     LOST = "lost"
     IN_CONTACT = "in_contact"

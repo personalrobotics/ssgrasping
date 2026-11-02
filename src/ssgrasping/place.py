@@ -55,7 +55,6 @@ from dataclasses import dataclass, replace
 
 from ssrobot import (
     GuardCause,
-    GuardedJointTrajectory,
     Planner,
     PlanResult,
     Pose,
@@ -64,7 +63,6 @@ from ssrobot import (
     SceneSnapshot,
     Tsr,
     WrenchGuard,
-    prepare,
 )
 
 from ssgrasping._poses import compose, inside, invert, offset_interval
@@ -259,7 +257,7 @@ def _place(
 
     run.boundary("allow_target", "allows the target: a scene change; the descent is guarded")
     run.begin("allow_target")
-    run.replace_allowance("allow_target", spec.end_effector, (*hand, spec.target))
+    run.replace_allowance("allow_target", (*hand, spec.target))
     run.record("allow_target", True, f"allowed {', '.join((*hand, spec.target))}", Evidence.PLANNED)
 
     yield from _descend(run, planner, spec)
@@ -274,10 +272,6 @@ def _place(
         for lo, hi in [span]
         if lo <= spec.terminal_m and hi >= -spec.overshoot_m
     ]
-    run.values["contact_pose"] = {
-        "position": list(stop.position),
-        "quat_wxyz": list(stop.quat_wxyz),
-    }
     run.record(
         "contact",
         bool(usable),
@@ -335,36 +329,13 @@ def _descend(run: Run, planner: Planner, spec: PlaceSpec) -> Body:
             Reason.NOT_AT_REST,
             rest.outcome.value,
         )
-    snapshot = ctx.snapshot()
-    plan = _toward(ctx, snapshot, planner, spec)
-    if not plan.succeeded:
-        run.record(
-            "descend",
-            False,
-            f"planning {plan.status.value}",
-            Evidence.PLANNED,
-            Reason.NOT_PLANNED,
-            plan.status.value,
-        )
-    scene = ctx.planning_scene(snapshot, plan.request.group)
-    ready = prepare(
-        plan,
-        scene,
-        validator=planner.validator(plan.request, scene),
-        description=ctx.description,
-        contract=ctx.trajectory_contract,
+    execution = run._execute(
+        "descend", _toward(ctx, ctx.snapshot(), planner, spec), planner, spec.guard
     )
-    command = GuardedJointTrajectory(trajectory=ready.command, guard=spec.guard)
-    execution = ctx.submit(command, snapshot=snapshot, source="planner")
     yield Wait(execution=execution)
     run.finished("descend", execution)
     outcome = execution.status.guard
     assert outcome is not None  # a succeeded guarded trajectory reports its outcome
-    run.values["descent"] = {
-        "cause": outcome.cause.value,
-        "measure": outcome.measure,
-        "elapsed_ns": outcome.elapsed_ns,
-    }
     contact = outcome.cause is GuardCause.GUARD_TRIGGERED
     run.record(
         "descend",

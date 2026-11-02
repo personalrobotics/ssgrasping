@@ -21,7 +21,7 @@ from typing import Any, Protocol
 
 from ssrobot import ClockMode, Execution, RobotContext, SsrobotError
 
-from ssgrasping._skill import Ahead, Body, Failed, Run, Wait
+from ssgrasping._skill import Body, Failed, Run, Wait
 from ssgrasping.outcomes import SkillResult, SkillState
 
 
@@ -109,14 +109,8 @@ class SkillExecution:
         self._finish(SkillState.CANCELLED)
         return self._state
 
-    @property
-    def upcoming(self) -> Ahead | None:
-        """The next skill's first motion, planned while this skill's last one ran, once
-        it has succeeded (``Follow``); None otherwise."""
-        return self._run.upcoming if self._state is SkillState.SUCCEEDED else None
-
     def _finish(self, state: SkillState) -> None:
-        self._run.close(succeeded=state is SkillState.SUCCEEDED)
+        self._run.close()
         self._state = state
         self._wait = None
         self._result = self._run.result(state)

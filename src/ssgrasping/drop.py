@@ -43,19 +43,15 @@ from dataclasses import dataclass
 
 from ssrobot import (
     Planner,
-    PlanningRequest,
     PlanProjection,
     PlanResult,
-    PredictedSnapshot,
     RobotContext,
     SceneSnapshot,
     Tsr,
-    TsrGoal,
 )
 
 from ssgrasping._skill import (
     GRIPPER_TIMEOUT_NS,
-    Ahead,
     Body,
     Lookahead,
     Run,
@@ -134,7 +130,6 @@ def drop(
     *,
     check_planner: Planner | None = None,
     lookahead: Lookahead | None = None,
-    planned: Ahead | None = None,
     released: Callable[[TransitionEstimate], None] | None = None,
 ) -> SkillExecution:
     """A pending drop of the held ``spec.object`` into ``spec.container``; see the
@@ -147,54 +142,14 @@ def drop(
     ``values["lookahead"]``: its stages after the transfer depend on outcomes not yet
     known.
 
-    ``planned`` is the transfer planned while the grasp's lift ran, the grasp's
-    ``SkillExecution.upcoming`` (``Follow``, with ``transfer_request``): it continues from
-    where the lift ended, or, refused, is planned again as usual; a refusal for recovery
-    still fails the transfer. A drop with a retreat refuses ``planned``
-    (``invalid_spec``), leaving it to the caller: its transfer is kept only if the retreat
-    plans from where it ends, which a transfer planned alone does not check.
-
     ``released`` is the application's policy for the object once the release is
     confirmed and it is detached: it is called with the estimate the release leaves
     ``unobserved``, before anything else is planned. With registered object poses
     (ssrobot's ``ObjectPoses.REGISTERED``) the object's pose is then unknown, and a
     retreat cannot plan around it until the policy registers or removes it."""
-    if planned is not None:
-        _check_no_retreat(spec)
     run = Run(ctx, "drop", spec.object, lookahead=lookahead)
     checker = planner if check_planner is None else check_planner
-    return SkillExecution(run, _drop(run, planner, checker, spec, planned, released))
-
-
-def transfer_request(
-    ctx: RobotContext, spec: DropSpec
-) -> Callable[[PredictedSnapshot], PlanningRequest]:
-    """The request ``drop`` plans its transfer with, on a given state: to
-    ``spec.regions``, at ``spec.carry_scaling`` and ``spec.clearance_m``. For
-    ``Follow.request``, so a grasp plans it during its lift. A drop with a retreat is
-    refused (``invalid_spec``), as ``drop`` refuses its ``planned``."""
-    _check_no_retreat(spec)
-    arm = ctx.manipulator(spec.manipulator)
-
-    def request(state: PredictedSnapshot) -> PlanningRequest:
-        return arm.request(
-            TsrGoal(tsrs=tuple(spec.regions)),
-            snapshot=state,
-            velocity_scaling=spec.carry_scaling,
-            acceleration_scaling=spec.carry_scaling,
-            clearance_m=spec.clearance_m,
-        )
-
-    return request
-
-
-def _check_no_retreat(spec: DropSpec) -> None:
-    check_spec(
-        spec.retreat_m == 0,
-        "must be 0 for a transfer planned ahead: the retreat's feasibility from where the "
-        "transfer ends is not planned with it",
-        "retreat_m",
-    )
+    return SkillExecution(run, _drop(run, planner, checker, spec, released))
 
 
 def _drop(
@@ -202,7 +157,6 @@ def _drop(
     planner: Planner,
     checker: Planner,
     spec: DropSpec,
-    planned: Ahead | None,
     released: Callable[[TransitionEstimate], None] | None,
 ) -> Body:
     ctx = run.ctx
@@ -256,11 +210,7 @@ def _drop(
         ),
         Criterion("close_opening", spec.close_opening, "DropSpec.close_opening"),
     )
-    if planned is None:
-        yield from run.move("transfer", choose(), planner, retain=carry)
-    else:
-        run.adopt(planned)
-        yield from run.move("transfer", planned, planner, replan=choose, retain=carry)
+    yield from run.move("transfer", choose(), planner, retain=carry)
 
     run.boundary(
         "release", "whether the fingers let go decides what follows; detaching changes the scene"

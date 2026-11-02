@@ -15,9 +15,10 @@ Skills estimate the manipulation transitions they pass through
 - **Privileged state decides nothing.** `grasp`'s `retained` stage is the lift's
   estimate, and `drop`'s release no longer gates on the attachment monitor; the monitor
   is kept as a privileged reference (`TransitionEvaluation.reference`, not ground
-  truth) in `SkillResult.evaluations`. `restrict` and `allow_target`
-  still refuse to re-declare an attachment the monitor reports lost
-  (personalrobotics/geodude#248).
+  truth) in `SkillResult.evaluations`
+  (personalrobotics/geodude#248). `restrict` and `allow_target` change the attachment's
+  allow set in place (`ctx.set_attachment_allowances`), consulting neither the runtime
+  nor the monitor (personalrobotics/ssgrasping#44).
 - **`placed` and `landed` are estimates, never stages** (personalrobotics/geodude#248).
   Both are recorded `unobserved` (`EstimateReason.NO_PORTABLE_SIGNAL`) at the confirmed
   release. Where the runtime has the object's privileged pose, `place` scores `placed`
@@ -31,6 +32,18 @@ Skills estimate the manipulation transitions they pass through
   `TransitionEvaluation.agrees` is None for an `unobserved` estimate.
   `Candidates` takes `removals`, held objects a race's prediction expects released and
   then removed.
+
+### Removed (personalrobotics/ssgrasping#44)
+
+- The planned-ahead hand-off between skills, which personalrobotics/ssgrasping#21
+  decided not to adopt: `Follow`, `grasp(follow=)`, `Selection.grasp(follow=)`,
+  `SkillExecution.upcoming`, `drop(planned=)` and `ssgrasping.drop.transfer_request`.
+- The parked approach depth: `GraspSpec.deepest` and `approach_tries`; the approach is
+  always `approach_m`.
+- `Reason.ATTACHMENT_LOST`: no stage decides from the attachment monitor.
+- Values no reader used: `closed_opening`, `lifted_opening`, `hand_allowance`,
+  `contact_pose` and `descent`.
+- `place`'s guarded descent runs through `ctx.execute`, as every other commanded stage.
 
 ### Compatibility
 
