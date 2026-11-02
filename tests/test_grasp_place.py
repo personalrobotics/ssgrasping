@@ -28,10 +28,10 @@ its reason and cause, and the attachment the skill left declared:
   through ``update()`` alone.
 - ``cancelled``: an external-clock grasp cancelled while its approach runs.
 - ``drifted``: the can drifts about 0.3 mm in the fingers during the lift, past a
-  0.1 mm attachment monitor. ``restrict`` refuses to re-declare an attachment the
-  monitor reports has left its transform, so the report is not discarded, and the
-  attachment is kept. (In ``success``, the transform declared at ``attach`` is the one
-  the attachment still carries after ``restrict``.)
+  0.1 mm attachment monitor. The monitor decides nothing: the grasp succeeds on the
+  opening, and the lift's ``retained`` evaluation records the monitor's refutation.
+  (In ``success``, the transform declared at ``attach`` is the one the attachment still
+  carries after ``restrict``.)
 - ``unconfirmed_release``: the gripper opens only halfway, so ``release`` is not
   confirmed and the object stays attached.
 - ``trajectory_only``: a planner that returns trajectories without paths still grasps.
@@ -667,11 +667,15 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     assert cancelled["grasp"]["attachment"] is None
 
     drifted = scenarios["drifted"]["grasp"]
-    assert drifted["state"] == SkillState.FAILED, drifted["stages"]
-    assert drifted["stages"][-1]["evidence"] == "privileged"
-    # Conservatively held: it may still be in the hand.
-    assert _failed(drifted) == ("restrict", Reason.ATTACHMENT_LOST, None, True, True)
-    assert drifted["attachment"] is not None and drifted["attachment"]["held"] is False
+    assert drifted["state"] == SkillState.SUCCEEDED, drifted["stages"]
+    assert drifted["evaluations"][0] == {
+        "transition": "retained",
+        "stage": "lift",
+        "estimate": "confirmed",
+        "reference": "refuted",
+        "source": "attachment_monitor",
+        "agrees": False,
+    }
 
     unconfirmed = scenarios["unconfirmed_release"]["place"]
     assert unconfirmed["state"] == SkillState.FAILED, unconfirmed["stages"]

@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import math
 import threading
-from collections.abc import Callable, Generator, Mapping, Sequence
+from collections.abc import Callable, Generator, Sequence
 from concurrent.futures import Future, wait
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -29,6 +29,7 @@ from typing import Any
 from ssrobot import (
     CommandKind,
     Continuation,
+    DiscrepancyKind,
     Execution,
     ExecutionState,
     GripperCommand,
@@ -120,6 +121,13 @@ ssrobot's gate before anything moves again, was not established (not observed at
 within ``rest_timeout_ns``, or unobservable). Nothing is submitted around them. Every other refusal
 (a small arrival mismatch, a rebase the planner cannot make or that is invalid in the
 actual scene) is replanned from the actual state."""
+OBJECT_DISCREPANCIES = (
+    DiscrepancyKind.OBJECT_POSITION,
+    DiscrepancyKind.OBJECT_ROTATION,
+    DiscrepancyKind.OBJECT_STATE,
+)
+"""A continuation refused on any of these differs in an object's state: what the runtime
+reports of objects, privileged in simulation."""
 MONITOR = "attachment_monitor"
 """The privileged reference a ``retained`` estimate is scored against, where there is one."""
 
@@ -187,19 +195,6 @@ class Kept:
     planner: Planner
 
 
-@dataclass(frozen=True, slots=True)
-class Follow:
-    """The next skill's first motion, to plan while this skill's last one runs: its
-    ``stage`` name, the ``request`` for it on the prediction of that motion, and the
-    ``planner`` that plans it, which nothing else may use until the plan is ready. A grasp
-    plans it during its lift (``grasp(follow=...)``), and the next skill continues the
-    plan (``drop(planned=...)``)."""
-
-    stage: str
-    request: Callable[[PredictedSnapshot], PlanningRequest]
-    planner: Planner
-
-
 @dataclass(slots=True)
 class Ahead:
     """A stage's motion being planned on a prediction while the motion before it runs."""
@@ -233,7 +228,6 @@ def lookahead_entry(stage: str, prediction: PredictedSnapshot, **more: object) -
             "unsettled": list(prediction.unsettled),
             "releases": list(prediction.releases),
             "removals": list(prediction.removals),
-            "allowances": list(prediction.allowances),
         },
         **more,
     }
@@ -285,9 +279,6 @@ class Run:
         self.evaluations: list[TransitionEvaluation] = []
         self.lookahead = lookahead
         self._aheads: list[Ahead] = []
-        self.upcoming: Ahead | None = None
-        """The next skill's first motion, planned ahead and handed on if this one
-        succeeds (``Follow``)."""
 
     def _log(self) -> list[dict[str, object]]:
         log = self.values.setdefault("lookahead", [])
@@ -306,20 +297,14 @@ class Run:
         source: Execution,
         request: Callable[[PredictedSnapshot], PlanningRequest],
         planner: Planner,
-        *,
-        allowances: Mapping[str, Sequence[str]] | None = None,
     ) -> Ahead | None:
         """Plan ``stage`` on ``ctx.predict(source)``, on a worker, while ``source`` runs.
         None if the skill does not look ahead, or, logged, if ``source`` is unpredictable.
-        ``allowances`` are the attachments the skill will re-declare before ``stage``
-        runs, and their allow sets (``ctx.predict``'s). ``planner`` must not be used for
-        anything else until the plan is ready."""
+        ``planner`` must not be used for anything else until the plan is ready."""
         if self.lookahead is None:
             return None
         try:
-            prediction = self.ctx.predict(
-                source, unsettled=self.lookahead.unsettled, allowances=allowances
-            )
+            prediction = self.ctx.predict(source, unsettled=self.lookahead.unsettled)
             built = request(prediction)
         except SsrobotError as e:
             self._log().append({"stage": stage, "boundary": f"unpredictable: {e.code}"})
@@ -376,17 +361,8 @@ class Run:
         self._log().append(ahead.log)
         self._aheads.append(ahead)
 
-    def close(self, succeeded: bool = False) -> None:
-        """Stop every lookahead not used, and wait for it to stop; the skill has ended.
-        If it ``succeeded``, the next skill's first motion (``upcoming``) is handed on
-        instead, with a log entry of its own for the next skill."""
-        if succeeded and self.upcoming is not None and "decision" not in self.upcoming.log:
-            handed = self.upcoming
-            handed.log["decision"] = "handed on: continued by the next skill"
-            handed.log = {k: v for k, v in handed.log.items() if k != "decision"}
-            self._aheads.remove(handed)
-        else:
-            self.upcoming = None
+    def close(self) -> None:
+        """Stop every lookahead not used, and wait for it to stop; the skill has ended."""
         for ahead in self._aheads:
             if "decision" not in ahead.log:
                 ahead.cancel()
@@ -583,7 +559,11 @@ class Run:
             )
 
     def _execute(
-        self, name: str, plan: PlanResult, planner: Planner, guard: OpeningGuard | None = None
+        self,
+        name: str,
+        plan: PlanResult,
+        planner: Planner,
+        guard: WrenchGuard | OpeningGuard | None = None,
     ) -> Execution:
         if not plan.succeeded:
             reason = "; ".join(d.message for d in plan.diagnostics) or plan.status.value
@@ -651,7 +631,7 @@ class Run:
             log["decision"] = "failed: for recovery"
             evidence = (
                 Evidence.PRIVILEGED
-                if any(d.what.startswith("object ") for d in report.discrepancies)
+                if any(d.kind in OBJECT_DISCREPANCIES for d in report.discrepancies)
                 else Evidence.PLANNED
             )
             refused = f"continuation refused, {report.refusal}: {report.detail}"
@@ -774,28 +754,15 @@ class Run:
             TransitionEvaluation(estimate, reference, observed.channel, (observed,))
         )
 
-    def replace_allowance(self, name: str, end_effector: str, allow: Sequence[str]) -> None:
-        """Re-declare the held object's attachment with ``allow``, as a scene change and
-        not a release: the same transform, detached and attached again with no step
-        between them.
-
-        Everything is checked before anything changes, and a failure records ``name``
-        with the attachment untouched. An attachment the monitor already reports left its
-        transform is not re-declared: that would discard the report, and the runtime
-        would refuse the transform anyway."""
-        attachment = self.ctx.scene.attachment(self.obj)
-        if attachment is None:
+    def replace_allowance(self, name: str, allow: Sequence[str]) -> None:
+        """Replace what the held object may touch with ``allow``
+        (``ctx.set_attachment_allowances``): a change to the declared world that keeps the
+        attachment's transform and asks nothing of the runtime. Everything is checked
+        before anything changes, and a failure records ``name`` with the attachment
+        untouched."""
+        if self.ctx.scene.attachment(self.obj) is None:
             self.record(
                 name, False, f"{self.obj!r} is not attached", Evidence.PLANNED, Reason.NOT_ATTACHED
-            )
-        assert attachment is not None
-        if not attachment.held:
-            self.record(
-                name,
-                False,
-                "attachment monitor: the object left its declared transform",
-                Evidence.PRIVILEGED,
-                Reason.ATTACHMENT_LOST,
             )
         known = {f.name for f in self.ctx.description.frames} | set(self.ctx.info.fixtures)
         unknown = sorted(set(allow) - known)
@@ -807,8 +774,7 @@ class Run:
                 Evidence.PLANNED,
                 Reason.UNAVAILABLE,
             )
-        self.ctx.detach(self.obj)
-        self.ctx.attach(self.obj, end_effector, transform=attachment.transform, allow=tuple(allow))
+        self.ctx.set_attachment_allowances(self.obj, allow=tuple(allow))
 
     def choose(
         self,
