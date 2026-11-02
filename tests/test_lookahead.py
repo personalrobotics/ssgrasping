@@ -14,17 +14,6 @@ Each scenario is one contract case, recorded in ``lookahead.json``:
   (``close``, ``restrict``, ``release``). Run twice, byte-identical: a driver blocks on a
   plan instead of stepping, so the runtime's timeline does not depend on how long
   planning takes.
-- ``transfer_ahead``: the same grasp, given the drop's transfer to plan (``Follow``,
-  ``transfer_request``), plans it on a worker while its lift runs, on the lift's
-  prediction, which expects ``restrict`` to narrow the attachment's allowance to the
-  hand; the grasp hands it on, and the drop, without a retreat, continues it from where
-  the lift ended. The transfer is planned once, never on the context's thread, and every
-  stage has the same outcome and evidence kind as ``lookahead``'s. Before that, a drop
-  that retreats refuses the handed-on transfer, as ``transfer_request`` refuses it: the
-  retreat's feasibility is not planned with it.
-- ``transfer_disturbed``: the same, with ``can_b`` declared attached between the grasp
-  and the drop, a scene change the lift's prediction did not expect: the transfer fails
-  for recovery instead of continuing.
 - ``mismatch``: an arrival tolerance no arrival meets forces the approach to be
   replanned from the actual state; the stage still succeeds, and says it was replanned.
 - ``scene_change``: a scene change the prediction did not record (``can_b`` declared
@@ -53,11 +42,6 @@ Each scenario is one contract case, recorded in ``lookahead.json``:
   none again. Whether the left arm was stopped by
   priority or finished depends on timing, so that one field of ``race_b`` may differ
   between runs.
-
-- ``deepest``: the right arm races alone with a grasp whose deepest approach is blocked
-  (10 cm past ``approach_m``) and whose shorter ones plan. The race checks the approach
-  the grasp guarantees, ``approach_m``, so the candidate is selected, and its grasp
-  approaches as deep as plans, between the two.
 - ``closed``: both arms race, and the race is closed before it finishes: each candidate
   is ``canceled``, the race ``aborted``; none claims a higher priority stopped it.
 
@@ -86,7 +70,6 @@ from ssrobot import (
     RobotContext,
     TraceKind,
     TsrGoal,
-    ValidationError,
     load_installed_package,
 )
 from ssrobot.mujoco import MujocoRuntime
@@ -95,7 +78,6 @@ from ssrobot.planning import CBiRRT
 from ssgrasping import (
     Candidate,
     Candidates,
-    Follow,
     Lookahead,
     Reason,
     SkillState,
@@ -104,7 +86,6 @@ from ssgrasping import (
     landing,
     run_together,
 )
-from ssgrasping.drop import transfer_request
 from tests.test_drop import BIN, BIN_FLOOR, _drop_spec, _landed, _landing_spec
 from tests.test_drop import _scene as _can_and_bin
 from tests.test_grasp_place import (
@@ -143,8 +124,18 @@ class _Timed:
     """A planner that records how long each plan took, on which thread, and the kind of
     stage it planned."""
 
-    def __init__(self, inner: Planner, scenario: list[str], arm: str) -> None:
+    def __init__(self, inner: CBiRRT, scenario: list[str], arm: str) -> None:
         self._inner, self._scenario, self._arm = inner, scenario, arm
+        self.name = inner.name
+
+    def capabilities(self, request: Any) -> Any:
+        return self._inner.capabilities(request)
+
+    def validator(self, request: Any, scene: Any) -> Any:
+        return self._inner.validator(request, scene)
+
+    def rebase(self, plan: Any, request: Any, scene: Any) -> Any:
+        return self._inner.rebase(plan, request, scene)
 
     def plan(self, request: Any, scene: Any, *, abort: Any = None) -> Any:
         start = time.perf_counter()
@@ -159,9 +150,6 @@ class _Timed:
             }
         )
         return result
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._inner, name)
 
 
 def _scene() -> str:
@@ -249,46 +237,6 @@ def _pick_and_drop(lookahead: Lookahead | None) -> Any:
                 _drop("can", "right", "right"),
                 check_planner=checker,
                 lookahead=lookahead,
-            )
-            report["drop"] = _report(_drive(ctx, dropping))
-        return report
-
-    return run
-
-
-def _transfer_ahead(disturb: bool) -> Any:
-    def run(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
-        planner, checker = arms["right"]
-        spec = _grasp(poses["can"], "can", "right")
-        into = dataclasses.replace(_drop("can", "right", "right"), retreat_m=0.0)
-        follow = Follow("transfer", transfer_request(ctx, into), planner)
-        grasping = grasp(
-            ctx, planner, spec, check_planner=checker, lookahead=Lookahead(), follow=follow
-        )
-        picked = _drive(ctx, grasping)
-        report = {"grasp": _report(picked), "handed_on": grasping.upcoming is not None}
-        if picked.succeeded:
-            # A drop that retreats refuses a transfer planned ahead, and leaves it as it is.
-            retreating = _drop("can", "right", "right")
-            refusals = []
-            for attempt in (
-                lambda: transfer_request(ctx, retreating),
-                lambda: drop(ctx, planner, retreating, planned=grasping.upcoming),
-            ):
-                try:
-                    attempt()
-                except ValidationError as e:
-                    refusals.append([e.code, e.path])
-            report["retreat_refused"] = refusals
-            if disturb:
-                ctx.attach("can_b", "left_hand")
-            dropping = drop(
-                ctx,
-                planner,
-                into,
-                check_planner=checker,
-                lookahead=Lookahead(),
-                planned=grasping.upcoming,
             )
             report["drop"] = _report(_drive(ctx, dropping))
         return report
@@ -545,32 +493,6 @@ def _cleared(compiled: list[float]) -> Any:
     return run
 
 
-DEEPEST_PAST_M = 0.10
-"""How far past ``approach_m`` the ``deepest`` scenario's grasp asks to approach: into the
-can, so the longest line is blocked and a shorter one plans."""
-
-
-def _deepest(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
-    """The right arm races alone, with a grasp whose deepest approach is blocked
-    (``DEEPEST_PAST_M`` past ``approach_m``) and whose shorter ones plan. The race checks
-    the approach the grasp guarantees, ``approach_m``, so the candidate is selected; the
-    selected grasp then approaches as deep as plans, short of the blocked line."""
-    base = _grasp(poses["can"], "can", "right")
-    spec = dataclasses.replace(
-        base, deepest=lambda pose: base.approach_m + DEEPEST_PAST_M, approach_tries=4
-    )
-    race = Candidates(
-        ctx,
-        [Candidate(label="right", grasp=spec, planner=arms["right"][0], checker=arms["right"][1])],
-    )
-    run_together(ctx, [race], max_ticks=MAX_TICKS)
-    out: dict[str, Any] = {"race": race.report, "approach_m": base.approach_m}
-    selection = race.selection
-    if selection is not None:
-        out["grasp"] = _report(_drive(ctx, selection.grasp(ctx, lookahead=Lookahead())))
-    return out
-
-
 def _closed(ctx: RobotContext, arms: Any, poses: Any) -> dict[str, Any]:
     """Both arms race for ``can``, and the race is closed before it can finish: no
     candidate was outranked, so none is reported as stopped by priority."""
@@ -613,8 +535,6 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     scenarios = {
         "plain": _session(scene, "plain", _pick_and_drop(None)),
         "lookahead": json.loads(first),
-        "transfer_ahead": _session(scene, "transfer_ahead", _transfer_ahead(disturb=False)),
-        "transfer_disturbed": _session(scene, "transfer_disturbed", _transfer_ahead(disturb=True)),
         "mismatch": _session(scene, "mismatch", _pick_and_drop(Lookahead(arrival_tolerance=1e-9))),
         "scene_change": _session(scene, "scene_change", _scene_changed),
         "race": _session(scene, "race", _raced),
@@ -632,7 +552,6 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
             sinks=[_ordered(stale)],
             wrap=lambda rt: _Unrested(rt, moving=False),
         ),
-        "deepest": _session(scene, "deepest", _deepest),
         "closed": _session(scene, "closed", _closed),
         "clearance": _session(
             scene,
@@ -691,30 +610,6 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     ]
     assert boundaries == ["close", "restrict", "release"]
     assert "lookahead" not in plain["grasp"]["values"]
-
-    handed = scenarios["transfer_ahead"]
-    assert handed["handed_on"]
-    assert handed["retreat_refused"] == [["invalid_spec", "retreat_m"]] * 2
-    for skill in ("grasp", "drop"):
-        assert handed[skill]["state"] == SkillState.SUCCEEDED, handed[skill]["stages"]
-        # lookahead's drop retreats; this one, whose transfer is planned ahead, does not
-        expected = [k for k in _kinds(ahead[skill]) if k[0] != "retreat"]
-        assert _kinds(handed[skill]) == expected, skill
-    planned_ahead = _entry(handed["grasp"], "transfer")
-    assert planned_ahead["prediction"]["allowances"] == ["can"], planned_ahead
-    assert planned_ahead["decision"] == "handed on: continued by the next skill"
-    assert _entry(handed["drop"], "transfer")["decision"] == "continued"
-    stage = next(s for s in handed["drop"]["stages"] if s["name"] == "transfer")
-    assert stage["detail"] == "succeeded (planned ahead, continued)"
-    transfers = [c for c in calls if c["scenario"] == "transfer_ahead" and c["stage"] == "transfer"]
-    assert [c["context_thread"] for c in transfers] == [False], transfers  # once, on a worker
-    disturbed = scenarios["transfer_disturbed"]
-    assert disturbed["grasp"]["state"] == SkillState.SUCCEEDED
-    assert disturbed["drop"]["state"] == SkillState.FAILED
-    assert _failed(disturbed["drop"]) == (
-        "transfer", Reason.REFUSED, "unpredicted_scene_change", True, True,
-    )  # fmt: skip
-    assert _entry(disturbed["drop"], "transfer")["decision"] == "failed: for recovery"
 
     mismatch = scenarios["mismatch"]["grasp"]
     assert mismatch["state"] == SkillState.SUCCEEDED
@@ -808,15 +703,6 @@ def test_geodude_looks_ahead_and_races_its_arms(artifacts: Path, tmp_path: Path)
     assert too_old["rest"]["outcome"] == "at_rest", too_old["rest"]
     assert too_old["waited_for_rest_ns"] < UNRESTED_TIMEOUT_NS
     assert "before the arrival snapshot" in too_old["detail"], too_old
-
-    # A grasp whose deepest approach is blocked races on the approach it guarantees: it is
-    # selected, and approaches as deep as plans, deeper than approach_m and short of the
-    # blocked line.
-    deepest = scenarios["deepest"]
-    assert deepest["race"]["selected"] == "right", deepest["race"]["candidates"]
-    assert deepest["grasp"]["state"] == SkillState.SUCCEEDED, deepest["grasp"]["stages"]
-    reached = deepest["grasp"]["values"]["approach_m"]
-    assert deepest["approach_m"] < reached < deepest["approach_m"] + DEEPEST_PAST_M
 
     # A race closed before it finished reports its candidates canceled by the caller, not
     # by a higher priority's success.

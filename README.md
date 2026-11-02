@@ -65,7 +65,6 @@ The reason names the vocabulary of its cause, and a cause is a code, never prose
 | `cancelled` | The skill was cancelled (`SkillExecution.cancel`) | the stage in progress | None |
 | `not_attached` | The object must be attached and is not | `transfer`, an allowance change | None |
 | `still_attached` | The object must be released and is still attached | `observed` | None |
-| `attachment_lost` | The attachment monitor reports the object left its declared transform | an allowance change | None |
 | `missed` | The fingers closed to their target: nothing is between them | `obstructed` | None |
 | `lost` | After the lift, the fingers closed to their target | `acquired` | None |
 | `in_contact` | After the lift, the arm or the object is in contact with the scene | `clear` | None |
@@ -205,17 +204,6 @@ outside the plan's tolerance is planned again from the actual state. An unpredic
 change to the scene, or an arm that does not come to rest, fails the stage without
 submitting anything, so that the application can recover. Lookahead stops at stages
 whose outcome is not yet known, and the skill records each place where it stopped.
-
-A grasp can also plan the next skill's first motion while its lift runs, such as a
-drop's transfer to the container: give it a `Follow`, for example with
-`ssgrasping.drop.transfer_request`, for a drop without a retreat. The lift's prediction expects the grasp's
-`restrict` to narrow what the held object may touch to the hand, the one scene change
-between the lift and the transfer, and ssrobot checks on arrival that it happened
-exactly so. If the grasp succeeds, it hands the plan on as `SkillExecution.upcoming`,
-and `drop(planned=...)` continues it from where the lift ended, so the robot does not
-wait for the transfer to be planned. Any other scene change fails the transfer for
-recovery. A drop with a retreat refuses a planned transfer: its transfer is kept only if
-the retreat plans from where it ends, which would have to be planned with it.
 
 `Candidates` extends the same idea to a choice between grasps, for example one per arm.
 Each candidate's whole feasibility prefix is planned as an ssrobot chain before anything

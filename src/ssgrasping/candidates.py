@@ -11,8 +11,7 @@ the stage before it would leave the robot:
    ``pregrasp_attempts``;
 2. ``approach``: the straight approach from the pregrasp's projection by ``approach_m``,
    the depth ``grasp`` guarantees, as its own pregrasp check plans it, with the check
-   planner. With ``deepest``, the selected grasp then approaches as deep as plans, down
-   to that;
+   planner;
 3. ``lift``: from the approach's projection, holding the object as the grasp would (at
    its pose relative to the hand there, allowed to touch the hand and the support), with
    the check planner;
@@ -81,7 +80,7 @@ from ssrobot import (
 )
 
 from ssgrasping._poses import compose, invert
-from ssgrasping._skill import Ahead, Follow, Kept, Lookahead, lookahead_entry
+from ssgrasping._skill import Ahead, Kept, Lookahead, lookahead_entry
 from ssgrasping.drop import DropSpec
 from ssgrasping.execution import SkillExecution
 from ssgrasping.grasp import GraspSpec, _approach_goal, _selected_grasp
@@ -118,15 +117,13 @@ class Selection:
         ctx: RobotContext,
         *,
         lookahead: Lookahead | None = None,
-        follow: Follow | None = None,
     ) -> SkillExecution:
         """The selected candidate's grasp: ``ssgrasping.grasp`` of its spec, with its
         planner and check planner, executing the raced pregrasp in place of choosing
-        one, and, with ``lookahead``, continuing the approach it was checked with, and
-        planning ``follow`` during the lift (``ssgrasping.grasp``)."""
+        one, and, with ``lookahead``, continuing the approach it was checked with."""
         c = self.candidate
         return _selected_grasp(
-            ctx, c.planner, c.checker, c.grasp, lookahead, self._start, self._approach, follow
+            ctx, c.planner, c.checker, c.grasp, lookahead, self._start, self._approach
         )
 
 
