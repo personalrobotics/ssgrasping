@@ -1,6 +1,11 @@
 """Check ssgrasping's dependency boundary: importing it loads no simulator, planner,
 viewer, behavior-tree, or robot package, and its distribution requires only ssrobot.
 
+The one optional adapter, ``ssgrasping.sstsr``, is under the ``sstsr`` extra: the
+distribution may require sstsr only under that extra, and importing the adapter may load
+``tsr`` but nothing else forbidden. Without the extra installed, the adapter is reported
+unavailable, not failed.
+
 Each import runs in a fresh interpreter, so modules loaded by this script do not count.
 With ``--installed``, it also requires ssgrasping to come from an installed wheel, not
 this checkout, and checks that wheel's declared requirements.
@@ -39,12 +44,40 @@ robot packages and applications, viewers, and behavior-tree frameworks."""
 
 ALLOWED_REQUIREMENTS = ("ssrobot",)
 
+OPTIONAL = {"sstsr": ("ssgrasping.sstsr", ("sstsr",), ("tsr",))}
+"""Each extra: the module it enables, the requirements it may add, and the forbidden
+top-level modules that module alone may load."""
+
 PROBE = """
 import json, sys
-import ssgrasping
-loaded = sorted({name.split(".")[0] for name in sys.modules})
-print(json.dumps({"loaded": loaded, "file": ssgrasping.__file__}))
+import {module}
+loaded = sorted({{name.split(".")[0] for name in sys.modules}})
+print(json.dumps({{"loaded": loaded, "file": {module}.__file__}}))
 """
+
+
+def probe(module: str) -> dict[str, object] | None:
+    """The top-level modules a fresh interpreter loads importing ``module``, or None if
+    it cannot be imported for want of a dependency."""
+    run = subprocess.run(
+        [sys.executable, "-P", "-c", PROBE.format(module=module)], capture_output=True, text=True
+    )
+    if run.returncode != 0:
+        if "ModuleNotFoundError" in run.stderr:
+            return None
+        raise RuntimeError(f"importing {module} failed:\n{run.stderr}")
+    found: dict[str, object] = json.loads(run.stdout)
+    return found
+
+
+def _marker_extra(requirement: str) -> str | None:
+    """The extra a requirement's marker names, or None for an unconditional one."""
+    if ";" not in requirement:
+        return None
+    marker = requirement.split(";", 1)[1]
+    if "extra" not in marker:
+        return None
+    return marker.split("==", 1)[1].strip().strip("'\"")
 
 
 def main() -> int:
@@ -53,18 +86,17 @@ def main() -> int:
     parser.add_argument("--report", type=Path, help="write the findings as JSON")
     args = parser.parse_args()
 
-    probe = subprocess.run(
-        [sys.executable, "-P", "-c", PROBE], capture_output=True, text=True, check=True
-    )
-    found = json.loads(probe.stdout)
-    failures = [
-        f"importing ssgrasping loads {name}" for name in FORBIDDEN if name in found["loaded"]
-    ]
-    location = Path(found["file"]).resolve()
+    found = probe("ssgrasping")
+    if found is None:
+        raise RuntimeError("ssgrasping cannot be imported")
+    loaded = list(found["loaded"])  # type: ignore[call-overload]
+    failures = [f"importing ssgrasping loads {name}" for name in FORBIDDEN if name in loaded]
+    location = Path(str(found["file"])).resolve()
     from_checkout = location.is_relative_to(ROOT / "src")
     if args.installed and from_checkout:
         failures.append(f"ssgrasping was imported from the checkout: {location}")
-    declared = [r.split(";")[0].strip() for r in requires("ssgrasping") or []]
+    every = list(requires("ssgrasping") or [])
+    declared = [r.split(";")[0].strip() for r in every if _marker_extra(r) is None]
     names = sorted({r.split("@")[0].split("[")[0].strip().lower() for r in declared})
     for name in names:
         if name not in ALLOWED_REQUIREMENTS:
@@ -74,12 +106,36 @@ def main() -> int:
     ]
     if extras:
         failures.append(f"the distribution requires ssrobot extras: {extras}")
+    for requirement in every:
+        extra = _marker_extra(requirement)
+        if extra is None:
+            continue
+        name = requirement.split(";")[0].split("@")[0].split("[")[0]
+        for c in "<>=!~ ":
+            name = name.split(c)[0]
+        if extra not in OPTIONAL or name.lower() not in OPTIONAL[extra][1]:
+            failures.append(f"the {extra!r} extra requires {name}")
+
+    adapters: dict[str, object] = {}
+    for extra, (module, _, may_load) in OPTIONAL.items():
+        adapter = probe(module)
+        if adapter is None:
+            adapters[extra] = "unavailable: the extra is not installed"
+            continue
+        adapter_loaded = list(adapter["loaded"])  # type: ignore[call-overload]
+        adapters[extra] = adapter_loaded
+        failures += [
+            f"importing {module} loads {name}"
+            for name in FORBIDDEN
+            if name in adapter_loaded and name not in may_load
+        ]
 
     report = {
         "ssgrasping": str(location),
         "from_checkout": from_checkout,
-        "requires": declared,
-        "loaded_top_level_modules": found["loaded"],
+        "requires": every,
+        "loaded_top_level_modules": loaded,
+        "optional_adapters": adapters,
         "forbidden": list(FORBIDDEN),
         "failures": failures,
     }

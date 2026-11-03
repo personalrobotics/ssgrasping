@@ -89,6 +89,7 @@ from ssgrasping import (
 from tests.test_drop import BIN, BIN_FLOOR, _drop_spec, _landed, _landing_spec
 from tests.test_drop import _scene as _can_and_bin
 from tests.test_grasp_place import (
+    CAN_MASS,
     CHECK_ITERATIONS,
     HEIGHT,
     MAX_TICKS,
@@ -162,7 +163,7 @@ def _scene() -> str:
     left = left.replace('name="bin_', 'name="left_bin_')
     can_b = f"""    <body name="can_b" pos="{CAN_B[0]} {CAN_B[1]} {SURFACE_Z + HEIGHT / 2}">
       <freejoint/>
-      <geom type="cylinder" size="{RADIUS} {HEIGHT / 2}" mass="0.05"
+      <geom type="cylinder" size="{RADIUS} {HEIGHT / 2}" mass="{CAN_MASS}"
             friction="0.6 0.005 0.0001"/>
     </body>
 """

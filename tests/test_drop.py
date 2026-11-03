@@ -63,6 +63,7 @@ from ssgrasping import (
     landing,
 )
 from tests.test_grasp_place import (
+    CAN_MASS,
     CAN_XY,
     CARRY_SCALING,
     HEIGHT,
@@ -97,7 +98,7 @@ PULL_AFTER_NS = 500_000_000
 
 
 def _scene() -> str:
-    """``test_grasp_place``'s 50 g can, and the bin as a fixture."""
+    """``test_grasp_place``'s full can, and the bin as a fixture."""
     walls = [
         ("bottom", (0.122, 0.122, 0.003), (0, 0, 0.003)),
         ("front", (0.132, 0.01, 0.397), (0, 0.129, 0.40)),
@@ -114,7 +115,7 @@ def _scene() -> str:
   <worldbody>
     <body name="can" pos="{CAN_XY[0]} {CAN_XY[1]} {SURFACE_Z + HEIGHT / 2}">
       <freejoint/>
-      <geom type="cylinder" size="{RADIUS} {HEIGHT / 2}" mass="0.05"
+      <geom type="cylinder" size="{RADIUS} {HEIGHT / 2}" mass="{CAN_MASS}"
             friction="0.6 0.005 0.0001"/>
     </body>
     <body name="recycle_bin" pos="{BIN[0]} {BIN[1]} {BIN[2]}">

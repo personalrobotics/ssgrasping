@@ -58,10 +58,15 @@ jobs:
       - run: uv pip install --python clean dist/*.whl
       - run: uv pip list --python clean
       - run: clean/bin/python scripts/check_boundary.py --installed --report dist/boundary.json
+      # The same wheel with the sstsr extra: the adapter imports tsr and nothing else forbidden.
+      - run: uv venv --no-project clean-sstsr
+      - run: uv pip install --python clean-sstsr "$(ls dist/*.whl)[sstsr]"
+      - run: clean-sstsr/bin/python scripts/check_boundary.py --installed --report dist/boundary-sstsr.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: installed-wheel
           path: |
             dist/*.whl
             dist/boundary.json
+            dist/boundary-sstsr.json
           if-no-files-found: error
