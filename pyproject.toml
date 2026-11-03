@@ -17,11 +17,18 @@ dependencies = [
     "ssrobot @ git+https://github.com/personalrobotics/ssrobot@2d8285e6822fe72fd3cbe82902df229678b4ef75",
 ]
 
+[project.optional-dependencies]
+# ssgrasping.sstsr: grasp regions from sstsr's hand templates, with the numpy and scipy it
+# uses itself. Only that module imports them; ``import ssgrasping`` never does
+# (scripts/check_boundary.py).
+sstsr = ["sstsr>=4.2,<5", "numpy>=1.26", "scipy>=1.14"]
+
 [dependency-groups]
 # Tests run both reference robots in MuJoCo with sscbirrt planning. The robot packages
 # are pinned to the commits ssrobot's reference-robot gate pins, and are test fixtures
 # only, never runtime dependencies.
 dev = [
+    "ssgrasping[sstsr]",
     "ssrobot[mujoco,planning] @ git+https://github.com/personalrobotics/ssrobot@2d8285e6822fe72fd3cbe82902df229678b4ef75",
     "geodude-assets @ git+https://github.com/personalrobotics/geodude_assets@e7be8b437cd954285a9fb515a6de39fb94b3fc42",
     "ada-assets @ git+https://github.com/personalrobotics/ada_assets@e7798beac3eb70145b8d606f4d71720fb75c7ae2",
@@ -48,7 +55,7 @@ strict = true
 files = ["src", "tests", "scripts"]
 
 [[tool.mypy.overrides]]
-module = ["mujoco.*", "sscbirrt.*", "tsr.*", "geodude_assets.*", "ada_assets.*"]
+module = ["mujoco.*", "sscbirrt.*", "tsr.*", "scipy.*", "geodude_assets.*", "ada_assets.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -89,11 +89,45 @@ declares for the arm's channel.
 
 The regions come from the libraries that own them. In the tests and in Geodude's demo,
 grasp regions come from [sstsr](https://github.com/personalrobotics/sstsr)'s gripper
-templates and placement regions from its stable placer. The application also chooses the
+templates (see [Object geometry and gripper profiles](#object-geometry-and-gripper-profiles)) and placement regions from its stable placer. The application also chooses the
 planners. A skill takes a main planner and, optionally, a second planner with a small
 iteration budget for feasibility checks: a short straight move that is feasible plans in
 a few iterations, so a bounded planner rejects an infeasible one quickly and
 deterministically.
+
+## Object geometry and gripper profiles
+
+`grasp_regions` makes a grasp's pregrasp regions from data, so no caller re-derives
+frames by hand:
+
+- A `GraspObject` names the scene object and gives its `Primitive` approximation
+  (`cylinder` radius and height, `box` full x, y, z extents, or `sphere` radius, in
+  metres), the pose of the primitive's frame in the world, and optionally the
+  observation revision that pose came from. Every primitive's frame has its origin at
+  its geometric centre, with z the cylinder's or box's axis.
+- A `GraspingProfile` names the hand and the robot's manipulator, end effector, gripper,
+  and opening channel, and gives the hand's aperture. The application selects it; it is
+  never inferred from a robot. The end effector's frame is the grasp frame: z the
+  approach, y the finger opening.
+- A `TemplateSource` supplies the hand's grasps for a primitive in its centred frame.
+  `ssgrasping.sstsr` (the `ssgrasping[sstsr]` extra) is one, from
+  [sstsr](https://github.com/personalrobotics/sstsr)'s hands: it generates only the
+  primitives sstsr's registry lists for the hand, and moves sstsr's bottom-face frames
+  into the centred frame. `import ssgrasping` never imports sstsr.
+
+`grasp_regions(obj, profile, source, approach_m=..., strategies=...)` backs each region
+off along the approach axis by `approach_m`, the distance the grasp then approaches, and
+returns `GraspRegions`: the world regions, each one's grasp family and strategy, and their provenance
+(object, primitive, pose, revision, hand, end effector, strategies, back-off).
+`strategies` selects grasp families: `side`, `top`, `bottom` for a cylinder; `top`,
+`bottom`, `face_x`, `face_y` for a box; `all` for a sphere. Well-formed geometry that
+yields no region is an ordinary result with a `GeometryReason`, not an exception:
+`wider_than_aperture` (the object's narrowest span exceeds the hand's aperture),
+`unsupported_by_hand` (the hand's templates do not cover the primitive: sstsr verifies
+the Kinova JACO2 hand for cylinders only), or `no_templates`. Malformed input is refused
+at construction. `GraspRegions.spec(...)` builds the `GraspSpec`.
+
+A `GraspSpec` may still be given its regions directly; nothing about it changed.
 
 ## Evidence
 
@@ -236,55 +270,30 @@ cd ssgrasping
 uv sync
 ```
 
-The following example places a soda can on Geodude's work surface, builds grasp regions
-from sstsr's side grasps for its Robotiq 2F-140 gripper, and grasps and lifts the can
-with the right arm:
+The following example places a full soda can on Geodude's work surface, describes it as a
+cylinder at its observed pose, selects the Robotiq 2F-140 for Geodude's right arm, makes
+grasp regions from sstsr's side grasps for that hand, and grasps and lifts the can:
 
 ```python
-import dataclasses
-import math
 from pathlib import Path
 
-import numpy as np
 from sscbirrt import CBiRRTConfig
-from ssrobot import Pose, RobotContext, Tsr, load_installed_package
+from ssrobot import RobotContext, load_installed_package
 from ssrobot.mujoco import MujocoRuntime
 from ssrobot.planning import CBiRRT
-from tsr.hands.parallel_jaw import Robotiq2F140
+from tsr import Robotiq2F140
 
-from ssgrasping import GraspSpec, grasp, run_skill
+from ssgrasping import GraspObject, Primitive, grasp, grasp_regions, run_skill, sstsr
 
-RADIUS, HEIGHT = 0.033, 0.123  # a soda can
+RADIUS, HEIGHT = 0.033, 0.123  # a 12 fl oz soda can
+MASS = 0.38  # full: 355 ml of drink and a 14 g aluminium can
 SURFACE_Z = 0.753  # the top of Geodude's work surface
 Path("can.xml").write_text(f"""<mujoco><worldbody>
   <body name="can" pos="0.35 -0.40 {SURFACE_Z + HEIGHT / 2}">
     <freejoint/>
-    <geom type="cylinder" size="{RADIUS} {HEIGHT / 2}" mass="0.05" friction="0.6 0.005 0.0001"/>
+    <geom type="cylinder" size="{RADIUS} {HEIGHT / 2}" mass="{MASS}" friction="0.6 0.005 0.0001"/>
   </body>
 </worldbody></mujoco>""")
-
-
-def pose(T):
-    """A 4x4 homogeneous transform as an ssrobot Pose."""
-    R = T[:3, :3]
-    w = math.sqrt(max(0.0, 1 + R[0, 0] + R[1, 1] + R[2, 2])) / 2
-    x = math.copysign(math.sqrt(max(0.0, 1 + R[0, 0] - R[1, 1] - R[2, 2])) / 2, R[2, 1] - R[1, 2])
-    y = math.copysign(math.sqrt(max(0.0, 1 - R[0, 0] + R[1, 1] - R[2, 2])) / 2, R[0, 2] - R[2, 0])
-    z = math.copysign(math.sqrt(max(0.0, 1 - R[0, 0] - R[1, 1] + R[2, 2])) / 2, R[1, 0] - R[0, 1])
-    n = math.sqrt(w * w + x * x + y * y + z * z)
-    return Pose(position=tuple(map(float, T[:3, 3])), quat_wxyz=(w / n, x / n, y / n, z / n))
-
-
-def region(t):
-    """An instantiated sstsr region as an ssrobot Tsr."""
-    b = [tuple(map(float, row)) for row in t.Bw]
-    return Tsr(
-        origin=pose(t.T0_w),
-        offset=pose(t.Tw_e),
-        position_bounds=tuple(b[:3]),
-        rotation_bounds=tuple(b[3:]),
-    )
-
 
 package = load_installed_package("geodude_assets")
 runtime = MujocoRuntime(package, scene="can.xml", attach_tolerance_rad=0.2)
@@ -292,30 +301,24 @@ planner = CBiRRT.from_package(package, "right_arm", config=CBiRRTConfig(edge_res
 checker = CBiRRT.from_package(
     package, "right_arm", config=CBiRRTConfig(edge_resolution=0.01, max_iterations=300)
 )
+hand = Robotiq2F140()
+profile = sstsr.profile(
+    hand,
+    manipulator="right_arm",
+    end_effector="right_hand",
+    gripper="right_gripper",
+    opening_channel="right_gripper_opening",
+)
 
 with RobotContext(package.description, runtime) as ctx:
-    # sstsr frames a grasped cylinder at its base; each side grasp is backed off 8 cm
-    # along the hand's approach axis, so the skill can approach in a straight line.
-    base = np.eye(4)
-    base[:3, 3] = (0.35, -0.40, SURFACE_Z)
-    back = np.eye(4)
-    back[2, 3] = -0.08
-    pregrasps = [
-        region(dataclasses.replace(t, Tw_e=t.Tw_e @ back).instantiate(base))
-        for t in Robotiq2F140().grasp_cylinder_side(RADIUS, HEIGHT)
-    ]
-    spec = GraspSpec(
-        manipulator="right_arm",
-        end_effector="right_hand",
-        gripper="right_gripper",
-        opening_channel="right_gripper_opening",
-        object="can",
-        support="vention_base",
-        normal=(0.0, 0.0, 1.0),
-        pregrasps=pregrasps,
-        approach_m=0.08,
-        lift_m=0.06,
+    observed = next(o.known_pose() for o in ctx.snapshot().objects if o.name == "can")
+    can = GraspObject("can", Primitive("cylinder", (RADIUS, HEIGHT)), observed)
+    # Side grasps, backed off 8 cm along the hand's approach axis: the distance the
+    # grasp then approaches in a straight line.
+    regions = grasp_regions(
+        can, profile, sstsr.SstsrTemplates(hand), approach_m=0.08, strategies=("side",)
     )
+    spec = regions.spec(support="vention_base", normal=(0.0, 0.0, 1.0), lift_m=0.06)
     result = run_skill(ctx, grasp(ctx, planner, spec, check_planner=checker), max_ticks=200_000)
 
 print(result.state.value)
@@ -353,7 +356,8 @@ attachment monitor tolerates the can swinging between the pads as the arm accele
 | Capability | Status |
 | --- | --- |
 | Grasp, place under a force guard, and drop into a container | Implemented; demonstrated on Geodude in MuJoCo |
-| Portable grasp verification and conservative failure reporting | Implemented; missed grasps, slips, and unconfirmed releases are tested on Geodude |
+| Portable grasp verification and conservative failure reporting | Implemented; missed grasps, a can stuck to its surface, carries that lose the object, and unconfirmed releases are tested on Geodude |
+| Grasp regions from explicit object geometry and a selected gripper profile | Implemented; cylinder, box, and sphere through sstsr's hands; demonstrated on Geodude in MuJoCo |
 | Planning ahead within a skill, and continuing the kept approach | Implemented; demonstrated on Geodude |
 | Estimating `retained` from the gripper opening, stopping a carry that loses its object | Implemented; demonstrated on Geodude in MuJoCo. `placed` and `landed` are recorded `unobserved`, scored against privileged poses; `acquired` and `released` estimates are planned (#28) |
 | Racing grasp candidates across arms, including during an earlier motion | Implemented; used by Geodude's four-can recycling demo |

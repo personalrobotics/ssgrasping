@@ -4,7 +4,9 @@ This is the first fixed-gripper baseline: robot-neutral ``grasp`` and ``place`` 
 with every robot-specific choice in explicit data. Geodude's right arm and Robotiq 2F-140
 are selected, and the test world is a primitive 66 mm can on Geodude's own work surface.
 The data comes from the libraries that own it:
-- grasp regions: sstsr's ``Robotiq2F140.grasp_cylinder_side`` templates at the can;
+- grasp regions: the can as a ``GraspObject`` cylinder at its observed pose, with a
+  ``GraspingProfile`` for the 2F-140, and its side grasps from sstsr's templates
+  (``ssgrasping.sstsr``);
 - placement regions: sstsr's ``StablePlacer.place_cylinder`` on a target spot, with its
   yaw bounded so the final check tests all six bounds;
 - planning: sscbirrt, with ssik kinematics for the arm, at a validation resolution fine
@@ -20,9 +22,12 @@ its reason and cause, and the attachment the skill left declared:
   the support could. The close stops short, so the attachment is declared, but the
   fingers rest on the post, so the lift cannot plan: the grasp fails without claiming
   ``acquired``.
-- ``lost``: a 20 kg can, too heavy for the grip. The close stops short on it and the
-  lift runs, but the can stays on the surface: closing again, the fingers reach their
-  target, and ``acquired`` fails.
+- ``stuck``: a full can stuck to the surface (glued, or in a spill). The close stops
+  short on it, but the lift cannot pull free: the pads' friction on it, about 55 N,
+  exceeds what the arm lifts, so the lift stalls short of its goal and fails
+  ``command_failed``, with the can still reported held and attached, the conservative
+  state. With real masses, a rigid can either rises with this hand or stops the lift;
+  none slips out, so no scenario here reaches ``acquired``'s refutation.
 - ``preflight``: an unknown channel fails ``preflight`` before anything is commanded.
 - ``external``: the same grasp on an externally clocked runtime, driven by ``run_skill``
   through ``update()`` alone.
@@ -91,19 +96,27 @@ from tsr.hands.parallel_jaw import Robotiq2F140
 from tsr.placement.stable_placer import StablePlacer
 
 from ssgrasping import (
+    GraspObject,
     GraspSpec,
     PlaceSpec,
+    Primitive,
     Reason,
     SkillExecution,
     SkillResult,
     SkillState,
     Transition,
     grasp,
+    grasp_regions,
     place,
     run_skill,
+    sstsr,
 )
 
 RADIUS, HEIGHT = 0.033, 0.123  # prl_assets' can geometric_properties
+# A full 12 fl oz can of these dimensions: 355 ml of drink (about 0.37 kg) and a 14 g
+# aluminium can. Real loads only: a failure is made by a plausible physical cause.
+CAN_MASS = 0.38
+CAN_FRICTION = 0.6
 SURFACE_Z = 0.753  # the top of Geodude's work surface (vention_base)
 UP = (0.0, 0.0, 1.0)  # the work surface's outward normal
 CAN_XY = (0.35, -0.40)
@@ -114,9 +127,11 @@ STANDOFF = 0.08
 CHECK_ITERATIONS = 300  # feasible checks plan well within this; infeasible ones stop
 MAX_TICKS = 200_000
 GRIPPER_DEADLINE_NS = 20_000_000  # shorter than any close of the 2F-140 in this scene
-# The attachment monitor's rotation tolerance: a cylinder pinched between two pads swings
-# about the finger axis as the arm accelerates (0.101 rad at the peak of the transfer,
-# settling back to under 0.01 rad), and that swing is still a held can.
+# The attachment monitor's rotation tolerance: a cylinder pinched between two pads can swing
+# about the finger axis as the arm accelerates, and that swing is still a held can. Earlier
+# grasps swung it up to 0.101 rad at the peak of the transfer. Re-measured with the full
+# 0.38 kg can at sstsr 4.2 (#3), over four placements: at most 0.0021 rad (0.0018 rad with
+# the 50 g can these tests used before).
 SWING_TOLERANCE_RAD = 0.2
 # The guarded descent's force threshold. Measured at ssrobot 917795a, which reads the wrist
 # at the state each tick reaches (#162), over four placements on Geodude's table: the
@@ -127,7 +142,9 @@ SWING_TOLERANCE_RAD = 0.2
 # Re-measured at ssrobot 640b9a4 with sscbirrt 3.11, which retimes the descent: the
 # free-motion peak is 4.4-5.1 N over the three of those placements whose transfer keeps the
 # can, so the margin stands. Again at geodude_assets 7b740c3 (torsional friction, the
-# recalibrated gripper): 4.3-4.9 N.
+# recalibrated gripper): 4.3-4.9 N. Those were with a 50 g can. Re-measured with the full
+# 0.38 kg can at sstsr 4.2 (#3), over four placements: 5.4-5.6 N (4.7 N with 50 g), so 8 N
+# is 2.4 N (1.44x) above the free-motion peak.
 CONTACT_N = 8.0
 TARE_HORIZON_NS = 1_000_000_000
 """How long ``tare_settled`` holds after joint rest: the fixed pre-tare wait it replaces."""
@@ -135,17 +152,20 @@ TARE_SETTLED_FRACTION = 0.1
 """How much of the guard's threshold the wrist's force may change by after joint rest."""
 DRIFT_TOLERANCE_M = 1e-4  # below the ~0.3 mm the can drifts in the fingers on the lift
 # Held transfers are planned at this fraction of the joints' velocity and acceleration
-# limits. At sscbirrt 3.11's full-limit timing, the drop proof's transfer swings the wrist
-# at 3.5 rad/s and throws the 50 g can from the fingers. At 0.7 the can held in the drop
+# limits. At sscbirrt 3.11's full-limit timing, the drop proof's transfer swung the wrist
+# at 3.5 rad/s and threw the 50 g can it then used from the fingers. At 0.7 the can held in the drop
 # proof, but moving the can's start by up to 1 mm either way turned it more than the
 # monitor's 0.2 rad in the hand in 6 of 40 runs, on any machine; at 0.5, in none of 40,
 # turning at most 0.056 rad.
 CARRY_SCALING = 0.5
 
 
-def _scene(mass: float = 0.05, post: bool = False) -> str:
-    """A can of ``mass`` kg on the work surface; with ``post``, a fixed post of the can's
-    size where ``_missed`` aims."""
+def _scene(post: bool = False, stuck: bool = False) -> str:
+    """A full can on the work surface; with ``post``, a fixed post of the can's size where
+    ``_missed`` aims; with ``stuck``, the can held to the surface (glued, or stuck in a
+    spill) by a weld, though it is still a free object to the runtime. No can this size
+    slips from the 2F-140's grip by its weight: at about 46 N a pad, slipping at friction
+    0.6 would take over 5.6 kg, denser than lead."""
     fixed = (
         f"""
     <body name="post" pos="{CAN_XY[0]} {CAN_XY[1] + ELSEWHERE} {SURFACE_Z + HEIGHT / 2}">
@@ -154,76 +174,51 @@ def _scene(mass: float = 0.05, post: bool = False) -> str:
         if post
         else ""
     )
+    weld = '\n  <equality>\n    <weld body1="can"/>\n  </equality>' if stuck else ""
     return f"""<mujoco>
   <worldbody>
     <body name="can" pos="{CAN_XY[0]} {CAN_XY[1]} {SURFACE_Z + HEIGHT / 2}">
       <freejoint/>
-      <geom type="cylinder" size="{RADIUS} {HEIGHT / 2}" mass="{mass}"
-            friction="0.6 0.005 0.0001"/>
+      <geom type="cylinder" size="{RADIUS} {HEIGHT / 2}" mass="{CAN_MASS}"
+            friction="{CAN_FRICTION} 0.005 0.0001"/>
     </body>{fixed}
-  </worldbody>
+  </worldbody>{weld}
 </mujoco>
 """
-
-
-def _matrix(pose: Pose) -> np.ndarray:
-    w, x, y, z = pose.quat_wxyz
-    T = np.eye(4)
-    T[:3, :3] = [
-        [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
-        [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
-        [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
-    ]
-    T[:3, 3] = pose.position
-    return T
-
-
-def _pose(T: np.ndarray) -> Pose:
-    R = T[:3, :3]
-    w = math.sqrt(max(0.0, 1 + R[0, 0] + R[1, 1] + R[2, 2])) / 2
-    x = math.copysign(math.sqrt(max(0.0, 1 + R[0, 0] - R[1, 1] - R[2, 2])) / 2, R[2, 1] - R[1, 2])
-    y = math.copysign(math.sqrt(max(0.0, 1 - R[0, 0] + R[1, 1] - R[2, 2])) / 2, R[0, 2] - R[2, 0])
-    z = math.copysign(math.sqrt(max(0.0, 1 - R[0, 0] - R[1, 1] + R[2, 2])) / 2, R[1, 0] - R[0, 1])
-    n = math.sqrt(w * w + x * x + y * y + z * z)
-    return Pose(
-        position=tuple(float(v) for v in T[:3, 3]),  # type: ignore[arg-type]
-        quat_wxyz=(w / n, x / n, y / n, z / n),
-    )
 
 
 def _tsr(t: Any) -> Tsr:
     """An instantiated sstsr region as ssrobot's ``Tsr``."""
     bounds = [tuple(float(v) for v in row) for row in t.Bw]
     return Tsr(
-        origin=_pose(t.T0_w),
-        offset=_pose(t.Tw_e),
+        origin=sstsr.pose(t.T0_w),
+        offset=sstsr.pose(t.Tw_e),
         position_bounds=tuple(bounds[:3]),  # type: ignore[arg-type]
         rotation_bounds=tuple(bounds[3:]),  # type: ignore[arg-type]
     )
 
 
+HAND = Robotiq2F140()
+PROFILE = sstsr.profile(
+    HAND,
+    manipulator="right_arm",
+    end_effector="right_hand",
+    gripper="right_gripper",
+    opening_channel="right_gripper_opening",
+)
+
+
 def _grasp_spec(can: Pose, **changes: Any) -> GraspSpec:
-    """Every sstsr side grasp of the can, backed off along the approach axis; the skill
-    chooses among them."""
-    templates = Robotiq2F140().grasp_cylinder_side(RADIUS, HEIGHT)
-    bottom = _matrix(can)
-    bottom[:3, 3] -= bottom[:3, 2] * HEIGHT / 2  # sstsr frames a grasped cylinder at its base
-    back = np.eye(4)
-    back[2, 3] = -STANDOFF
-    spec = GraspSpec(
-        manipulator="right_arm",
-        end_effector="right_hand",
-        gripper="right_gripper",
-        opening_channel="right_gripper_opening",
-        object="can",
-        support="vention_base",
-        normal=UP,
-        pregrasps=[
-            _tsr(dataclasses.replace(t, Tw_e=t.Tw_e @ back).instantiate(bottom)) for t in templates
-        ],
+    """Every sstsr side grasp of the can at ``can``, backed off along the approach axis by
+    the approach; the skill chooses among them."""
+    regions = grasp_regions(
+        GraspObject("can", Primitive("cylinder", (RADIUS, HEIGHT)), can),
+        PROFILE,
+        sstsr.SstsrTemplates(HAND),
         approach_m=STANDOFF,
-        lift_m=0.06,
+        strategies=("side",),
     )
+    spec = regions.spec(support="vention_base", normal=UP, lift_m=0.06)
     return dataclasses.replace(spec, **changes)
 
 
@@ -539,8 +534,8 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     plain.write_text(_scene())
     posted = tmp_path / "post.xml"
     posted.write_text(_scene(post=True))
-    heavy = tmp_path / "heavy.xml"
-    heavy.write_text(_scene(mass=20.0))
+    stuck = tmp_path / "stuck.xml"
+    stuck.write_text(_scene(stuck=True))
 
     first = json.dumps(_session(plain, _pick_and_place()), indent=2)
     again = json.dumps(_session(plain, _pick_and_place()), indent=2)
@@ -548,7 +543,7 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
         "success": json.loads(first),
         "missed": _session(plain, _missed),
         "obstructed": _session(posted, _missed),
-        "lost": _session(heavy, _pick()),
+        "stuck": _session(stuck, _pick()),
         "preflight": _session(plain, _pick({"opening_channel": "right_gripper_width"})),
         "external": _session(plain, _pick(), external=True),
         "cancelled": _session(plain, _cancelled, external=True),
@@ -647,10 +642,10 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
         ("attach", True),
         ("lift", False),
     ]
-    lost = scenarios["lost"]["grasp"]
-    assert lost["state"] == SkillState.FAILED, lost["stages"]
-    assert lost["stages"][-1]["evidence"] == "portable"
-    assert _failed(lost) == ("acquired", Reason.LOST, None, True, True)
+    stuck_can = scenarios["stuck"]["grasp"]
+    assert stuck_can["state"] == SkillState.FAILED, stuck_can["stages"]
+    assert "acquired" not in [s["name"] for s in stuck_can["stages"]]
+    assert _failed(stuck_can) == ("lift", Reason.COMMAND_FAILED, "goal_not_reached", True, True)
 
     pre = scenarios["preflight"]["grasp"]
     assert pre["state"] == SkillState.FAILED and [s["name"] for s in pre["stages"]] == ["preflight"]
