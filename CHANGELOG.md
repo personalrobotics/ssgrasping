@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+Grasp regions from explicit object geometry and a selected gripper profile
+(personalrobotics/ssgrasping#3).
+- **Types.** `Primitive` (cylinder, box, sphere, in a centred frame), `GraspObject`,
+  `GraspingProfile`, `RegionTemplate`, `TemplateSource`, `GraspRegions`,
+  `GeometryReason`, `UnsupportedPrimitive`, and `grasp_regions`, which backs the regions
+  off by the grasp's own approach and records their provenance. Well-formed geometry that
+  yields no region is a result with a reason, not an exception. `GraspSpec` is unchanged.
+- **`ssgrasping.sstsr`** under the new `sstsr` extra: sstsr's hands as a
+  `TemplateSource`, generating only the primitives sstsr's registry lists for a hand.
+  `import ssgrasping` still loads no sstsr; `scripts/check_boundary.py` allows sstsr only
+  under that extra and checks the adapter imports nothing else forbidden.
+- **Fixed: regions rolled 180 degrees.** The matrix-to-quaternion conversion the tests and
+  the README example used recovered each sign from the matrix's antisymmetric part, which
+  vanishes at 180 degrees, so half of sstsr's side grasps became other poses. The adapter
+  uses Shepperd's method.
+- **Realistic test physics.** The test can is a full 12 fl oz can, 0.38 kg (it was 0.05
+  kg). The 20 kg can that forced the grip to slip is replaced by a can stuck to its
+  surface: with real masses no rigid can slips from the 2F-140, so the lift stalls and
+  fails `command_failed`, with the can reported held. The descent's force margin and the
+  carry's swing were re-measured at the new mass.
+- **sstsr 4.2** in the test environment (4.1's closed-reach grasps, 4.2's JACO2 hand).
+
 Skills estimate the manipulation transitions they pass through
 (personalrobotics/ssgrasping#28), starting with `retained`.
 - **Types.** `TransitionEstimate`, `TransitionEvaluation`, `Transition`,
