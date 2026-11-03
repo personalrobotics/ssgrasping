@@ -117,7 +117,7 @@ frames by hand:
 
 `grasp_regions(obj, profile, source, approach_m=..., strategies=...)` backs each region
 off along the approach axis by `approach_m`, the distance the grasp then approaches, and
-returns `GraspRegions`: the world regions, each one's grasp family, and their provenance
+returns `GraspRegions`: the world regions, each one's grasp family and strategy, and their provenance
 (object, primitive, pose, revision, hand, end effector, strategies, back-off).
 `strategies` selects grasp families: `side`, `top`, `bottom` for a cylinder; `top`,
 `bottom`, `face_x`, `face_y` for a box; `all` for a sphere. Well-formed geometry that

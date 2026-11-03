@@ -13,11 +13,11 @@ frame, so callers never shift a pose by half a height.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 from ssrobot import Pose
 from tsr import KinovaJaco2TwoFinger, Robotiq2F85, Robotiq2F140
 from tsr.hands.registry import default_registry
@@ -52,42 +52,19 @@ generator (``grasp_cylinder`` is side, top, and bottom)."""
 
 
 def pose(T: Any) -> Pose:
-    """A 4x4 homogeneous transform as an ssrobot ``Pose``.
-
-    Shepperd's method: the quaternion is recovered from the largest of its four
-    components, so it is exact for every rotation. Recovering each component's sign from
-    off-diagonal differences instead fails at 180 degrees, where those differences
-    vanish: half of sstsr's side grasps are rolled 180 degrees."""
+    """A 4x4 homogeneous transform as an ssrobot ``Pose``, its quaternion by scipy, exact
+    for every rotation (half turns included: half of sstsr's side grasps are rolled
+    180 degrees, where reading signs from the matrix's antisymmetric part fails)."""
     T = np.asarray(T, dtype=float)
-    R = T[:3, :3]
-    trace = R[0, 0] + R[1, 1] + R[2, 2]
-    if trace > max(R[0, 0], R[1, 1], R[2, 2]):
-        s = 2.0 * math.sqrt(1.0 + trace)
-        q = (s / 4, (R[2, 1] - R[1, 2]) / s, (R[0, 2] - R[2, 0]) / s, (R[1, 0] - R[0, 1]) / s)
-    elif R[0, 0] >= R[1, 1] and R[0, 0] >= R[2, 2]:
-        s = 2.0 * math.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2])
-        q = ((R[2, 1] - R[1, 2]) / s, s / 4, (R[0, 1] + R[1, 0]) / s, (R[0, 2] + R[2, 0]) / s)
-    elif R[1, 1] >= R[2, 2]:
-        s = 2.0 * math.sqrt(1.0 - R[0, 0] + R[1, 1] - R[2, 2])
-        q = ((R[0, 2] - R[2, 0]) / s, (R[0, 1] + R[1, 0]) / s, s / 4, (R[1, 2] + R[2, 1]) / s)
-    else:
-        s = 2.0 * math.sqrt(1.0 - R[0, 0] - R[1, 1] + R[2, 2])
-        q = ((R[1, 0] - R[0, 1]) / s, (R[0, 2] + R[2, 0]) / s, (R[1, 2] + R[2, 1]) / s, s / 4)
-    n = math.sqrt(sum(c * c for c in q))
-    w, x, y, z = (float(c) / n for c in q)
+    w, x, y, z = (float(c) for c in Rotation.from_matrix(T[:3, :3]).as_quat(scalar_first=True))
     p = T[:3, 3]
     return Pose(position=(float(p[0]), float(p[1]), float(p[2])), quat_wxyz=(w, x, y, z))
 
 
 def matrix(p: Pose) -> np.ndarray:
     """An ssrobot ``Pose`` as a 4x4 homogeneous transform."""
-    w, x, y, z = p.quat_wxyz
     T = np.eye(4)
-    T[:3, :3] = [
-        [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
-        [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
-        [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
-    ]
+    T[:3, :3] = Rotation.from_quat(p.quat_wxyz, scalar_first=True).as_matrix()
     T[:3, 3] = p.position
     return T
 
@@ -119,15 +96,16 @@ class SstsrTemplates:
             shift[2, 3] = -primitive.dimensions[-1] / 2
         templates = []
         generated = [
-            t
+            (s, t)
             for s in strategies
             for t in getattr(self.hand, _FACTORIES[(primitive.kind, s)])(**arguments)
         ]
-        for t in generated:
+        for strategy, t in generated:
             bounds = [(float(lo), float(hi)) for lo, hi in t.Bw]
             templates.append(
                 RegionTemplate(
                     family=t.name,
+                    strategy=strategy,
                     origin=pose(shift @ t.T_ref_tsr),
                     offset=pose(t.Tw_e),
                     position_bounds=(bounds[0], bounds[1], bounds[2]),

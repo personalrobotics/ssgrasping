@@ -28,8 +28,9 @@ from __future__ import annotations
 import dataclasses
 import enum
 import math
+import numbers
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from ssrobot import Pose, Tsr
@@ -54,12 +55,26 @@ STRATEGIES = {
 side, or at its top or bottom face; at a box's top or bottom face, or across its x or y
 faces. The names are prl_assets' ``grasp_regions`` strategies."""
 
+SPANS = {
+    ("cylinder", "side"): (0,),
+    ("cylinder", "top"): (0,),
+    ("cylinder", "bottom"): (0,),
+    ("box", "top"): (0, 1),
+    ("box", "bottom"): (0, 1),
+    ("box", "face_x"): (1, 2),
+    ("box", "face_y"): (0, 2),
+    ("sphere", "all"): (0,),
+}
+"""Which of a primitive's spans each strategy's fingers may close across, as indices
+into ``Primitive.spans``: a box's top grasp closes across its x or y extent, an x-face
+grasp across y or z."""
+
 Bounds = tuple[tuple[float, float], tuple[float, float], tuple[float, float]]
 
 
 def _length(value: Any, path: str) -> float:
     check_spec(
-        isinstance(value, (int, float)) and not isinstance(value, bool),
+        isinstance(value, numbers.Real) and not isinstance(value, bool),
         f"a number of metres, not {value!r}",
         path,
     )
@@ -85,23 +100,34 @@ class Primitive:
     def __post_init__(self) -> None:
         check_spec(self.kind in DIMENSIONS, f"one of {sorted(DIMENSIONS)}", "kind")
         names = DIMENSIONS[self.kind]
+        dimensions: Any = self.dimensions
         check_spec(
-            isinstance(self.dimensions, (tuple, list)) and len(self.dimensions) == len(names),
+            not isinstance(dimensions, (str, bytes)) and hasattr(dimensions, "__len__"),
+            f"{len(names)} dimensions: {', '.join(names)}",
+            "dimensions",
+        )
+        check_spec(
+            len(dimensions) == len(names),
             f"{len(names)} dimensions: {', '.join(names)}",
             "dimensions",
         )
         values = tuple(
             _length(v, f"dimensions[{i}] ({n})")
-            for i, (v, n) in enumerate(zip(self.dimensions, names, strict=True))
+            for i, (v, n) in enumerate(zip(dimensions, names, strict=True))
         )
         object.__setattr__(self, "dimensions", values)
 
     @property
-    def width(self) -> float:
-        """The narrowest span a parallel-jaw hand could close across."""
+    def spans(self) -> tuple[float, ...]:
+        """The widths fingers could close across: a box's x, y, z extents; a cylinder's
+        or sphere's diameter."""
         if self.kind == "box":
-            return min(self.dimensions)
-        return 2.0 * self.dimensions[0]
+            return self.dimensions
+        return (2.0 * self.dimensions[0],)
+
+    def width(self, strategies: Sequence[str]) -> float:
+        """The narrowest span any of ``strategies`` closes across."""
+        return min(self.spans[i] for s in strategies for i in SPANS[(self.kind, s)])
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,6 +195,8 @@ class RegionTemplate:
 
     family: str
     """Which of the hand's grasps this is, as the source names it."""
+    strategy: str
+    """The ``STRATEGIES`` entry it belongs to."""
     origin: Pose
     offset: Pose
     position_bounds: Bounds
@@ -208,14 +236,36 @@ class GraspRegions:
     object: GraspObject
     profile: GraspingProfile
     approach_m: float
+    strategies: tuple[str, ...]
+    """The strategies requested."""
     tsrs: tuple[Tsr, ...] = ()
     families: tuple[str, ...] = ()
-    """Each region's grasp family, in the order of ``tsrs``."""
+    """Each region's grasp, as the template source names it, in the order of ``tsrs``."""
+    region_strategies: tuple[str, ...] = ()
+    """Each region's strategy, in the order of ``tsrs``."""
     reason: GeometryReason | None = None
     detail: str = ""
-    provenance: dict[str, Any] = field(default_factory=dict)
-    """What the regions were made from: the object's name, primitive, pose, frame, and
-    revision; the hand and end effector; and the back-off. JSON-ready."""
+
+    @property
+    def provenance(self) -> dict[str, Any]:
+        """What the regions were made from, JSON-ready: the object's name, primitive,
+        pose, frame, and revision; the hand and end effector; the strategies; the
+        back-off. Each call returns a new dict."""
+        obj = self.object
+        return {
+            "object": obj.name,
+            "primitive": {
+                "kind": obj.primitive.kind,
+                "dimensions_m": list(obj.primitive.dimensions),
+            },
+            "pose": {"position": list(obj.pose.position), "quat_wxyz": list(obj.pose.quat_wxyz)},
+            "frame": obj.frame,
+            "revision": obj.revision,
+            "strategies": list(self.strategies),
+            "hand": self.profile.hand,
+            "end_effector": self.profile.end_effector,
+            "approach_m": self.approach_m,
+        }
 
     @property
     def ok(self) -> bool:
@@ -275,33 +325,24 @@ def grasp_regions(
             f"distinct {primitive.kind} strategies from {list(vocabulary)}",
             "strategies",
         )
-    provenance: dict[str, Any] = {
-        "object": obj.name,
-        "primitive": {"kind": primitive.kind, "dimensions_m": list(primitive.dimensions)},
-        "pose": {"position": list(obj.pose.position), "quat_wxyz": list(obj.pose.quat_wxyz)},
-        "frame": obj.frame,
-        "revision": obj.revision,
-        "strategies": list(selected),
-        "hand": profile.hand,
-        "end_effector": profile.end_effector,
-        "approach_m": approach_m,
-    }
-    base = GraspRegions(object=obj, profile=profile, approach_m=approach_m, provenance=provenance)
-
-    if primitive.width > profile.max_aperture_m:
-        return dataclasses.replace(
-            base,
-            reason=GeometryReason.WIDER_THAN_APERTURE,
-            detail=(
-                f"{obj.name}'s narrowest span, {primitive.width:.4f} m, exceeds "
-                f"{profile.hand}'s aperture, {profile.max_aperture_m:.4f} m"
-            ),
-        )
+    base = GraspRegions(object=obj, profile=profile, approach_m=approach_m, strategies=selected)
+    # Whether the hand covers the primitive at all comes first: a hand without box grasps
+    # is not one whose aperture a smaller box would fit.
     try:
         templates = tuple(source(primitive, selected))
     except UnsupportedPrimitive as error:
         return dataclasses.replace(
             base, reason=GeometryReason.UNSUPPORTED_BY_HAND, detail=str(error)
+        )
+    width = primitive.width(selected)
+    if width > profile.max_aperture_m:
+        return dataclasses.replace(
+            base,
+            reason=GeometryReason.WIDER_THAN_APERTURE,
+            detail=(
+                f"{obj.name}'s narrowest span for {'/'.join(selected)}, {width:.4f} m, "
+                f"exceeds {profile.hand}'s aperture, {profile.max_aperture_m:.4f} m"
+            ),
         )
     if not templates:
         return dataclasses.replace(
@@ -322,4 +363,9 @@ def grasp_regions(
         )
         for t in templates
     )
-    return dataclasses.replace(base, tsrs=tsrs, families=tuple(t.family for t in templates))
+    return dataclasses.replace(
+        base,
+        tsrs=tsrs,
+        families=tuple(t.family for t in templates),
+        region_strategies=tuple(t.strategy for t in templates),
+    )

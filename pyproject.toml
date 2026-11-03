@@ -18,9 +18,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# ssgrasping.sstsr: grasp regions from sstsr's hand templates. Only that module imports
-# it; ``import ssgrasping`` never does (scripts/check_boundary.py).
-sstsr = ["sstsr>=4.2,<5"]
+# ssgrasping.sstsr: grasp regions from sstsr's hand templates, with the numpy and scipy it
+# uses itself. Only that module imports them; ``import ssgrasping`` never does
+# (scripts/check_boundary.py).
+sstsr = ["sstsr>=4.2,<5", "numpy>=1.26", "scipy>=1.14"]
 
 [dependency-groups]
 # Tests run both reference robots in MuJoCo with sscbirrt planning. The robot packages
@@ -54,7 +55,7 @@ strict = true
 files = ["src", "tests", "scripts"]
 
 [[tool.mypy.overrides]]
-module = ["mujoco.*", "sscbirrt.*", "tsr.*", "geodude_assets.*", "ada_assets.*"]
+module = ["mujoco.*", "sscbirrt.*", "tsr.*", "scipy.*", "geodude_assets.*", "ada_assets.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

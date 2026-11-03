@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from importlib.metadata import requires
@@ -44,7 +45,7 @@ robot packages and applications, viewers, and behavior-tree frameworks."""
 
 ALLOWED_REQUIREMENTS = ("ssrobot",)
 
-OPTIONAL = {"sstsr": ("ssgrasping.sstsr", ("sstsr",), ("tsr",))}
+OPTIONAL = {"sstsr": ("ssgrasping.sstsr", ("sstsr", "numpy", "scipy"), ("tsr",))}
 """Each extra: the module it enables, the requirements it may add, and the forbidden
 top-level modules that module alone may load."""
 
@@ -70,20 +71,28 @@ def probe(module: str) -> dict[str, object] | None:
     return found
 
 
+_EXTRA = re.compile(r"""\bextra\s*==\s*['"]([^'"]+)['"]""")
+
+
 def _marker_extra(requirement: str) -> str | None:
     """The extra a requirement's marker names, or None for an unconditional one."""
     if ";" not in requirement:
         return None
-    marker = requirement.split(";", 1)[1]
-    if "extra" not in marker:
-        return None
-    return marker.split("==", 1)[1].strip().strip("'\"")
+    found = _EXTRA.search(requirement.split(";", 1)[1])
+    return found.group(1) if found else None
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--installed", action="store_true", help="require an installed wheel")
     parser.add_argument("--report", type=Path, help="write the findings as JSON")
+    parser.add_argument(
+        "--require-extra",
+        action="append",
+        default=[],
+        choices=sorted(OPTIONAL),
+        help="fail unless this extra's module imports (it is installed)",
+    )
     args = parser.parse_args()
 
     found = probe("ssgrasping")
@@ -121,6 +130,8 @@ def main() -> int:
         adapter = probe(module)
         if adapter is None:
             adapters[extra] = "unavailable: the extra is not installed"
+            if extra in args.require_extra:
+                failures.append(f"{module} cannot be imported, but the {extra!r} extra is required")
             continue
         adapter_loaded = list(adapter["loaded"])  # type: ignore[call-overload]
         adapters[extra] = adapter_loaded

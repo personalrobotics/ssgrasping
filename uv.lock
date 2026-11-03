@@ -948,6 +948,10 @@ dependencies = [
 
 [package.optional-dependencies]
 sstsr = [
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "sstsr" },
 ]
 
@@ -964,6 +968,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "numpy", marker = "extra == 'sstsr'", specifier = ">=1.26" },
+    { name = "scipy", marker = "extra == 'sstsr'", specifier = ">=1.14" },
     { name = "ssrobot", git = "https://github.com/personalrobotics/ssrobot?rev=2d8285e6822fe72fd3cbe82902df229678b4ef75" },
     { name = "sstsr", marker = "extra == 'sstsr'", specifier = ">=4.2,<5" },
 ]

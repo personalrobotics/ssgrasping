@@ -29,7 +29,7 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run ruff check .
       - run: uv run mypy
-      - run: uv run python scripts/check_boundary.py
+      - run: uv run python scripts/check_boundary.py --require-extra sstsr
       - run: uv run pytest
       - name: The README's grasp example runs and succeeds
         run: |
@@ -61,7 +61,7 @@ jobs:
       # The same wheel with the sstsr extra: the adapter imports tsr and nothing else forbidden.
       - run: uv venv --no-project clean-sstsr
       - run: uv pip install --python clean-sstsr "$(ls dist/*.whl)[sstsr]"
-      - run: clean-sstsr/bin/python scripts/check_boundary.py --installed --report dist/boundary-sstsr.json
+      - run: clean-sstsr/bin/python scripts/check_boundary.py --installed --require-extra sstsr --report dist/boundary-sstsr.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: installed-wheel

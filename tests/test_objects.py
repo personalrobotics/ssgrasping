@@ -18,6 +18,7 @@ Reproduce with ``uv run pytest tests/test_objects.py``.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import math
 from pathlib import Path
@@ -26,6 +27,7 @@ from typing import Any
 import numpy as np
 import pytest
 import tsr
+from scipy.spatial.transform import Rotation
 from ssrobot import Pose, ValidationError
 from tsr import KinovaJaco2TwoFinger, Robotiq2F140
 
@@ -58,6 +60,16 @@ _SSTSR = {
 }
 
 
+def _transform(p: Pose) -> np.ndarray:
+    """``p`` as a 4x4 transform by scipy, independently of ``ssgrasping.sstsr``'s own
+    conversions, which the oracle must not share."""
+    T = np.eye(4)
+    w, x, y, z = p.quat_wxyz
+    T[:3, :3] = Rotation.from_quat([x, y, z, w]).as_matrix()
+    T[:3, 3] = p.position
+    return T
+
+
 def _profile(hand: Any) -> GraspingProfile:
     return sstsr.profile(
         hand,
@@ -74,7 +86,7 @@ def _expected(kind: str, dimensions: tuple[float, ...]) -> dict[str, Any]:
     oracle."""
     name, arguments = _SSTSR[kind]
     templates = getattr(Robotiq2F140(), name)(**dict(zip(arguments, dimensions, strict=True)))
-    reference = sstsr.matrix(POSE)
+    reference = _transform(POSE)
     if kind != "sphere":  # sstsr frames cylinders and boxes at their bottom face
         reference = reference @ np.array(
             [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, -dimensions[-1] / 2], [0, 0, 0, 1]]
@@ -89,7 +101,7 @@ def _expected(kind: str, dimensions: tuple[float, ...]) -> dict[str, Any]:
 
 def _as_sstsr(region: Any) -> Any:
     bounds = np.array([*region.position_bounds, *region.rotation_bounds])
-    return tsr.TSR(T0_w=sstsr.matrix(region.origin), Tw_e=sstsr.matrix(region.offset), Bw=bounds)
+    return tsr.TSR(T0_w=_transform(region.origin), Tw_e=_transform(region.offset), Bw=bounds)
 
 
 def test_regions_are_sstsrs_own_at_any_object_pose(artifacts: Path) -> None:
@@ -133,6 +145,8 @@ def test_regions_are_sstsrs_own_at_any_object_pose(artifacts: Path) -> None:
                 for r in regions.tsrs
             ],
         }
+        assert set(regions.region_strategies) == set(regions.strategies), kind
+        assert hash(regions) == hash(dataclasses.replace(regions)), kind
         assert regions.provenance["revision"] == 7
         assert regions.provenance["hand"] == "Robotiq2F140"
         assert regions.provenance["end_effector"] == "right_hand"
@@ -165,11 +179,35 @@ def test_unreachable_geometry_is_an_ordinary_result(artifacts: Path) -> None:
         strategies=("side",),
     )
     assert cylinder.ok and cylinder.provenance["hand"] == "KinovaJaco2TwoFinger"
+    # A flat box's thinnest extent is no help to a top grasp, which closes across x or y.
+    flat = grasp_regions(
+        GraspObject("tray", Primitive("box", (0.20, 0.20, 0.02)), POSE),
+        _profile(Robotiq2F140()),
+        sstsr.SstsrTemplates(Robotiq2F140()),
+        approach_m=APPROACH,
+        strategies=("top",),
+    )
+    assert flat.reason is GeometryReason.WIDER_THAN_APERTURE, flat.detail
+    # A hand without verified box grasps is reported as such, whatever the box's width.
+    for size in ((0.03, 0.04, 0.05), (0.08, 0.09, 0.10)):
+        jaco_box = grasp_regions(
+            GraspObject("block", Primitive("box", size), POSE),
+            _profile(jaco),
+            sstsr.SstsrTemplates(jaco),
+            approach_m=APPROACH,
+        )
+        assert jaco_box.reason is GeometryReason.UNSUPPORTED_BY_HAND, (size, jaco_box.detail)
+    # Dimensions from numerical code are accepted as the numbers they are.
+    single = tuple(np.array([0.033, 0.123], dtype=np.float32))
+    assert np.allclose(Primitive("cylinder", single).dimensions, (0.033, 0.123), atol=1e-6)
     with pytest.raises(ValueError, match="no pregrasp regions"):
         wide.spec(support="table", normal=(0.0, 0.0, 1.0), lift_m=0.05)
     (artifacts / "no_regions.json").write_text(
         json.dumps(
-            {r.object.name: {"reason": r.reason, "detail": r.detail} for r in (wide, unsupported)},
+            {
+                r.object.name: {"reason": r.reason, "detail": r.detail}
+                for r in (wide, unsupported, flat)
+            },
             indent=2,
         )
         + "\n"
