@@ -1,12 +1,14 @@
 """Grasp regions from explicit object geometry and a selected gripper profile (#3).
 
 Scenarios, recorded in ``objects.json`` with each request's regions and provenance:
-- ``frames``: a cylinder, a box, and a sphere at a translated pose rotated about a tilted
-  axis. Every region ``grasp_regions`` makes through ``ssgrasping.sstsr`` equals the one
-  sstsr's own ``instantiate`` makes at the primitive's bottom face (cylinder and box) or
-  centre (sphere), backed off along the approach, and poses sampled from each lie in the
-  other. That includes the templates rolled 180 degrees, whose quaternions cannot be
-  read from the rotation matrix's antisymmetric part.
+- ``frames``, for each hand: the primitives sstsr verifies for it (a cylinder, a box, and
+  a sphere for the Robotiq 2F-140; a cylinder for the Kinova JACO2) at a translated pose
+  rotated about a tilted axis. Every region ``grasp_regions`` makes through
+  ``ssgrasping.sstsr`` equals, origin, offset, and bounds, the one sstsr's own
+  ``instantiate`` makes at the primitive's bottom face (cylinder and box) or centre
+  (sphere), backed off along the approach, and poses sampled from each lie in the other.
+  That includes the templates rolled 180 degrees, whose quaternions cannot be read from
+  the rotation matrix's antisymmetric part.
 - ``no_regions``: a 0.20 m box is wider than the 2F-140's 0.128 m aperture, and the
   JACO2 hand's grasps are verified for cylinders only: both are ordinary results with a
   reason and no regions, before anything is planned.
@@ -53,6 +55,11 @@ CASES = {
     "box": (0.05, 0.07, 0.11),
     "sphere": (0.035,),
 }
+HANDS: dict[str, tuple[Any, tuple[str, ...], dict[str, tuple[float, ...]]]] = {
+    # Every primitive sstsr verifies for each hand: the JACO2's are cylinders only.
+    "Robotiq2F140": (Robotiq2F140, ("cylinder", "box", "sphere"), CASES),
+    "KinovaJaco2TwoFinger": (KinovaJaco2TwoFinger, ("cylinder",), {"cylinder": (0.030, 0.095)}),
+}
 _SSTSR = {
     "cylinder": ("grasp_cylinder", ("cylinder_radius", "cylinder_height")),
     "box": ("grasp_box", ("box_x", "box_y", "box_z")),
@@ -80,12 +87,12 @@ def _profile(hand: Any) -> GraspingProfile:
     )
 
 
-def _expected(kind: str, dimensions: tuple[float, ...]) -> dict[str, Any]:
+def _expected(hand: Any, kind: str, dimensions: tuple[float, ...]) -> dict[str, Any]:
     """sstsr's regions for the primitive at ``POSE``, instantiated at sstsr's own
     reference frame and backed off by the approach, by template name: the independent
     oracle."""
     name, arguments = _SSTSR[kind]
-    templates = getattr(Robotiq2F140(), name)(**dict(zip(arguments, dimensions, strict=True)))
+    templates = getattr(hand, name)(**dict(zip(arguments, dimensions, strict=True)))
     reference = _transform(POSE)
     if kind != "sphere":  # sstsr frames cylinders and boxes at their bottom face
         reference = reference @ np.array(
@@ -104,11 +111,14 @@ def _as_sstsr(region: Any) -> Any:
     return tsr.TSR(T0_w=_transform(region.origin), Tw_e=_transform(region.offset), Bw=bounds)
 
 
-def test_regions_are_sstsrs_own_at_any_object_pose(artifacts: Path) -> None:
-    hand = Robotiq2F140()
+@pytest.mark.parametrize("hand_name", sorted(HANDS))
+def test_regions_are_sstsrs_own_at_any_object_pose(artifacts: Path, hand_name: str) -> None:
+    make, kinds, cases = HANDS[hand_name]
+    hand = make()
     report: dict[str, Any] = {}
     rng = np.random.default_rng(3)
-    for kind, dimensions in CASES.items():
+    for kind in kinds:
+        dimensions = cases[kind]
         regions = grasp_regions(
             GraspObject(kind, Primitive(kind, dimensions), POSE, revision=7),
             _profile(hand),
@@ -116,7 +126,7 @@ def test_regions_are_sstsrs_own_at_any_object_pose(artifacts: Path) -> None:
             approach_m=APPROACH,
         )
         assert regions.ok, regions.detail
-        expected = _expected(kind, dimensions)
+        expected = _expected(hand, kind, dimensions)
         assert sorted(regions.families) == sorted(expected) and expected, kind
         worst = 0.0
         for family, ours in zip(regions.families, regions.tsrs, strict=True):
@@ -126,6 +136,7 @@ def test_regions_are_sstsrs_own_at_any_object_pose(artifacts: Path) -> None:
                 worst,
                 float(np.abs(mine.T0_w - theirs.T0_w).max()),
                 float(np.abs(mine.Tw_e - theirs.Tw_e).max()),
+                float(np.abs(mine.Bw - theirs.Bw).max()),
             )
             for _ in range(5):
                 assert mine.contains(theirs.sample(rng=rng)), (kind, ours)
@@ -134,7 +145,7 @@ def test_regions_are_sstsrs_own_at_any_object_pose(artifacts: Path) -> None:
         report[kind] = {
             "provenance": regions.provenance,
             "families": list(regions.families),
-            "max_transform_difference": worst,
+            "max_difference": worst,
             "regions": [
                 {
                     "origin": [list(r.origin.position), list(r.origin.quat_wxyz)],
@@ -148,7 +159,7 @@ def test_regions_are_sstsrs_own_at_any_object_pose(artifacts: Path) -> None:
         assert set(regions.region_strategies) == set(regions.strategies), kind
         assert hash(regions) == hash(dataclasses.replace(regions)), kind
         assert regions.provenance["revision"] == 7
-        assert regions.provenance["hand"] == "Robotiq2F140"
+        assert regions.provenance["hand"] == hand_name
         assert regions.provenance["end_effector"] == "right_hand"
         assert regions.provenance["approach_m"] == APPROACH
     (artifacts / "objects.json").write_text(json.dumps(report, indent=2) + "\n")

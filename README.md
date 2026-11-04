@@ -357,7 +357,7 @@ attachment monitor tolerates the can swinging between the pads as the arm accele
 | --- | --- |
 | Grasp, place under a force guard, and drop into a container | Implemented; demonstrated on Geodude in MuJoCo |
 | Portable grasp verification and conservative failure reporting | Implemented; missed grasps, a can stuck to its surface, carries that lose the object, and unconfirmed releases are tested on Geodude |
-| Grasp regions from explicit object geometry and a selected gripper profile | Implemented; cylinder, box, and sphere through sstsr's hands; demonstrated on Geodude in MuJoCo |
+| Grasp regions from explicit object geometry and a selected gripper profile | Implemented; cylinder, box, and sphere through sstsr's hands; demonstrated on Geodude in MuJoCo; ADA's cylinder candidates (Kinova JACO2, bare-hand package) checked against sstsr and bound to its palm grasp site |
 | Planning ahead within a skill, and continuing the kept approach | Implemented; demonstrated on Geodude |
 | Estimating `retained` from the gripper opening, stopping a carry that loses its object | Implemented; demonstrated on Geodude in MuJoCo. `placed` and `landed` are recorded `unobserved`, scored against privileged poses; `acquired` and `released` estimates are planned (#28) |
 | Racing grasp candidates across arms, including during an earlier motion | Implemented; used by Geodude's four-can recycling demo |
