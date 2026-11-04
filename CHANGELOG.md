@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+Candidates from several named, explicitly framed grasp regions
+(personalrobotics/ssgrasping#46).
+- **Regions.** A `GraspObject` lists `GraspRegion`s: a named primitive placed in the
+  object frame by `T_object_region`, with its own strategies. Its single `primitive`
+  field is replaced: an object of one shape is one region at the identity (unreleased
+  API; the tests and README example migrate). `grasp_regions` selects regions by name and
+  places each at `T_world_object @ T_object_region`, then the source's own frame
+  convention, with no other shift.
+- **Per-region outcomes.** `GraspRegions` holds a `RegionCandidates` per region, with
+  its world frame and its own reason, so one region may be too wide for the hand while
+  another has candidates; `tsrs`, `labels` (`region/strategy`), and `provenance` span
+  them.
+- **Provenance through the grasp.** `GraspSpec.pregrasp_labels` names each pregrasp
+  region; `grasp` records in `values["pregrasp_region"]` the labels of the regions the
+  end effector reached before its approach, or none.
+
 Grasp regions from explicit object geometry and a selected gripper profile
 (personalrobotics/ssgrasping#3).
 - **Types.** `Primitive` (cylinder, box, sphere, in a centred frame), `GraspObject`,

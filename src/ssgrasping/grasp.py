@@ -76,7 +76,7 @@ from ssrobot import (
     Tsr,
 )
 
-from ssgrasping._poses import axis
+from ssgrasping._poses import axis, inside
 from ssgrasping._skill import (
     GRIPPER_TIMEOUT_NS,
     Ahead,
@@ -91,6 +91,11 @@ from ssgrasping._skill import (
 )
 from ssgrasping.execution import SkillExecution
 from ssgrasping.outcomes import Criterion, Evidence, Reason
+
+REACHED_TOLERANCE = (2e-3, 2e-2)
+"""How far, in metres and radians, the end effector may be from a pregrasp region after
+the pregrasp's motion and still count as having reached it: tracking, not planning,
+error."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,10 +134,24 @@ class GraspSpec:
     """The clearance the pregrasp, a move through free space, keeps from the
     environment (``PlanningRequest.clearance_m``). The approach and the lift, which must
     come close to the object and its support, keep none."""
+    pregrasp_labels: Sequence[str] | None = None
+    """A name for each of ``pregrasps``, such as ``GraspRegions``' ``region/strategy``.
+    With them, the grasp records in ``values["pregrasp_region"]`` the labels of the
+    regions the end effector reached before its approach."""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "normal", unit(self.normal, "normal"))
         check_spec(len(self.pregrasps) > 0, "at least one pregrasp region", "pregrasps")
+        if self.pregrasp_labels is not None:
+            labels = self.pregrasp_labels
+            check_spec(
+                not isinstance(labels, str)
+                and len(labels) == len(self.pregrasps)
+                and all(isinstance(s, str) and s for s in labels),
+                "one non-empty label for each pregrasp region",
+                "pregrasp_labels",
+            )
+            object.__setattr__(self, "pregrasp_labels", tuple(labels))
         for name in ("approach_m", "lift_m", "line_tolerance_m"):
             check_spec(getattr(self, name) > 0, "must be positive", name)
         for name in ("open_opening", "close_opening"):
@@ -266,6 +285,20 @@ def _grasp(
         replan=choose,
         then=ahead,
     )
+
+    if spec.pregrasp_labels is not None:
+        # Which regions the end effector reached, within tracking: every one, or none.
+        reached = _pose(arm, ctx, ctx.snapshot())
+        run.values["pregrasp_region"] = (
+            sorted(
+                {
+                    label
+                    for label, region in zip(spec.pregrasp_labels, spec.pregrasps, strict=True)
+                    if inside(reached, region, REACHED_TOLERANCE)
+                }
+            )
+            or None
+        )
 
     run.begin("approach")
     approach = replan_approach() if upcoming is None else upcoming

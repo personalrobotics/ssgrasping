@@ -29,7 +29,7 @@ import numpy as np
 from ssrobot import Pose, load_installed_package
 from tsr import KinovaJaco2TwoFinger
 
-from ssgrasping import GeometryReason, GraspObject, Primitive, grasp_regions, sstsr
+from ssgrasping import GeometryReason, GraspObject, GraspRegion, Primitive, grasp_regions, sstsr
 
 POSE = Pose(position=(0.30, -0.22, 0.78), quat_wxyz=(1.0, 0.0, 0.0, 0.0))
 
@@ -63,15 +63,15 @@ def test_ada_candidates_bind_its_palm(artifacts: Path) -> None:
     )
     cup, jar = (
         grasp_regions(
-            GraspObject(name, Primitive("cylinder", size), POSE),
+            GraspObject(name, POSE, (GraspRegion("body", Primitive("cylinder", size)),)),
             profile,
             sstsr.SstsrTemplates(hand),
             approach_m=0.05,
         )
         for name, size in (("cup", (0.030, 0.095)), ("jar", (0.040, 0.10)))
     )
-    assert cup.ok and cup.tsrs, cup.detail
-    assert jar.reason is GeometryReason.WIDER_THAN_APERTURE and jar.tsrs == (), jar.detail
+    assert cup.ok and cup.tsrs, cup.provenance
+    assert jar.region("body").reason is GeometryReason.WIDER_THAN_APERTURE and jar.tsrs == ()
 
     report: dict[str, Any] = {
         "package": "ada_assets.models",
@@ -85,6 +85,6 @@ def test_ada_candidates_bind_its_palm(artifacts: Path) -> None:
             "max_aperture_m": profile.max_aperture_m,
         },
         "cup": {"provenance": cup.provenance, "regions": len(cup.tsrs)},
-        "jar": {"reason": jar.reason, "detail": jar.detail},
+        "jar": jar.provenance["regions"],
     }
     (artifacts / "ada_candidates.json").write_text(json.dumps(report, indent=2) + "\n")

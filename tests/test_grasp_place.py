@@ -97,6 +97,7 @@ from tsr.placement.stable_placer import StablePlacer
 
 from ssgrasping import (
     GraspObject,
+    GraspRegion,
     GraspSpec,
     PlaceSpec,
     Primitive,
@@ -212,11 +213,14 @@ def _grasp_spec(can: Pose, **changes: Any) -> GraspSpec:
     """Every sstsr side grasp of the can at ``can``, backed off along the approach axis by
     the approach; the skill chooses among them."""
     regions = grasp_regions(
-        GraspObject("can", Primitive("cylinder", (RADIUS, HEIGHT)), can),
+        GraspObject(
+            "can",
+            can,
+            (GraspRegion("body", Primitive("cylinder", (RADIUS, HEIGHT)), strategies=("side",)),),
+        ),
         PROFILE,
         sstsr.SstsrTemplates(HAND),
         approach_m=STANDOFF,
-        strategies=("side",),
     )
     spec = regions.spec(support="vention_base", normal=UP, lift_m=0.06)
     return dataclasses.replace(spec, **changes)
