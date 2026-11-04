@@ -959,6 +959,7 @@ sstsr = [
 dev = [
     { name = "ada-assets" },
     { name = "geodude-assets" },
+    { name = "mujoco" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "ruff" },
@@ -979,6 +980,7 @@ provides-extras = ["sstsr"]
 dev = [
     { name = "ada-assets", git = "https://github.com/personalrobotics/ada_assets?rev=2d8f7972920e4369933065e9131b22dcd5858f2e" },
     { name = "geodude-assets", git = "https://github.com/personalrobotics/geodude_assets?rev=f130a8f435ef7780fbc28014805c25cce6acd67b" },
+    { name = "mujoco" },
     { name = "mypy", specifier = ">=1.13" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "ruff", specifier = ">=0.8" },

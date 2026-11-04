@@ -27,8 +27,11 @@ Grasp regions from explicit object geometry and a selected gripper profile
   `KinovaJaco2TwoFinger`, the same API makes cylinder candidates equal to sstsr's at the
   hand's palm grasp site, which the test checks is the palm sstsr frames the JACO2 in.
   Candidate generation only: no ADA grasp is executed. The test environment follows
-  ssrobot's current reference-robot gate: ssrobot 1d3cb77, geodude_assets f130a8f, and
-  ada_assets 2d8f797 (with the bare-hand package).
+  ssrobot's current reference-robot gate: geodude_assets f130a8f, and ada_assets 2d8f797
+  (with the bare-hand package).
+- **Runtime dependency: ssrobot 2d8285e to 1d3cb77**, which brings ssrobot's changes in
+  between, including its effort guard (personalrobotics/ssrobot#237), to anyone installing
+  ssgrasping. No ssgrasping source changed for it.
 
 Skills estimate the manipulation transitions they pass through
 (personalrobotics/ssgrasping#28), starting with `retained`.

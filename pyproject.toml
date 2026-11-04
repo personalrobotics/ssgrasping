@@ -29,6 +29,7 @@ sstsr = ["sstsr>=4.2,<5", "numpy>=1.26", "scipy>=1.14"]
 # only, never runtime dependencies.
 dev = [
     "ssgrasping[sstsr]",
+    "mujoco",  # imported by tests; pinned by the lock, as ssrobot[mujoco] requires it
     "ssrobot[mujoco,planning] @ git+https://github.com/personalrobotics/ssrobot@1d3cb77bdd7211304a8e2d898228ba5215e3ce6d",
     "geodude-assets @ git+https://github.com/personalrobotics/geodude_assets@f130a8f435ef7780fbc28014805c25cce6acd67b",
     "ada-assets @ git+https://github.com/personalrobotics/ada_assets@2d8f7972920e4369933065e9131b22dcd5858f2e",
