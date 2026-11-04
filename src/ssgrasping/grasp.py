@@ -92,10 +92,11 @@ from ssgrasping._skill import (
 from ssgrasping.execution import SkillExecution
 from ssgrasping.outcomes import Criterion, Evidence, Reason
 
-REACHED_TOLERANCE = (2e-3, 2e-2)
-"""How far, in metres and radians, the end effector may be from a pregrasp region after
-the pregrasp's motion and still count as having reached it: tracking, not planning,
-error."""
+REACHED_TOLERANCE = (1e-4, 1e-3)
+"""How far, in metres and radians, the end of the pregrasp's planned path may be from a
+pregrasp region and still count as in it: the planner's goal tolerance, not tracking.
+Measured from the robot's actual pose instead, a pregrasp that reached its region would
+read as having reached none whenever the arm tracked a few millimetres off."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,12 +142,19 @@ class GraspSpec:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "normal", unit(self.normal, "normal"))
+        check_spec(hasattr(self.pregrasps, "__len__"), "a sequence of regions", "pregrasps")
+        # Frozen, so the labels' pairing with them cannot change after this check.
+        object.__setattr__(self, "pregrasps", tuple(self.pregrasps))
         check_spec(len(self.pregrasps) > 0, "at least one pregrasp region", "pregrasps")
         if self.pregrasp_labels is not None:
             labels = self.pregrasp_labels
             check_spec(
-                not isinstance(labels, str)
-                and len(labels) == len(self.pregrasps)
+                not isinstance(labels, str) and hasattr(labels, "__len__"),
+                "a sequence of labels",
+                "pregrasp_labels",
+            )
+            check_spec(
+                len(labels) == len(self.pregrasps)
                 and all(isinstance(s, str) and s for s in labels),
                 "one non-empty label for each pregrasp region",
                 "pregrasp_labels",
@@ -237,6 +245,7 @@ def _grasp(
     )
 
     checked = [kept]  # the approach the pregrasp to run was checked with
+    pregrasp_plan: list[PlanResult | Ahead | None] = [planned]  # the pregrasp last chosen
 
     def choose() -> PlanResult:
         result, check, projection = run.choose(
@@ -255,6 +264,7 @@ def _grasp(
         )
         assert check is not None and projection is not None  # an approach follows
         checked[0] = Kept(projection, check, checker)
+        pregrasp_plan[0] = result
         return result
 
     def ahead(execution: Execution) -> Ahead | None:
@@ -287,18 +297,21 @@ def _grasp(
     )
 
     if spec.pregrasp_labels is not None:
-        # Which regions the end effector reached, within tracking: every one, or none.
-        reached = _pose(arm, ctx, ctx.snapshot())
-        run.values["pregrasp_region"] = (
+        # The labels of the regions the pregrasp's planned path ends in: each that holds
+        # it, or None if none does or its path is unknown.
+        end = _planned_end(arm, ctx, pregrasp_plan[0])
+        reached = (
             sorted(
                 {
                     label
                     for label, region in zip(spec.pregrasp_labels, spec.pregrasps, strict=True)
-                    if inside(reached, region, REACHED_TOLERANCE)
+                    if inside(end, region, REACHED_TOLERANCE)
                 }
             )
-            or None
+            if end is not None
+            else []
         )
+        run.values["pregrasp_region"] = reached or None
 
     run.begin("approach")
     approach = replan_approach() if upcoming is None else upcoming
@@ -420,6 +433,22 @@ def _pose(
     state = snapshot.state if isinstance(snapshot, PredictedSnapshot | PlanProjection) else snapshot
     q = tuple(state.position(j) for j in ctx.description.group(arm.group).joints)
     return ctx.planning_scene(snapshot, arm.group).forward_kinematics(q, frame)
+
+
+def _planned_end(
+    arm: ManipulatorView, ctx: RobotContext, plan: PlanResult | Ahead | None
+) -> Pose | None:
+    """Where the end effector is at the end of ``plan``'s path, or None without one."""
+    if isinstance(plan, Ahead):
+        plan = plan.future.result() if plan.future.done() else None
+    if plan is None or plan.path is None or not plan.path.waypoints:
+        return None
+    frame = arm.frame
+    assert frame is not None  # the end effector's frame
+    joints = ctx.description.group(arm.group).joints
+    by_joint = dict(zip(plan.path.joints, plan.path.waypoints[-1], strict=True))
+    q = tuple(by_joint[j] for j in joints)
+    return ctx.planning_scene(ctx.snapshot(), arm.group).forward_kinematics(q, frame)
 
 
 def _approach_goal(

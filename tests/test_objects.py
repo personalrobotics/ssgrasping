@@ -210,8 +210,8 @@ def test_regions_are_sstsrs_own_at_any_object_pose(artifacts: Path, hand_name: s
         worst = _agrees(regions.families, regions.tsrs, expected, rng)
         assert worst < 1e-9, (kind, worst)
         body = regions.region("body")
-        assert set(body.strategies) == set(body.region.strategies or ()), kind
-        assert regions.labels == tuple(f"body/{s}" for s in body.strategies)
+        assert set(body.tsr_strategies) == set(body.region.selected), kind
+        assert regions.labels == tuple(f"body/{s}" for s in body.tsr_strategies)
         assert hash(regions) == hash(dataclasses.replace(regions)), kind
         provenance = regions.provenance
         assert (provenance["revision"], provenance["hand"]) == (7, hand_name)
@@ -261,6 +261,20 @@ def test_framed_regions_compose_the_object_and_region_frames(artifacts: Path) ->
     }
     spec = regions.spec(support="table", normal=(0.0, 0.0, 1.0), lift_m=0.05)
     assert spec.pregrasp_labels == labels and tuple(spec.pregrasps) == regions.tsrs
+    # Each label is paired with a region of its own region's candidates.
+    assert spec.pregrasp_labels is not None
+    for label, pregrasp in zip(spec.pregrasp_labels, spec.pregrasps, strict=True):
+        assert pregrasp in regions.region(label.split("/")[0]).tsrs, label
+    # The caller's order of regions is the candidates' order.
+    reordered = grasp_regions(
+        mug,
+        _profile(hand),
+        sstsr.SstsrTemplates(hand),
+        approach_m=APPROACH,
+        regions=("handle", "body"),
+    )
+    assert [r.region.name for r in reordered.regions] == ["handle", "body"]
+    assert reordered.labels[0].startswith("handle/")
     # Only the selected region is made.
     handle_only = grasp_regions(
         mug, _profile(hand), sstsr.SstsrTemplates(hand), approach_m=APPROACH, regions=("handle",)
@@ -334,6 +348,18 @@ def test_unreachable_geometry_is_an_ordinary_result(artifacts: Path) -> None:
             approach_m=APPROACH,
         )
         assert jaco_box.region("body").reason is GeometryReason.UNSUPPORTED_BY_HAND, size
+    # Each strategy is checked against the spans it closes across: a 0.05 x 0.20 x 0.20 m
+    # box's top and y-face grasps close across 0.05 m, its x-face grasps across 0.20 m.
+    slab = grasp_regions(
+        _one("slab", Primitive("box", (0.05, 0.20, 0.20))),
+        _profile(Robotiq2F140()),
+        sstsr.SstsrTemplates(Robotiq2F140()),
+        approach_m=APPROACH,
+    )
+    slab_body = slab.region("body")
+    assert slab_body.ok and slab_body.dropped == ("face_x",), slab_body.dropped
+    assert "face_x" not in slab_body.tsr_strategies and slab_body.tsrs
+    assert slab.complete and not wide.complete
     # Dimensions from numerical code are accepted as the numbers they are.
     single = tuple(np.array([0.033, 0.123], dtype=np.float32))
     assert np.allclose(Primitive("cylinder", single).dimensions, (0.033, 0.123), atol=1e-6)

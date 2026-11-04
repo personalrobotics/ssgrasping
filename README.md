@@ -127,20 +127,27 @@ the grasp then approaches), and returns `GraspRegions`: per region, its world fr
 candidates, each one's grasp family and strategy, and its outcome, and over all of them
 the candidates, their labels (`region/strategy`), and the provenance (object, pose,
 revision, hand, end effector, back-off, and each region's primitive, origin, frame, and
-outcome). Outcomes are per region: well-formed geometry that yields no candidate is an
-ordinary result with a `GeometryReason`, not an exception: `wider_than_aperture` (the
-region's narrowest span for its strategies exceeds the hand's aperture),
+outcome). Outcomes are per region, and `complete` says whether every selected region has
+candidates (`ok`, whether any does). Each strategy is checked against the spans it
+closes across, and one too wide for the hand is dropped (`dropped`). Well-formed
+geometry that yields no candidate is an ordinary result with a `GeometryReason`, not an
+exception: `wider_than_aperture` (every strategy of the region spans more than the
+hand's aperture),
 `unsupported_by_hand` (the hand's templates do not cover the primitive: sstsr verifies
 the Kinova JACO2 hand for cylinders only), or `no_templates`. Malformed input is refused
 at construction. `GraspRegions.spec(...)` builds the `GraspSpec`, with each pregrasp
 region's label; the grasp then records in `values["pregrasp_region"]` the labels of the
-regions the end effector reached before its approach.
+regions the pregrasp's planned path ends in (or `None`), read from the plan rather than
+the robot's tracking of it.
 
 Applications map their asset records into these inputs; ssgrasping reads no asset
 format. From prl_assets' `grasp_regions` (version 1): `name` and `strategies` as they
 are; `cylinder` `radius`, `height` and `sphere` `radius` as the primitive's dimensions,
 `box` `size` as its x, y, z; `T_asset_region` as the region's `origin`. A `torus` region
-has no `Primitive` here and is refused.
+has no `Primitive` here and is refused. `T_asset_region` is in prl_assets' asset frame,
+which prl_assets defines as the object's MuJoCo body frame (its `docs/schema.md`), so
+`GraspObject.pose` must be that body's observed pose; an application whose runtime
+reports another frame for the object composes the difference into `pose`.
 
 A `GraspSpec` may still be given its regions directly, with or without labels.
 

@@ -33,9 +33,9 @@ import enum
 import math
 import numbers
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
 
 from ssrobot import Pose, Tsr
 
@@ -134,8 +134,16 @@ class Primitive:
         return min(self.spans[i] for s in strategies for i in SPANS[(self.kind, s)])
 
 
+_T = TypeVar("_T")
 IDENTITY = Pose(position=(0.0, 0.0, 0.0), quat_wxyz=(1.0, 0.0, 0.0, 0.0))
 _REGION_NAME = re.compile(r"[a-z][a-z0-9_]*")
+
+
+def _named(items: Sequence[_T], name: str, key: Callable[[_T], str]) -> _T:
+    for item in items:
+        if key(item) == name:
+            return item
+    raise KeyError(name)
 
 
 def _finite_pose(value: Any, path: str) -> None:
@@ -185,6 +193,12 @@ class GraspRegion:
         )
         object.__setattr__(self, "strategies", selected)
 
+    @property
+    def selected(self) -> tuple[str, ...]:
+        """The strategies the region asks for, its own or by default all."""
+        assert self.strategies is not None  # resolved at construction
+        return self.strategies
+
 
 @dataclass(frozen=True, slots=True)
 class GraspObject:
@@ -230,10 +244,7 @@ class GraspObject:
 
     def region(self, name: str) -> GraspRegion:
         """The region named ``name``."""
-        for r in self.regions:
-            if r.name == name:
-                return r
-        raise KeyError(name)
+        return _named(self.regions, name, lambda r: r.name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -315,8 +326,11 @@ class RegionCandidates:
     tsrs: tuple[Tsr, ...] = ()
     families: tuple[str, ...] = ()
     """Each of ``tsrs``' grasp, as the template source names it."""
-    strategies: tuple[str, ...] = ()
-    """Each of ``tsrs``' strategy."""
+    tsr_strategies: tuple[str, ...] = ()
+    """Each of ``tsrs``' strategy (the region's requested strategies are its own)."""
+    dropped: tuple[str, ...] = ()
+    """Requested strategies left out because the region is too wide for the hand across
+    every span they close on."""
     reason: GeometryReason | None = None
     detail: str = ""
 
@@ -327,7 +341,7 @@ class RegionCandidates:
     @property
     def labels(self) -> tuple[str, ...]:
         """Each of ``tsrs`` as ``region/strategy``."""
-        return tuple(f"{self.region.name}/{s}" for s in self.strategies)
+        return tuple(f"{self.region.name}/{s}" for s in self.tsr_strategies)
 
 
 @dataclass(frozen=True, slots=True)
@@ -343,8 +357,14 @@ class GraspRegions:
 
     @property
     def ok(self) -> bool:
-        """Whether any region has pregrasp regions."""
+        """Whether any region has pregrasp regions. Other regions may still have been
+        refused: see ``complete`` and each region's ``reason``."""
         return any(r.ok for r in self.regions)
+
+    @property
+    def complete(self) -> bool:
+        """Whether every selected region has pregrasp regions."""
+        return all(r.ok for r in self.regions)
 
     @property
     def tsrs(self) -> tuple[Tsr, ...]:
@@ -362,10 +382,7 @@ class GraspRegions:
 
     def region(self, name: str) -> RegionCandidates:
         """The candidates of the region named ``name``."""
-        for r in self.regions:
-            if r.region.name == name:
-                return r
-        raise KeyError(name)
+        return _named(self.regions, name, lambda r: r.region.name)
 
     @property
     def provenance(self) -> dict[str, Any]:
@@ -391,7 +408,8 @@ class GraspRegions:
                     },
                     "origin": _pose_json(r.region.origin),
                     "frame": _pose_json(r.frame),
-                    "strategies": list(r.region.strategies or ()),
+                    "strategies": list(r.region.selected),
+                    "dropped_strategies": list(r.dropped),
                     "candidates": len(r.tsrs),
                     "reason": r.reason,
                     "detail": r.detail,
@@ -403,10 +421,10 @@ class GraspRegions:
     def spec(
         self, *, support: str, normal: tuple[float, float, float], lift_m: float, **options: Any
     ) -> GraspSpec:
-        """A ``GraspSpec`` over these regions, each labelled ``region/strategy``: the
-        profile's names, the object, and the approach the regions are backed off by.
-        ``options`` are any other ``GraspSpec`` fields. Refuses when no region has
-        pregrasp regions."""
+        """A ``GraspSpec`` over the regions that have pregrasp regions, each labelled
+        ``region/strategy``: the profile's names, the object, and the approach the regions
+        are backed off by. ``options`` are any other ``GraspSpec`` fields. Refuses when no
+        region has pregrasp regions; refused regions stay recorded in ``provenance``."""
         if not self.ok:
             details = "; ".join(f"{r.region.name}: {r.detail}" for r in self.regions)
             raise ValueError(f"no pregrasp regions for {self.object.name}: {details}")
@@ -435,7 +453,7 @@ def _candidates(
 ) -> RegionCandidates:
     frame = compose(obj.pose, region.origin)
     base = RegionCandidates(region=region, frame=frame)
-    primitive, strategies = region.primitive, region.strategies or ()
+    primitive, strategies = region.primitive, region.selected
     # Whether the hand covers the primitive at all comes first: a hand without box grasps
     # is not one whose aperture a smaller box would fit.
     try:
@@ -444,8 +462,13 @@ def _candidates(
         return dataclasses.replace(
             base, reason=GeometryReason.UNSUPPORTED_BY_HAND, detail=str(error)
         )
-    width = primitive.width(strategies)
-    if width > profile.max_aperture_m:
+    # Each strategy closes across its own spans: a box's top grasp across x or y, its
+    # x-face grasp across y or z. One whose every span exceeds the aperture is dropped.
+    fits = tuple(s for s in strategies if primitive.width((s,)) <= profile.max_aperture_m)
+    dropped = tuple(s for s in strategies if s not in fits)
+    base = dataclasses.replace(base, dropped=dropped)
+    if not fits:
+        width = primitive.width(strategies)
         return dataclasses.replace(
             base,
             reason=GeometryReason.WIDER_THAN_APERTURE,
@@ -455,12 +478,13 @@ def _candidates(
                 f"{profile.max_aperture_m:.4f} m"
             ),
         )
+    templates = tuple(t for t in templates if t.strategy in fits)
     if not templates:
         return dataclasses.replace(
             base,
             reason=GeometryReason.NO_TEMPLATES,
             detail=(
-                f"{profile.hand} has no {'/'.join(strategies)} {primitive.kind} grasp of "
+                f"{profile.hand} has no {'/'.join(fits)} {primitive.kind} grasp of "
                 f"{obj.name}'s {region.name} within its limits"
             ),
         )
@@ -476,7 +500,7 @@ def _candidates(
             for t in templates
         ),
         families=tuple(t.family for t in templates),
-        strategies=tuple(t.strategy for t in templates),
+        tsr_strategies=tuple(t.strategy for t in templates),
     )
 
 
@@ -490,7 +514,8 @@ def grasp_regions(
 ) -> GraspRegions:
     """The world pregrasp regions for grasping ``obj`` with ``profile``'s hand, region by
     region, backed off by ``approach_m`` along the end effector's approach axis.
-    ``regions`` selects the object's regions by name (default: all). Each region's world
+    ``regions`` selects the object's regions by name, in the order given, which is the
+    order of the candidates (default: all, in the object's order). Each region's world
     frame is the object's pose composed with the region's origin, and its templates are
     placed there; one region may have regions while another is too wide for the hand."""
     check_spec(isinstance(obj, GraspObject), "a GraspObject", "obj")
@@ -511,7 +536,7 @@ def grasp_regions(
             f"distinct names of {obj.name}'s regions, {known}",
             "regions",
         )
-        selected = tuple(r for r in obj.regions if r.name in names)
+        selected = tuple(obj.region(n) for n in names)
     back_off = Pose(position=(0.0, 0.0, -approach_m), quat_wxyz=(1.0, 0.0, 0.0, 0.0))
     return GraspRegions(
         object=obj,

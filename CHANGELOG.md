@@ -16,7 +16,9 @@ Candidates from several named, explicitly framed grasp regions
   them.
 - **Provenance through the grasp.** `GraspSpec.pregrasp_labels` names each pregrasp
   region; `grasp` records in `values["pregrasp_region"]` the labels of the regions the
-  end effector reached before its approach, or none.
+  pregrasp's planned path ends in, or none. `GraspSpec.pregrasps` is now a tuple.
+- **Per-strategy apertures.** A strategy whose every span exceeds the hand's aperture is
+  dropped (`RegionCandidates.dropped`) instead of passing because another strategy fits.
 
 Grasp regions from explicit object geometry and a selected gripper profile
 (personalrobotics/ssgrasping#3).
