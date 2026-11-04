@@ -1,17 +1,20 @@
 """Grasp regions from explicit object geometry and an explicit gripper profile.
 
 An application states what it is grasping and with what, as data: a ``GraspObject``
-(a primitive approximation of the object and its observed pose) and a
-``GraspingProfile`` (the hand and the robot's names for its manipulator, end effector,
-gripper, and opening channel). ``grasp_regions`` turns them into the world pregrasp
-regions a ``GraspSpec`` takes, through a ``TemplateSource`` that supplies the hand's
-grasp templates in the object's frame; ``ssgrasping.sstsr`` is one, from sstsr's hands.
-Nothing is inferred from names, meshes, or the robot.
+(its observed pose and the named ``GraspRegion``s it may be grasped by, each a
+primitive placed in the object's frame) and a ``GraspingProfile`` (the hand and the
+robot's names for its manipulator, end effector, gripper, and opening channel).
+``grasp_regions`` turns them into the world pregrasp regions a ``GraspSpec`` takes,
+region by region, through a ``TemplateSource`` that supplies the hand's grasp templates
+in a primitive's frame; ``ssgrasping.sstsr`` is one, from sstsr's hands. Nothing is
+inferred from names, meshes, or the robot.
 
 Every primitive's frame has its origin at its geometric centre, with z the cylinder's
-axis and the box's local z. A ``RegionTemplate`` is expressed in that frame, so a source
-whose library frames primitives differently (sstsr frames cylinders and boxes at their
-bottom face) converts once, in the source, and no caller shifts poses by half a height.
+axis and the box's local z, and a region's ``origin`` places it in the object frame:
+``T_world_region = T_world_object @ T_object_region``. A ``RegionTemplate`` is expressed
+in the primitive's frame, so a source whose library frames primitives differently
+(sstsr frames cylinders and boxes at their bottom face) converts once, in the source,
+and no caller shifts poses by half a height.
 
 The pregrasp regions are backed off from the grasp along the end effector's approach
 axis (its z) by ``approach_m``, the distance the grasp's approach then moves: the two
@@ -29,9 +32,10 @@ import dataclasses
 import enum
 import math
 import numbers
-from collections.abc import Sequence
+import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
 
 from ssrobot import Pose, Tsr
 
@@ -130,16 +134,84 @@ class Primitive:
         return min(self.spans[i] for s in strategies for i in SPANS[(self.kind, s)])
 
 
+_T = TypeVar("_T")
+IDENTITY = Pose(position=(0.0, 0.0, 0.0), quat_wxyz=(1.0, 0.0, 0.0, 0.0))
+_REGION_NAME = re.compile(r"[a-z][a-z0-9_]*")
+
+
+def _named(items: Sequence[_T], name: str, key: Callable[[_T], str]) -> _T:
+    for item in items:
+        if key(item) == name:
+            return item
+    raise KeyError(name)
+
+
+def _finite_pose(value: Any, path: str) -> None:
+    check_spec(isinstance(value, Pose), "an ssrobot Pose", path)
+    check_spec(all(math.isfinite(c) for c in (*value.position, *value.quat_wxyz)), "finite", path)
+
+
+@dataclass(frozen=True, slots=True)
+class GraspRegion:
+    """A named part of an object to grasp by: a primitive in its own centred frame, placed
+    in the object's frame by ``origin``. A mug may have a cylindrical ``body`` and a box
+    ``handle`` offset from it. A region is a grasp approximation: it need not enclose the
+    object, nor match its collision geometry."""
+
+    name: str
+    """Unique within the object: lower case letters, digits, and underscores."""
+    primitive: Primitive
+    origin: Pose = IDENTITY
+    """The region frame in the object frame (``T_object_region``): the world region
+    frame is ``T_world_object @ T_object_region``."""
+    strategies: tuple[str, ...] | None = None
+    """The grasp families to make (default: all of the primitive's ``STRATEGIES``); a
+    mug's body, standing on a support, takes ``side`` and ``top``."""
+
+    def __post_init__(self) -> None:
+        check_spec(
+            isinstance(self.name, str) and _REGION_NAME.fullmatch(self.name) is not None,
+            "lower case letters, digits, and underscores, starting with a letter",
+            "name",
+        )
+        check_spec(isinstance(self.primitive, Primitive), "a Primitive", "primitive")
+        _finite_pose(self.origin, "origin")
+        vocabulary = STRATEGIES[self.primitive.kind]
+        if self.strategies is None:
+            object.__setattr__(self, "strategies", vocabulary)
+            return
+        check_spec(
+            not isinstance(self.strategies, str) and len(self.strategies) > 0,
+            "a non-empty sequence of strategy names",
+            "strategies",
+        )
+        selected = tuple(self.strategies)
+        check_spec(
+            all(s in vocabulary for s in selected) and len(set(selected)) == len(selected),
+            f"distinct {self.primitive.kind} strategies from {list(vocabulary)}",
+            "strategies",
+        )
+        object.__setattr__(self, "strategies", selected)
+
+    @property
+    def selected(self) -> tuple[str, ...]:
+        """The strategies the region asks for, its own or by default all."""
+        assert self.strategies is not None  # resolved at construction
+        return self.strategies
+
+
 @dataclass(frozen=True, slots=True)
 class GraspObject:
-    """An object to grasp: which scene object, its primitive approximation, and the pose
-    of that primitive's centred frame where it was observed."""
+    """An object to grasp: which scene object, where it was observed, and the regions it
+    may be grasped by, in its frame."""
 
     name: str
     """The scene object, as the runtime names it: the grasp's ``object``."""
-    primitive: Primitive
     pose: Pose
-    """The primitive's centred frame in ``frame``."""
+    """The object frame in ``frame``."""
+    regions: tuple[GraspRegion, ...]
+    """At least one, with distinct names. An object of one shape is one region at the
+    identity."""
     frame: str = "world"
     """The frame ``pose`` is expressed in. Pregrasps are world regions, so only
     ``world`` is accepted."""
@@ -148,13 +220,20 @@ class GraspObject:
 
     def __post_init__(self) -> None:
         _name(self.name, "name")
-        check_spec(isinstance(self.primitive, Primitive), "a Primitive", "primitive")
-        check_spec(isinstance(self.pose, Pose), "an ssrobot Pose", "pose")
+        _finite_pose(self.pose, "pose")
         check_spec(
-            all(math.isfinite(c) for c in (*self.pose.position, *self.pose.quat_wxyz)),
-            "finite",
-            "pose",
+            not isinstance(self.regions, (str, bytes)) and hasattr(self.regions, "__len__"),
+            "a sequence of GraspRegion",
+            "regions",
         )
+        regions = tuple(self.regions)
+        check_spec(len(regions) > 0, "at least one region", "regions")
+        check_spec(
+            all(isinstance(r, GraspRegion) for r in regions), "GraspRegion values", "regions"
+        )
+        names = [r.name for r in regions]
+        check_spec(len(set(names)) == len(names), f"distinct region names, not {names}", "regions")
+        object.__setattr__(self, "regions", regions)
         check_spec(self.frame == "world", "a pose in the world frame", "frame")
         check_spec(
             self.revision is None
@@ -162,6 +241,10 @@ class GraspObject:
             "a string, an integer, or None",
             "revision",
         )
+
+    def region(self, name: str) -> GraspRegion:
+        """The region named ``name``."""
+        return _named(self.regions, name, lambda r: r.name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,57 +311,123 @@ class GeometryReason(enum.StrEnum):
     """The hand's templates for this primitive all fall outside its limits."""
 
 
-@dataclass(frozen=True, slots=True)
-class GraspRegions:
-    """The world pregrasp regions for one object and profile, or the reason there are
-    none, with what they were made from."""
+def _pose_json(p: Pose) -> dict[str, list[float]]:
+    return {"position": list(p.position), "quat_wxyz": list(p.quat_wxyz)}
 
-    object: GraspObject
-    profile: GraspingProfile
-    approach_m: float
-    strategies: tuple[str, ...]
-    """The strategies requested."""
+
+@dataclass(frozen=True, slots=True)
+class RegionCandidates:
+    """One region's world pregrasp regions, or the reason it has none."""
+
+    region: GraspRegion
+    frame: Pose
+    """The region frame in the world: the object's pose composed with the region's
+    origin."""
     tsrs: tuple[Tsr, ...] = ()
     families: tuple[str, ...] = ()
-    """Each region's grasp, as the template source names it, in the order of ``tsrs``."""
-    region_strategies: tuple[str, ...] = ()
-    """Each region's strategy, in the order of ``tsrs``."""
+    """Each of ``tsrs``' grasp, as the template source names it."""
+    tsr_strategies: tuple[str, ...] = ()
+    """Each of ``tsrs``' strategy (the region's requested strategies are its own)."""
+    dropped: tuple[str, ...] = ()
+    """Requested strategies left out because the region is too wide for the hand across
+    every span they close on."""
     reason: GeometryReason | None = None
     detail: str = ""
-
-    @property
-    def provenance(self) -> dict[str, Any]:
-        """What the regions were made from, JSON-ready: the object's name, primitive,
-        pose, frame, and revision; the hand and end effector; the strategies; the
-        back-off. Each call returns a new dict."""
-        obj = self.object
-        return {
-            "object": obj.name,
-            "primitive": {
-                "kind": obj.primitive.kind,
-                "dimensions_m": list(obj.primitive.dimensions),
-            },
-            "pose": {"position": list(obj.pose.position), "quat_wxyz": list(obj.pose.quat_wxyz)},
-            "frame": obj.frame,
-            "revision": obj.revision,
-            "strategies": list(self.strategies),
-            "hand": self.profile.hand,
-            "end_effector": self.profile.end_effector,
-            "approach_m": self.approach_m,
-        }
 
     @property
     def ok(self) -> bool:
         return self.reason is None
 
+    @property
+    def labels(self) -> tuple[str, ...]:
+        """Each of ``tsrs`` as ``region/strategy``."""
+        return tuple(f"{self.region.name}/{s}" for s in self.tsr_strategies)
+
+
+@dataclass(frozen=True, slots=True)
+class GraspRegions:
+    """The world pregrasp regions for one object and profile, region by region, with what
+    they were made from."""
+
+    object: GraspObject
+    profile: GraspingProfile
+    approach_m: float
+    regions: tuple[RegionCandidates, ...]
+    """One per selected region, in the object's order."""
+
+    @property
+    def ok(self) -> bool:
+        """Whether any region has pregrasp regions. Other regions may still have been
+        refused: see ``complete`` and each region's ``reason``."""
+        return any(r.ok for r in self.regions)
+
+    @property
+    def complete(self) -> bool:
+        """Whether every selected region has pregrasp regions."""
+        return all(r.ok for r in self.regions)
+
+    @property
+    def tsrs(self) -> tuple[Tsr, ...]:
+        """Every region's pregrasp regions, in order."""
+        return tuple(t for r in self.regions for t in r.tsrs)
+
+    @property
+    def labels(self) -> tuple[str, ...]:
+        """Each of ``tsrs`` as ``region/strategy``."""
+        return tuple(label for r in self.regions for label in r.labels)
+
+    @property
+    def families(self) -> tuple[str, ...]:
+        return tuple(f for r in self.regions for f in r.families)
+
+    def region(self, name: str) -> RegionCandidates:
+        """The candidates of the region named ``name``."""
+        return _named(self.regions, name, lambda r: r.region.name)
+
+    @property
+    def provenance(self) -> dict[str, Any]:
+        """What the regions were made from, JSON-ready: the object's name, pose, frame,
+        and revision; the hand and end effector; the back-off; and for each region its
+        name, primitive, origin in the object, frame in the world, strategies, and
+        outcome. Each call returns a new dict."""
+        obj = self.object
+        return {
+            "object": obj.name,
+            "pose": _pose_json(obj.pose),
+            "frame": obj.frame,
+            "revision": obj.revision,
+            "hand": self.profile.hand,
+            "end_effector": self.profile.end_effector,
+            "approach_m": self.approach_m,
+            "regions": [
+                {
+                    "name": r.region.name,
+                    "primitive": {
+                        "kind": r.region.primitive.kind,
+                        "dimensions_m": list(r.region.primitive.dimensions),
+                    },
+                    "origin": _pose_json(r.region.origin),
+                    "frame": _pose_json(r.frame),
+                    "strategies": list(r.region.selected),
+                    "dropped_strategies": list(r.dropped),
+                    "candidates": len(r.tsrs),
+                    "reason": r.reason,
+                    "detail": r.detail,
+                }
+                for r in self.regions
+            ],
+        }
+
     def spec(
         self, *, support: str, normal: tuple[float, float, float], lift_m: float, **options: Any
     ) -> GraspSpec:
-        """A ``GraspSpec`` over these regions: the profile's names, the object, and the
-        approach the regions are backed off by. ``options`` are any other ``GraspSpec``
-        fields. Refuses when there are no regions."""
-        if self.reason is not None:
-            raise ValueError(f"no pregrasp regions for {self.object.name}: {self.detail}")
+        """A ``GraspSpec`` over the regions that have pregrasp regions, each labelled
+        ``region/strategy``: the profile's names, the object, and the approach the regions
+        are backed off by. ``options`` are any other ``GraspSpec`` fields. Refuses when no
+        region has pregrasp regions; refused regions stay recorded in ``provenance``."""
+        if not self.ok:
+            details = "; ".join(f"{r.region.name}: {r.detail}" for r in self.regions)
+            raise ValueError(f"no pregrasp regions for {self.object.name}: {details}")
         return GraspSpec(
             manipulator=self.profile.manipulator,
             end_effector=self.profile.end_effector,
@@ -288,10 +437,71 @@ class GraspRegions:
             support=support,
             normal=normal,
             pregrasps=self.tsrs,
+            pregrasp_labels=self.labels,
             approach_m=self.approach_m,
             lift_m=lift_m,
             **options,
         )
+
+
+def _candidates(
+    obj: GraspObject,
+    region: GraspRegion,
+    profile: GraspingProfile,
+    source: TemplateSource,
+    back_off: Pose,
+) -> RegionCandidates:
+    frame = compose(obj.pose, region.origin)
+    base = RegionCandidates(region=region, frame=frame)
+    primitive, strategies = region.primitive, region.selected
+    # Whether the hand covers the primitive at all comes first: a hand without box grasps
+    # is not one whose aperture a smaller box would fit.
+    try:
+        templates = tuple(source(primitive, strategies))
+    except UnsupportedPrimitive as error:
+        return dataclasses.replace(
+            base, reason=GeometryReason.UNSUPPORTED_BY_HAND, detail=str(error)
+        )
+    # Each strategy closes across its own spans: a box's top grasp across x or y, its
+    # x-face grasp across y or z. One whose every span exceeds the aperture is dropped.
+    fits = tuple(s for s in strategies if primitive.width((s,)) <= profile.max_aperture_m)
+    dropped = tuple(s for s in strategies if s not in fits)
+    base = dataclasses.replace(base, dropped=dropped)
+    if not fits:
+        width = primitive.width(strategies)
+        return dataclasses.replace(
+            base,
+            reason=GeometryReason.WIDER_THAN_APERTURE,
+            detail=(
+                f"{obj.name}'s {region.name}'s narrowest span for {'/'.join(strategies)}, "
+                f"{width:.4f} m, exceeds {profile.hand}'s aperture, "
+                f"{profile.max_aperture_m:.4f} m"
+            ),
+        )
+    templates = tuple(t for t in templates if t.strategy in fits)
+    if not templates:
+        return dataclasses.replace(
+            base,
+            reason=GeometryReason.NO_TEMPLATES,
+            detail=(
+                f"{profile.hand} has no {'/'.join(fits)} {primitive.kind} grasp of "
+                f"{obj.name}'s {region.name} within its limits"
+            ),
+        )
+    return dataclasses.replace(
+        base,
+        tsrs=tuple(
+            Tsr(
+                origin=compose(frame, t.origin),
+                offset=compose(t.offset, back_off),
+                position_bounds=t.position_bounds,
+                rotation_bounds=t.rotation_bounds,
+            )
+            for t in templates
+        ),
+        families=tuple(t.family for t in templates),
+        tsr_strategies=tuple(t.strategy for t in templates),
+    )
 
 
 def grasp_regions(
@@ -300,72 +510,37 @@ def grasp_regions(
     source: TemplateSource,
     *,
     approach_m: float,
-    strategies: Sequence[str] | None = None,
+    regions: Sequence[str] | None = None,
 ) -> GraspRegions:
-    """The world pregrasp regions for grasping ``obj`` with ``profile``'s hand, backed
-    off by ``approach_m`` along the end effector's approach axis. ``strategies`` selects
-    the grasp families (default: all of the primitive's ``STRATEGIES``); a can resting
-    on a support, for example, takes only ``side`` and ``top``."""
+    """The world pregrasp regions for grasping ``obj`` with ``profile``'s hand, region by
+    region, backed off by ``approach_m`` along the end effector's approach axis.
+    ``regions`` selects the object's regions by name, in the order given, which is the
+    order of the candidates (default: all, in the object's order). Each region's world
+    frame is the object's pose composed with the region's origin, and its templates are
+    placed there; one region may have regions while another is too wide for the hand."""
     check_spec(isinstance(obj, GraspObject), "a GraspObject", "obj")
     check_spec(isinstance(profile, GraspingProfile), "a GraspingProfile", "profile")
     approach_m = _length(approach_m, "approach_m")
-    primitive = obj.primitive
-    vocabulary = STRATEGIES[primitive.kind]
-    if strategies is None:
-        selected = vocabulary
+    known = [r.name for r in obj.regions]
+    if regions is None:
+        selected = tuple(obj.regions)
     else:
         check_spec(
-            not isinstance(strategies, str) and len(strategies) > 0,
-            "a non-empty sequence of strategy names",
-            "strategies",
+            not isinstance(regions, str) and len(regions) > 0,
+            "a non-empty sequence of region names",
+            "regions",
         )
-        selected = tuple(strategies)
+        names = tuple(regions)
         check_spec(
-            all(s in vocabulary for s in selected) and len(set(selected)) == len(selected),
-            f"distinct {primitive.kind} strategies from {list(vocabulary)}",
-            "strategies",
+            all(n in known for n in names) and len(set(names)) == len(names),
+            f"distinct names of {obj.name}'s regions, {known}",
+            "regions",
         )
-    base = GraspRegions(object=obj, profile=profile, approach_m=approach_m, strategies=selected)
-    # Whether the hand covers the primitive at all comes first: a hand without box grasps
-    # is not one whose aperture a smaller box would fit.
-    try:
-        templates = tuple(source(primitive, selected))
-    except UnsupportedPrimitive as error:
-        return dataclasses.replace(
-            base, reason=GeometryReason.UNSUPPORTED_BY_HAND, detail=str(error)
-        )
-    width = primitive.width(selected)
-    if width > profile.max_aperture_m:
-        return dataclasses.replace(
-            base,
-            reason=GeometryReason.WIDER_THAN_APERTURE,
-            detail=(
-                f"{obj.name}'s narrowest span for {'/'.join(selected)}, {width:.4f} m, "
-                f"exceeds {profile.hand}'s aperture, {profile.max_aperture_m:.4f} m"
-            ),
-        )
-    if not templates:
-        return dataclasses.replace(
-            base,
-            reason=GeometryReason.NO_TEMPLATES,
-            detail=(
-                f"{profile.hand} has no {'/'.join(selected)} {primitive.kind} grasp "
-                "within its limits"
-            ),
-        )
+        selected = tuple(obj.region(n) for n in names)
     back_off = Pose(position=(0.0, 0.0, -approach_m), quat_wxyz=(1.0, 0.0, 0.0, 0.0))
-    tsrs = tuple(
-        Tsr(
-            origin=compose(obj.pose, t.origin),
-            offset=compose(t.offset, back_off),
-            position_bounds=t.position_bounds,
-            rotation_bounds=t.rotation_bounds,
-        )
-        for t in templates
-    )
-    return dataclasses.replace(
-        base,
-        tsrs=tsrs,
-        families=tuple(t.family for t in templates),
-        region_strategies=tuple(t.strategy for t in templates),
+    return GraspRegions(
+        object=obj,
+        profile=profile,
+        approach_m=approach_m,
+        regions=tuple(_candidates(obj, r, profile, source, back_off) for r in selected),
     )

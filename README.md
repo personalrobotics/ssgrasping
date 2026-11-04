@@ -100,11 +100,16 @@ deterministically.
 `grasp_regions` makes a grasp's pregrasp regions from data, so no caller re-derives
 frames by hand:
 
-- A `GraspObject` names the scene object and gives its `Primitive` approximation
-  (`cylinder` radius and height, `box` full x, y, z extents, or `sphere` radius, in
-  metres), the pose of the primitive's frame in the world, and optionally the
-  observation revision that pose came from. Every primitive's frame has its origin at
-  its geometric centre, with z the cylinder's or box's axis.
+- A `GraspObject` names the scene object, gives the object frame's pose in the world
+  and optionally the observation revision it came from, and lists the `GraspRegion`s it
+  may be grasped by. A region is named (lower case letters, digits, underscores), is a
+  `Primitive` (`cylinder` radius and height, `box` full x, y, z extents, or `sphere`
+  radius, in metres) in its own frame, centred, with z the cylinder's or box's axis, and
+  is placed in the object frame by its `origin` (`T_object_region`). It may select grasp
+  families: `side`, `top`, `bottom` for a cylinder; `top`, `bottom`, `face_x`, `face_y`
+  for a box; `all` for a sphere. A mug may be a `body` cylinder and a `handle` box offset
+  from it; an object of one shape is one region at the identity. A region is a grasp
+  approximation: it need not enclose the object or match its collision geometry.
 - A `GraspingProfile` names the hand and the robot's manipulator, end effector, gripper,
   and opening channel, and gives the hand's aperture. The application selects it; it is
   never inferred from a robot. The end effector's frame is the grasp frame: z the
@@ -115,19 +120,36 @@ frames by hand:
   primitives sstsr's registry lists for the hand, and moves sstsr's bottom-face frames
   into the centred frame. `import ssgrasping` never imports sstsr.
 
-`grasp_regions(obj, profile, source, approach_m=..., strategies=...)` backs each region
-off along the approach axis by `approach_m`, the distance the grasp then approaches, and
-returns `GraspRegions`: the world regions, each one's grasp family and strategy, and their provenance
-(object, primitive, pose, revision, hand, end effector, strategies, back-off).
-`strategies` selects grasp families: `side`, `top`, `bottom` for a cylinder; `top`,
-`bottom`, `face_x`, `face_y` for a box; `all` for a sphere. Well-formed geometry that
-yields no region is an ordinary result with a `GeometryReason`, not an exception:
-`wider_than_aperture` (the object's narrowest span exceeds the hand's aperture),
+`grasp_regions(obj, profile, source, approach_m=..., regions=...)` places each selected
+region (default: all) at `T_world_region = T_world_object @ T_object_region` and its
+templates there, backs each off along the approach axis by `approach_m` (the distance
+the grasp then approaches), and returns `GraspRegions`: per region, its world frame, its
+candidates, each one's grasp family and strategy, and its outcome, and over all of them
+the candidates, their labels (`region/strategy`), and the provenance (object, pose,
+revision, hand, end effector, back-off, and each region's primitive, origin, frame, and
+outcome). Outcomes are per region, and `complete` says whether every selected region has
+candidates (`ok`, whether any does). Each strategy is checked against the spans it
+closes across, and one too wide for the hand is dropped (`dropped`). Well-formed
+geometry that yields no candidate is an ordinary result with a `GeometryReason`, not an
+exception: `wider_than_aperture` (every strategy of the region spans more than the
+hand's aperture),
 `unsupported_by_hand` (the hand's templates do not cover the primitive: sstsr verifies
 the Kinova JACO2 hand for cylinders only), or `no_templates`. Malformed input is refused
-at construction. `GraspRegions.spec(...)` builds the `GraspSpec`.
+at construction. `GraspRegions.spec(...)` builds the `GraspSpec`, with each pregrasp
+region's label; the grasp then records in `values["pregrasp_region"]` the labels of the
+regions the pregrasp's planned path ends in (or `None`), read from the plan rather than
+the robot's tracking of it.
 
-A `GraspSpec` may still be given its regions directly; nothing about it changed.
+Applications map their asset records into these inputs; ssgrasping reads no asset
+format. From prl_assets' `grasp_regions` (version 1): `name` and `strategies` as they
+are; `cylinder` `radius`, `height` and `sphere` `radius` as the primitive's dimensions,
+`box` `size` as its x, y, z; `T_asset_region` as the region's `origin`. A `torus` region
+has no `Primitive` here and is refused. `T_asset_region` is in prl_assets' asset frame,
+which prl_assets defines as the object's MuJoCo body frame (its `docs/schema.md`), so
+`GraspObject.pose` must be that body's observed pose; an application whose runtime
+reports another frame for the object composes the difference into `pose`.
+
+A `GraspSpec` may still be given its regions directly, with or without labels.
 
 ## Evidence
 
@@ -283,7 +305,7 @@ from ssrobot.mujoco import MujocoRuntime
 from ssrobot.planning import CBiRRT
 from tsr import Robotiq2F140
 
-from ssgrasping import GraspObject, Primitive, grasp, grasp_regions, run_skill, sstsr
+from ssgrasping import GraspObject, GraspRegion, Primitive, grasp, grasp_regions, run_skill, sstsr
 
 RADIUS, HEIGHT = 0.033, 0.123  # a 12 fl oz soda can
 MASS = 0.38  # full: 355 ml of drink and a 14 g aluminium can
@@ -312,12 +334,12 @@ profile = sstsr.profile(
 
 with RobotContext(package.description, runtime) as ctx:
     observed = next(o.known_pose() for o in ctx.snapshot().objects if o.name == "can")
-    can = GraspObject("can", Primitive("cylinder", (RADIUS, HEIGHT)), observed)
-    # Side grasps, backed off 8 cm along the hand's approach axis: the distance the
-    # grasp then approaches in a straight line.
-    regions = grasp_regions(
-        can, profile, sstsr.SstsrTemplates(hand), approach_m=0.08, strategies=("side",)
-    )
+    # The can is one region, its body, grasped from the side.
+    body = GraspRegion("body", Primitive("cylinder", (RADIUS, HEIGHT)), strategies=("side",))
+    can = GraspObject("can", observed, (body,))
+    # Backed off 8 cm along the hand's approach axis: the distance the grasp then
+    # approaches in a straight line.
+    regions = grasp_regions(can, profile, sstsr.SstsrTemplates(hand), approach_m=0.08)
     spec = regions.spec(support="vention_base", normal=(0.0, 0.0, 1.0), lift_m=0.06)
     result = run_skill(ctx, grasp(ctx, planner, spec, check_planner=checker), max_ticks=200_000)
 
