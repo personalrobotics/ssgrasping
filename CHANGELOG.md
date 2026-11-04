@@ -23,6 +23,12 @@ Grasp regions from explicit object geometry and a selected gripper profile
   fails `command_failed`, with the can reported held. The descent's force margin and the
   carry's swing were re-measured at the new mass.
 - **sstsr 4.2** in the test environment (4.1's closed-reach grasps, 4.2's JACO2 hand).
+- **ADA cylinder candidates.** With ADA's bare-hand package and sstsr's
+  `KinovaJaco2TwoFinger`, the same API makes cylinder candidates equal to sstsr's at the
+  hand's palm grasp site, which the test checks is the palm sstsr frames the JACO2 in.
+  Candidate generation only: no ADA grasp is executed. The test environment follows
+  ssrobot's current reference-robot gate: ssrobot 1d3cb77, geodude_assets f130a8f, and
+  ada_assets 2d8f797 (with the bare-hand package).
 
 Skills estimate the manipulation transitions they pass through
 (personalrobotics/ssgrasping#28), starting with `retained`.

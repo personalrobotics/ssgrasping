@@ -14,7 +14,7 @@ authors = [{ name = "Siddhartha Srinivasa" }]
 # Neutral contracts only: no simulator, planner, viewer, or robot package. ssrobot is not
 # on an index yet, so it is pinned to a commit.
 dependencies = [
-    "ssrobot @ git+https://github.com/personalrobotics/ssrobot@2d8285e6822fe72fd3cbe82902df229678b4ef75",
+    "ssrobot @ git+https://github.com/personalrobotics/ssrobot@1d3cb77bdd7211304a8e2d898228ba5215e3ce6d",
 ]
 
 [project.optional-dependencies]
@@ -29,9 +29,9 @@ sstsr = ["sstsr>=4.2,<5", "numpy>=1.26", "scipy>=1.14"]
 # only, never runtime dependencies.
 dev = [
     "ssgrasping[sstsr]",
-    "ssrobot[mujoco,planning] @ git+https://github.com/personalrobotics/ssrobot@2d8285e6822fe72fd3cbe82902df229678b4ef75",
-    "geodude-assets @ git+https://github.com/personalrobotics/geodude_assets@e7be8b437cd954285a9fb515a6de39fb94b3fc42",
-    "ada-assets @ git+https://github.com/personalrobotics/ada_assets@e7798beac3eb70145b8d606f4d71720fb75c7ae2",
+    "ssrobot[mujoco,planning] @ git+https://github.com/personalrobotics/ssrobot@1d3cb77bdd7211304a8e2d898228ba5215e3ce6d",
+    "geodude-assets @ git+https://github.com/personalrobotics/geodude_assets@f130a8f435ef7780fbc28014805c25cce6acd67b",
+    "ada-assets @ git+https://github.com/personalrobotics/ada_assets@2d8f7972920e4369933065e9131b22dcd5858f2e",
     "mypy>=1.13",
     "pytest>=8.3",
     "ruff>=0.8",
