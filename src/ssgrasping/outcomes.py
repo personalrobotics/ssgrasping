@@ -72,6 +72,7 @@ class Reason(enum.StrEnum):
     NO_CONTACT = "no_contact"
     OUTSIDE_REGIONS = "outside_regions"
     TRANSITION_REFUTED = "transition_refuted"
+    GRIPPER_OBSTRUCTED = "gripper_obstructed"
 
 
 class Transition(enum.StrEnum):

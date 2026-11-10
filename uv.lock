@@ -19,7 +19,7 @@ wheels = [
 [[package]]
 name = "ada-assets"
 version = "0.1.0"
-source = { git = "https://github.com/personalrobotics/ada_assets?rev=2d8f7972920e4369933065e9131b22dcd5858f2e#2d8f7972920e4369933065e9131b22dcd5858f2e" }
+source = { git = "https://github.com/personalrobotics/ada_assets?rev=0703586a91fd933b5b4ddf0257e804ab37002e75#0703586a91fd933b5b4ddf0257e804ab37002e75" }
 dependencies = [
     { name = "mujoco" },
 ]
@@ -163,7 +163,7 @@ wheels = [
 [[package]]
 name = "geodude-assets"
 version = "0.1.0"
-source = { git = "https://github.com/personalrobotics/geodude_assets?rev=f130a8f435ef7780fbc28014805c25cce6acd67b#f130a8f435ef7780fbc28014805c25cce6acd67b" }
+source = { git = "https://github.com/personalrobotics/geodude_assets?rev=e9538a26553e10a9613f9a61af86cb9f63db144e#e9538a26553e10a9613f9a61af86cb9f63db144e" }
 dependencies = [
     { name = "mujoco" },
     { name = "numpy-stl" },
@@ -971,21 +971,21 @@ dev = [
 requires-dist = [
     { name = "numpy", marker = "extra == 'sstsr'", specifier = ">=1.26" },
     { name = "scipy", marker = "extra == 'sstsr'", specifier = ">=1.14" },
-    { name = "ssrobot", git = "https://github.com/personalrobotics/ssrobot?rev=1d3cb77bdd7211304a8e2d898228ba5215e3ce6d" },
+    { name = "ssrobot", git = "https://github.com/personalrobotics/ssrobot?rev=f83b2874f5caf40ae180de4b053c57b212e3de50" },
     { name = "sstsr", marker = "extra == 'sstsr'", specifier = ">=4.2,<5" },
 ]
 provides-extras = ["sstsr"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "ada-assets", git = "https://github.com/personalrobotics/ada_assets?rev=2d8f7972920e4369933065e9131b22dcd5858f2e" },
-    { name = "geodude-assets", git = "https://github.com/personalrobotics/geodude_assets?rev=f130a8f435ef7780fbc28014805c25cce6acd67b" },
+    { name = "ada-assets", git = "https://github.com/personalrobotics/ada_assets?rev=0703586a91fd933b5b4ddf0257e804ab37002e75" },
+    { name = "geodude-assets", git = "https://github.com/personalrobotics/geodude_assets?rev=e9538a26553e10a9613f9a61af86cb9f63db144e" },
     { name = "mujoco" },
     { name = "mypy", specifier = ">=1.13" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "ruff", specifier = ">=0.8" },
     { name = "ssgrasping", extras = ["sstsr"] },
-    { name = "ssrobot", extras = ["mujoco", "planning"], git = "https://github.com/personalrobotics/ssrobot?rev=1d3cb77bdd7211304a8e2d898228ba5215e3ce6d" },
+    { name = "ssrobot", extras = ["mujoco", "planning"], git = "https://github.com/personalrobotics/ssrobot?rev=f83b2874f5caf40ae180de4b053c57b212e3de50" },
 ]
 
 [[package]]
@@ -1023,7 +1023,7 @@ wheels = [
 [[package]]
 name = "ssrobot"
 version = "0.0.0"
-source = { git = "https://github.com/personalrobotics/ssrobot?rev=1d3cb77bdd7211304a8e2d898228ba5215e3ce6d#1d3cb77bdd7211304a8e2d898228ba5215e3ce6d" }
+source = { git = "https://github.com/personalrobotics/ssrobot?rev=f83b2874f5caf40ae180de4b053c57b212e3de50#f83b2874f5caf40ae180de4b053c57b212e3de50" }
 
 [package.optional-dependencies]
 mujoco = [

@@ -228,6 +228,8 @@ class Candidates:
                 ),
                 snapshot=state,
                 seed=previous.plan.request.seed,
+                velocity_scaling=g.lift_scaling,
+                acceleration_scaling=g.lift_scaling,
             )
             return StageRequest(
                 snapshot=at, request=request, planner=c.checker, attachments=attachments

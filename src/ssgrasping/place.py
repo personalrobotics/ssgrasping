@@ -7,10 +7,13 @@ outward ``normal``: away from it to pre-place and retreat, toward it to descend.
    the placement uses are available. Nothing is commanded before it passes.
 2. ``transfer``: plan the end effector into the placement regions moved ``preplace_m``
    along the normal, with the hand alone allowed, at ``carry_scaling`` of the joints'
-   velocity and acceleration limits, and execute. A plan is kept only if
-   the descent, with the target allowed, also plans from where it ends; up to
-   ``transfer_attempts`` seeds are tried. The regions are given for the object; the
-   held object's attachment transform turns them into regions for the end effector.
+   velocity and acceleration limits, and execute. A plan is kept only if the descent,
+   with the target allowed, also plans from where it ends, and the hand, opened anywhere
+   along that descent from ``terminal_m`` short of the regions to its end, touches
+   nothing but the object and the target: wherever the guard stops the descent, the hand
+   can open. Up to ``transfer_attempts`` seeds are tried. The regions are given for the
+   object; the held object's attachment transform turns them into regions for the end
+   effector.
    The transfer carries the object under an opening guard midway between the opening
    it is held at when the placement begins and ``close_opening``: if the guard stops it,
    ``retained`` is refuted, and the transfer fails with the object reported not held.
@@ -30,8 +33,10 @@ outward ``normal``: away from it to pre-place and retreat, toward it to descend.
    the measured joints, the end effector's kinematics, and the declared attachment
    transform, the held object must be in a region once moved back by some distance in
    ``[-overshoot_m, terminal_m]`` along the normal.
-6. ``release``: open the gripper, require the command to succeed and the opening to
-   reach ``released_opening``, then detach. An unconfirmed release keeps the attachment
+6. ``release``: open the gripper, once the hand, with the fingers open, is checked to
+   touch nothing but the object and the target (``gripper_obstructed`` otherwise, with
+   nothing commanded); require the command to succeed and the opening to reach
+   ``released_opening``, then detach. An unconfirmed release keeps the attachment
    and reports the object's held state as unknown.
    A confirmed release then hands the object to the caller's ``released`` policy.
 7. ``retreat``: move straight along the normal by ``retreat_m``.
@@ -49,6 +54,7 @@ refuted ``retained``.
 
 from __future__ import annotations
 
+import itertools
 import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
@@ -73,7 +79,9 @@ from ssgrasping._skill import (
     Lookahead,
     Run,
     Wait,
+    _end,
     check_spec,
+    obstructing,
     preflight,
     rest_evidence,
     retention,
@@ -81,6 +89,11 @@ from ssgrasping._skill import (
 )
 from ssgrasping.execution import SkillExecution
 from ssgrasping.outcomes import Criterion, Evidence, Reason, Transition, TransitionEstimate
+
+BAND_STEP = 0.01
+"""The largest joint-space step, in radians or metres, between the configurations a
+release is checked at along the descent's terminal band: the planner's own edge
+resolution in the tests."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,6 +256,15 @@ def _place(
         lambda start: _toward(ctx, _allowing(start.state, spec), checker, spec),
         spec.transfer_attempts,
         planner=planner,
+        opens=lambda end, descent: obstructing(
+            ctx,
+            _allowing(end.state, spec),
+            arm.group,
+            spec.gripper,
+            "open",
+            (spec.object, spec.target),
+            _releases(ctx, arm.group, descent, spec),
+        ),
     )
     carry = retention(
         spec.opening_channel,
@@ -282,7 +304,15 @@ def _place(
         None if usable else Reason.OUTSIDE_REGIONS,
     )
 
-    yield from run.grip("release", spec.gripper, spec.open_opening, spec.gripper_timeout_ns)
+    yield from run.grip(
+        "release",
+        spec.gripper,
+        spec.open_opening,
+        spec.gripper_timeout_ns,
+        ends="open",
+        group=arm.group,
+        allow=(spec.object, spec.target),
+    )
     opening = float(run.observe(spec.opening_channel)[0])
     run.values["released_opening"] = opening
     if opening < spec.released_opening:
@@ -346,6 +376,41 @@ def _descend(run: Run, planner: Planner, spec: PlaceSpec) -> Body:
         None if contact else Reason.NO_CONTACT,
         None if contact else outcome.cause.value,
     )
+
+
+def _releases(
+    ctx: RobotContext, group: str, descent: PlanResult | None, spec: PlaceSpec
+) -> tuple[tuple[float, ...], ...]:
+    """The arm's configurations along the planned ``descent`` where the release can
+    happen: from ``terminal_m`` short of the regions, where the guard may first stop it,
+    to the path's end, ``overshoot_m`` past them. The band is found by joint-space
+    distance along the path, over a straight move this short a close proxy for the
+    distance the hand has moved, and sampled at most ``BAND_STEP`` apart, interpolating
+    between waypoints, so a sparse path is checked between them too. Without a path, the
+    plan's end alone."""
+    assert descent is not None and descent.succeeded  # ``choose`` passes the planned descent
+    joints = ctx.description.group(group).joints
+    if descent.path is None:
+        by_joint = dict(zip(*_end(descent), strict=True))
+        return (tuple(by_joint[j] for j in joints),)
+    order = [descent.path.joints.index(j) for j in joints]
+    points = [tuple(w[i] for i in order) for w in descent.path.waypoints]
+    along = [0.0]
+    for a, b in itertools.pairwise(points):
+        along.append(along[-1] + math.dist(a, b))
+    start = along[-1] * (spec.preplace_m - spec.terminal_m) / (spec.preplace_m + spec.overshoot_m)
+    band: list[tuple[float, ...]] = []
+    for k in range(1, len(points)):
+        if along[k] < start:
+            continue
+        a, b = points[k - 1], points[k]
+        span = along[k] - along[k - 1]
+        first = (start - along[k - 1]) / span if along[k - 1] < start else 0.0
+        steps = max(1, math.ceil(span * (1.0 - first) / BAND_STEP))
+        for i in range(1 if band else 0, steps + 1):
+            f = first + (1.0 - first) * i / steps
+            band.append(tuple(p + f * (q - p) for p, q in zip(a, b, strict=True)))
+    return tuple(band) or (points[-1],)
 
 
 def _held_pose(run: Run, spec: PlaceSpec) -> Pose:

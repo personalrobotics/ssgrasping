@@ -18,10 +18,10 @@ time, scene revision, held and attached state, evidence kind, and, for a failed 
 its reason and cause, and the attachment the skill left declared:
 - ``success``: grasp, then place, on a manual clock; run twice, byte-identical.
 - ``missed``: a grasp where there is no can fails ``obstructed`` with nothing attached.
-- ``obstructed``: a grasp where there is no can, but a fixed post stops the fingers, as
-  the support could. The close stops short, so the attachment is declared, but the
-  fingers rest on the post, so the lift cannot plan: the grasp fails without claiming
-  ``acquired``.
+- ``obstructed``: a grasp where there is no can, but a fixed post stands between the
+  fingers. Closed, they would touch the post, which is neither the object nor its
+  support, so the close is refused before the fingers move: the grasp fails
+  ``gripper_obstructed`` at ``close``, with nothing attached and the fingers open.
 - ``stuck``: a full can stuck to the surface (glued, or in a spill). The close stops
   short on it, but the lift cannot pull free: the pads' friction on it, about 55 N,
   exceeds what the arm lifts, so the lift stalls short of its goal and fails
@@ -29,6 +29,9 @@ its reason and cause, and the attachment the skill left declared:
   state. With real masses, a rigid can either rises with this hand or stops the lift;
   none slips out, so no scenario here reaches ``acquired``'s refutation.
 - ``preflight``: an unknown channel fails ``preflight`` before anything is commanded.
+- ``undeclared``: Geodude's package with its grippers' ``open_positions`` and
+  ``closed_positions`` removed. No gripper command could be checked against the scene,
+  so the grasp fails ``preflight`` before anything is commanded.
 - ``external``: the same grasp on an externally clocked runtime, driven by ``run_skill``
   through ``update()`` alone.
 - ``cancelled``: an external-clock grasp cancelled while its approach runs.
@@ -39,6 +42,15 @@ its reason and cause, and the attachment the skill left declared:
   carries after ``restrict``.)
 - ``unconfirmed_release``: the gripper opens only halfway, so ``release`` is not
   confirmed and the object stays attached.
+- ``blocked_place``: the grasp is pinned to one side grasp at ``PINNED_YAW``, and the
+  placement to ``success``'s target at its centre and yaw 0, so where the hand releases
+  is fixed by geometry, not by the planner's samples. A marker stands upright on the
+  work surface where the released hand opens its outer finger link, clear of the hand
+  holding the can there: measured by replaying the pinned pick to that release
+  (``_opened_link``). The fingers would open into the marker anywhere in the descent's
+  terminal band, so no transfer is kept: the transfer fails ``not_planned`` before the
+  arm moves, with the can held and attached and the gripper never commanded. (That a
+  rejected transfer gives way to another is ``test_drop``'s ``beside_bracket``.)
 - ``trajectory_only``: a planner that returns trajectories without paths still grasps.
 - ``gripper_timeout``: a 20 ms gripper deadline, shorter than the close, fails ``close``
   with ``timed_out``; the open, on a hand already open, ends within it.
@@ -68,6 +80,7 @@ import json
 import math
 import platform
 import re
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -89,6 +102,7 @@ from ssrobot import (
     WrenchGuard,
     WrenchPart,
     load_installed_package,
+    load_package,
 )
 from ssrobot.mujoco import MujocoRuntime
 from ssrobot.planning import CBiRRT
@@ -159,12 +173,23 @@ DRIFT_TOLERANCE_M = 1e-4  # below the ~0.3 mm the can drifts in the fingers on t
 # monitor's 0.2 rad in the hand in 6 of 40 runs, on any machine; at 0.5, in none of 40,
 # turning at most 0.056 rad.
 CARRY_SCALING = 0.5
+# A marker, 8 mm in radius and 107 mm tall, up past the fingers' height at a release on
+# the work surface. ``blocked_place`` stands it where the opened outer finger link is.
+MARKER_RADIUS, MARKER_HALF_HEIGHT = 0.008, 0.0535
+OPENED_LINK = "right_ur5e/gripper/right_follower"
+"""The right hand's outer finger link: it moves furthest out as the hand opens."""
+PINNED_REGION, PINNED_YAW = 1, 4.169
+"""The side grasp ``success`` makes on macOS at geodude_assets e9538a2 (region ``body/side``
+1, at 4.169 rad about the can), as the one ``blocked_place`` pins."""
 
 
-def _scene(post: bool = False, stuck: bool = False) -> str:
+def _scene(
+    post: bool = False, stuck: bool = False, marker: tuple[float, float] | None = None
+) -> str:
     """A full can on the work surface; with ``post``, a fixed post of the can's size where
-    ``_missed`` aims; with ``stuck``, the can held to the surface (glued, or stuck in a
-    spill) by a weld, though it is still a free object to the runtime. No can this size
+    ``_missed`` aims; with ``marker``, a marker standing at that x, y; with ``stuck``,
+    the can held to the surface (glued, or stuck in a spill) by a weld, though it is still
+    a free object to the runtime. No can this size
     slips from the 2F-140's grip by its weight: at about 46 N a pad, slipping at friction
     0.6 would take over 5.6 kg, denser than lead."""
     fixed = (
@@ -175,6 +200,11 @@ def _scene(post: bool = False, stuck: bool = False) -> str:
         if post
         else ""
     )
+    if marker is not None:
+        fixed += f"""
+    <body name="marker" pos="{marker[0]} {marker[1]} {SURFACE_Z + MARKER_HALF_HEIGHT}">
+      <geom type="cylinder" size="{MARKER_RADIUS} {MARKER_HALF_HEIGHT}"/>
+    </body>"""
     weld = '\n  <equality>\n    <weld body1="can"/>\n  </equality>' if stuck else ""
     return f"""<mujoco>
   <worldbody>
@@ -363,8 +393,9 @@ def _session(
     runtime_options: dict[str, Any] | None = None,
     wrap: Callable[[Any], Any] | None = None,
     registered: bool = False,
+    package: Any = None,
 ) -> Any:
-    package = load_installed_package("geodude_assets")
+    package = package or load_installed_package("geodude_assets")
     planner, checker = _planners(package)
     if strip:
         planner, checker = TrajectoryOnly(planner), TrajectoryOnly(checker)
@@ -384,6 +415,23 @@ def _session(
                 ctx.register(name, at, stamp=observation.stamp, source="pose_channel")
         can = next(o.known_pose() for o in ctx.snapshot().objects if o.name == "can")
         return run(ctx, planner, checker, can)
+
+
+def _undeclared(work: Path) -> Any:
+    """Geodude's package, copied to ``work`` with its grippers' declared positions
+    removed."""
+    root = work / "geodude_assets"
+    shutil.copytree(load_installed_package("geodude_assets").root, root)
+    manifest = root / "ssrobot.toml"
+    kept = [
+        line
+        for line in manifest.read_text().splitlines(keepends=True)
+        if not line.startswith(("open_positions =", "closed_positions ="))
+    ]
+    manifest.write_text("".join(kept))
+    package = load_package(root)
+    assert all(not g.open_positions for g in package.description.grippers)
+    return package
 
 
 def _drive(ctx: RobotContext, execution: SkillExecution) -> SkillResult:
@@ -410,6 +458,72 @@ def _pick_and_place(changes: dict[str, Any] | None = None) -> Session:
         return report
 
     return run
+
+
+def _pinned_grasp(can: Pose) -> GraspSpec:
+    """One side grasp of the can, at ``PINNED_YAW`` and mid-height: the hand's pose on
+    the can is fixed."""
+    spec = _grasp_spec(can)
+    region = spec.pregrasps[PINNED_REGION]
+    pinned = dataclasses.replace(
+        region,
+        position_bounds=((0.0, 0.0),) * 3,
+        rotation_bounds=((0.0, 0.0), (0.0, 0.0), (PINNED_YAW, PINNED_YAW)),
+    )
+    assert spec.pregrasp_labels is not None
+    return dataclasses.replace(
+        spec, pregrasps=(pinned,), pregrasp_labels=(spec.pregrasp_labels[PINNED_REGION],)
+    )
+
+
+def _pinned_place() -> PlaceSpec:
+    """The can upright at the target, at the region's centre and yaw 0."""
+    (target,) = _place_spec().regions
+    pinned = dataclasses.replace(
+        target, position_bounds=((0.0, 0.0),) * 3, rotation_bounds=((0.0, 0.0),) * 3
+    )
+    return _place_spec(regions=[pinned])
+
+
+def _pinned(ctx: RobotContext, planner: Planner, checker: Planner, can: Pose) -> dict[str, Any]:
+    """The pinned pick, placed at the pinned target."""
+    picked = _drive(ctx, grasp(ctx, planner, _pinned_grasp(can), check_planner=checker))
+    report = {"grasp": _report(picked)}
+    if picked.succeeded:
+        placing = place(ctx, planner, _pinned_place(), check_planner=checker)
+        report["place"] = _report(_drive(ctx, placing))
+    return report
+
+
+def _opened_link(
+    ctx: RobotContext, planner: Planner, checker: Planner, can: Pose
+) -> dict[str, Any]:
+    """The pinned pick, replayed to its release at the target, which it cancels before
+    the fingers move: where ``OPENED_LINK`` is, in x and y, with the hand holding the can
+    there and with its fingers at the gripper's declared ``open_positions``."""
+    picked = _drive(ctx, grasp(ctx, planner, _pinned_grasp(can), check_planner=checker))
+    assert picked.succeeded, picked.stages
+    placing = place(ctx, planner, _pinned_place(), check_planner=checker)
+    while not placing.done and placing.stage != "release":
+        placing.advance()
+        ctx.step()
+    snapshot = ctx.snapshot()
+    gripper = ctx.description.gripper("right_gripper")
+    group = ctx.description.manipulator("right_arm").group
+    q = tuple(snapshot.position(j) for j in ctx.description.group(group).joints)
+    opened = dict(zip(gripper.joints, gripper.open_positions, strict=True))
+    positions = tuple(
+        opened.get(j, v) for j, v in zip(snapshot.joints, snapshot.positions, strict=True)
+    )
+    links = {}
+    for name, state in (
+        ("held", snapshot),
+        ("opened", dataclasses.replace(snapshot, positions=positions)),
+    ):
+        x, y, _ = ctx.planning_scene(state, group).forward_kinematics(q, OPENED_LINK).position
+        links[name] = [x, y]
+    placing.cancel("measured the release")
+    return links
 
 
 def _tare_settled(rest_ns: int) -> Session:
@@ -486,6 +600,7 @@ CAUSES: dict[str, set[str] | None] = {
     Reason.COMMAND_FAILED: None,  # an execution diagnostic code, or the execution state
     Reason.COMMAND_CANCELED: None,
     Reason.TRANSITION_REFUTED: {t.value for t in Transition},
+    Reason.GRIPPER_OBSTRUCTED: {"open", "closed"},
 }
 """The vocabulary of each reason's cause: an ssrobot enum's values, or any ssrobot code
 (None). A reason not listed has no cause."""
@@ -549,6 +664,7 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
         "obstructed": _session(posted, _missed),
         "stuck": _session(stuck, _pick()),
         "preflight": _session(plain, _pick({"opening_channel": "right_gripper_width"})),
+        "undeclared": _session(plain, _pick(), package=_undeclared(tmp_path)),
         "external": _session(plain, _pick(), external=True),
         "cancelled": _session(plain, _cancelled, external=True),
         "drifted": _session(
@@ -558,6 +674,10 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
         "trajectory_only": _session(plain, _pick(), strip=True),
         "gripper_timeout": _session(plain, _pick({"gripper_timeout_ns": GRIPPER_DEADLINE_NS})),
     }
+    link = _session(plain, _opened_link)
+    marked = tmp_path / "marker.xml"
+    marked.write_text(_scene(marker=tuple(link["opened"])))
+    scenarios["blocked_place"] = {"link": link, **_session(marked, _pinned)}
     rested_ns = scenarios["success"]["place"]["values"]["tare_rest"]["end_ns"]
     scenarios["tare_settled"] = _session(plain, _tare_settled(rested_ns))
     report = {
@@ -634,18 +754,17 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     assert missed["state"] == SkillState.FAILED and missed["attachment"] is None
     assert _failed(missed) == ("obstructed", Reason.MISSED, None, False, False)
 
-    # Fingers stopped by something other than the object never make the grasp acquired.
+    # Fingers that would close on something other than the object, or its support, are
+    # never closed: the close is refused, named by what they would touch, and nothing is
+    # attached. The fingers are still open, as the open stage left them.
     obstructed = scenarios["obstructed"]["grasp"]
     assert obstructed["state"] == SkillState.FAILED, obstructed["stages"]
-    assert "acquired" not in [s["name"] for s in obstructed["stages"]]
-    # A lift that cannot plan, with the object held and declared attached: the arm has
-    # not moved since the close.
-    assert _failed(obstructed) == ("lift", Reason.NOT_PLANNED, "infeasible", True, True)
-    assert [(s["name"], s["succeeded"]) for s in obstructed["stages"][-3:]] == [
-        ("obstructed", True),
-        ("attach", True),
-        ("lift", False),
-    ]
+    assert _failed(obstructed) == ("close", Reason.GRIPPER_OBSTRUCTED, "closed", None, False)
+    assert obstructed["attachment"] is None
+    assert "close" not in obstructed["values"]["gripper"]  # never commanded
+    refused = obstructed["stages"][-1]
+    assert refused["evidence"] == "planned"
+    assert "post/" in refused["detail"], refused["detail"]
     stuck_can = scenarios["stuck"]["grasp"]
     assert stuck_can["state"] == SkillState.FAILED, stuck_can["stages"]
     assert "acquired" not in [s["name"] for s in stuck_can["stages"]]
@@ -655,6 +774,11 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     assert pre["state"] == SkillState.FAILED and [s["name"] for s in pre["stages"]] == ["preflight"]
     assert pre["stages"][0]["time_ns"] == 0  # nothing ran
     assert _failed(pre)[:2] == ("preflight", Reason.UNAVAILABLE)
+    undeclared = scenarios["undeclared"]["grasp"]
+    assert [s["name"] for s in undeclared["stages"]] == ["preflight"], undeclared["stages"]
+    assert undeclared["stages"][0]["time_ns"] == 0  # nothing ran
+    assert _failed(undeclared)[:2] == ("preflight", Reason.UNAVAILABLE)
+    assert "declares no open_positions" in undeclared["stages"][0]["detail"]
 
     assert scenarios["external"]["grasp"]["state"] == SkillState.SUCCEEDED
     assert scenarios["external"]["grasp"]["stages"][-1]["name"] == "retained"
@@ -675,6 +799,24 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
         "source": "attachment_monitor",
         "agrees": False,
     }
+
+    # A release is chosen where the opened hand fits anywhere the guard may stop the
+    # descent: the transfer that would open the fingers into the marker is rejected like
+    # an infeasible plan, and the can is placed from another.
+    # The marker stands clear of the link while the hand holds the can, by over three
+    # times its radius: only the opened fingers reach it.
+    link = scenarios["blocked_place"]["link"]
+    assert math.dist(link["held"], link["opened"]) > 3 * MARKER_RADIUS, link
+    # Nowhere in the target can the hand open: the place fails before the arm moves, the
+    # can still held and attached, and the gripper never commanded.
+    blocked = scenarios["blocked_place"]["place"]
+    assert blocked["state"] == SkillState.FAILED, blocked["stages"]
+    assert _failed(blocked) == ("transfer", Reason.NOT_PLANNED, None, True, True)
+    attempts = blocked["values"]["transfer_attempts"]
+    assert all(a["opened"] for a in attempts), attempts
+    for attempt in attempts:
+        assert all(c.startswith("marker/right_ur5e/gripper/") for c in attempt["opened"]), attempts
+    assert "gripper" not in blocked["values"] and "released_opening" not in blocked["values"]
 
     unconfirmed = scenarios["unconfirmed_release"]["place"]
     assert unconfirmed["state"] == SkillState.FAILED, unconfirmed["stages"]
