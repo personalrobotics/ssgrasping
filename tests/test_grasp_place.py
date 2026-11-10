@@ -43,10 +43,12 @@ its reason and cause, and the attachment the skill left declared:
 - ``unconfirmed_release``: the gripper opens only halfway, so ``release`` is not
   confirmed and the object stays attached.
 - ``beside_marker``: a marker stands upright on the work surface where ``success``'s
-  release opens the hand's outer finger link (``MARKER_XY``), clear of the hand holding
-  the can. The transfer that would release there is rejected, since the fingers would
-  open into the marker anywhere in the descent's terminal band, and the can is placed
-  from another, the release clear of it.
+  release opens the hand's outer finger link, clear of the hand holding the can. That
+  spot is measured in the same environment by replaying ``success`` to its release
+  (``_opened_link``), since a release's pose is repeatable within one environment, not
+  across them. The transfer that would release there is rejected, since the fingers
+  would open into the marker anywhere in the descent's terminal band, and the can is
+  placed from another, the release clear of it.
 - ``trajectory_only``: a planner that returns trajectories without paths still grasps.
 - ``gripper_timeout``: a 20 ms gripper deadline, shorter than the close, fails ``close``
   with ``timed_out``; the open, on a hand already open, ends within it.
@@ -169,16 +171,18 @@ DRIFT_TOLERANCE_M = 1e-4  # below the ~0.3 mm the can drifts in the fingers on t
 # monitor's 0.2 rad in the hand in 6 of 40 runs, on any machine; at 0.5, in none of 40,
 # turning at most 0.056 rad.
 CARRY_SCALING = 0.5
-# Where ``success``'s first transfer releases the can with the right outer finger link
-# opened (geodude_assets e9538a2): 38 mm outboard of it closed on the can, at the fingers'
-# height. A marker (8 mm radius, 107 mm tall) standing there touches only the opened hand.
-MARKER_XY = (0.0647, -0.4354)
+# A marker, 8 mm in radius and 107 mm tall, up past the fingers' height at a release on
+# the work surface. ``beside_marker`` stands it where the opened outer finger link is.
 MARKER_RADIUS, MARKER_HALF_HEIGHT = 0.008, 0.0535
+OPENED_LINK = "right_ur5e/gripper/right_follower"
+"""The right hand's outer finger link: it moves furthest out as the hand opens."""
 
 
-def _scene(post: bool = False, stuck: bool = False, marker: bool = False) -> str:
+def _scene(
+    post: bool = False, stuck: bool = False, marker: tuple[float, float] | None = None
+) -> str:
     """A full can on the work surface; with ``post``, a fixed post of the can's size where
-    ``_missed`` aims; with ``marker``, a marker standing at ``MARKER_XY``; with ``stuck``,
+    ``_missed`` aims; with ``marker``, a marker standing at that x, y; with ``stuck``,
     the can held to the surface (glued, or stuck in a spill) by a weld, though it is still
     a free object to the runtime. No can this size
     slips from the 2F-140's grip by its weight: at about 46 N a pad, slipping at friction
@@ -191,9 +195,9 @@ def _scene(post: bool = False, stuck: bool = False, marker: bool = False) -> str
         if post
         else ""
     )
-    if marker:
+    if marker is not None:
         fixed += f"""
-    <body name="marker" pos="{MARKER_XY[0]} {MARKER_XY[1]} {SURFACE_Z + MARKER_HALF_HEIGHT}">
+    <body name="marker" pos="{marker[0]} {marker[1]} {SURFACE_Z + MARKER_HALF_HEIGHT}">
       <geom type="cylinder" size="{MARKER_RADIUS} {MARKER_HALF_HEIGHT}"/>
     </body>"""
     weld = '\n  <equality>\n    <weld body1="can"/>\n  </equality>' if stuck else ""
@@ -451,6 +455,37 @@ def _pick_and_place(changes: dict[str, Any] | None = None) -> Session:
     return run
 
 
+def _opened_link(
+    ctx: RobotContext, planner: Planner, checker: Planner, can: Pose
+) -> dict[str, Any]:
+    """``success``, replayed to its release, which it cancels before the fingers move:
+    where ``OPENED_LINK`` is, in x and y, with the hand holding the can there and with
+    its fingers at the gripper's declared ``open_positions``."""
+    picked = _drive(ctx, grasp(ctx, planner, _grasp_spec(can), check_planner=checker))
+    assert picked.succeeded, picked.stages
+    placing = place(ctx, planner, _place_spec(), check_planner=checker)
+    while not placing.done and placing.stage != "release":
+        placing.advance()
+        ctx.step()
+    snapshot = ctx.snapshot()
+    gripper = ctx.description.gripper("right_gripper")
+    group = ctx.description.manipulator("right_arm").group
+    q = tuple(snapshot.position(j) for j in ctx.description.group(group).joints)
+    opened = dict(zip(gripper.joints, gripper.open_positions, strict=True))
+    positions = tuple(
+        opened.get(j, v) for j, v in zip(snapshot.joints, snapshot.positions, strict=True)
+    )
+    links = {}
+    for name, state in (
+        ("held", snapshot),
+        ("opened", dataclasses.replace(snapshot, positions=positions)),
+    ):
+        x, y, _ = ctx.planning_scene(state, group).forward_kinematics(q, OPENED_LINK).position
+        links[name] = [x, y]
+    placing.cancel("measured the release")
+    return links
+
+
 def _tare_settled(rest_ns: int) -> Session:
     def run(ctx: RobotContext, planner: Planner, checker: Planner, can: Pose) -> dict[str, Any]:
         picked = _drive(ctx, grasp(ctx, planner, _grasp_spec(can), check_planner=checker))
@@ -580,8 +615,6 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     posted.write_text(_scene(post=True))
     stuck = tmp_path / "stuck.xml"
     stuck.write_text(_scene(stuck=True))
-    marked = tmp_path / "marker.xml"
-    marked.write_text(_scene(marker=True))
 
     first = json.dumps(_session(plain, _pick_and_place()), indent=2)
     again = json.dumps(_session(plain, _pick_and_place()), indent=2)
@@ -598,10 +631,13 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
             plain, _pick(), runtime_options={"attach_tolerance_m": DRIFT_TOLERANCE_M}
         ),
         "unconfirmed_release": _session(plain, _pick_and_place({"open_opening": 0.5})),
-        "beside_marker": _session(marked, _pick_and_place()),
         "trajectory_only": _session(plain, _pick(), strip=True),
         "gripper_timeout": _session(plain, _pick({"gripper_timeout_ns": GRIPPER_DEADLINE_NS})),
     }
+    link = _session(plain, _opened_link)
+    marked = tmp_path / "marker.xml"
+    marked.write_text(_scene(marker=tuple(link["opened"])))
+    scenarios["beside_marker"] = {"link": link, **_session(marked, _pick_and_place())}
     rested_ns = scenarios["success"]["place"]["values"]["tare_rest"]["end_ns"]
     scenarios["tare_settled"] = _session(plain, _tare_settled(rested_ns))
     report = {
@@ -727,6 +763,10 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     # A release is chosen where the opened hand fits anywhere the guard may stop the
     # descent: the transfer that would open the fingers into the marker is rejected like
     # an infeasible plan, and the can is placed from another.
+    # The marker stands clear of the link while the hand holds the can, by over twice its
+    # radius: only the opened fingers reach it.
+    link = scenarios["beside_marker"]["link"]
+    assert math.dist(link["held"], link["opened"]) > 3 * MARKER_RADIUS, link
     beside = scenarios["beside_marker"]["place"]
     assert beside["state"] == SkillState.SUCCEEDED, beside["stages"]
     tried = beside["values"]["transfer_attempts"]
