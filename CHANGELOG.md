@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+`obstructing` and `Ends` are public, so an application that commands a gripper itself,
+outside a skill, checks it as the skills do (personalrobotics/geodude#272).
+ssrobot's pin moves to 87dac58, whose reference gate pins ada_assets 0703586 as the tests
+do.
+
 Every gripper motion is checked against the scene before it runs
 (personalrobotics/ssgrasping#54).
 - **The check.** Before `Run.grip` commands a gripper, the planning scene is evaluated with
@@ -36,7 +41,8 @@ Every gripper motion is checked against the scene before it runs
   the check. `Candidates`' race still checks only its transfer's feasibility. `drop`
   chooses its own transfer, with the check. Checking every gripper command in ssrobot
   itself is personalrobotics/ssrobot#249.
-- Pins move to ssrobot f83b287, geodude_assets e9538a2 and ada_assets 0703586.
+- Pins move to geodude_assets e9538a2 and ada_assets 0703586, and ssrobot's to 87dac58
+  (below).
 
 Candidates from several named, explicitly framed grasp regions
 (personalrobotics/ssgrasping#46).
