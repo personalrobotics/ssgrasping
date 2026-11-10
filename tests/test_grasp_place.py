@@ -42,13 +42,15 @@ its reason and cause, and the attachment the skill left declared:
   carries after ``restrict``.)
 - ``unconfirmed_release``: the gripper opens only halfway, so ``release`` is not
   confirmed and the object stays attached.
-- ``beside_marker``: a marker stands upright on the work surface where ``success``'s
-  release opens the hand's outer finger link, clear of the hand holding the can. That
-  spot is measured in the same environment by replaying ``success`` to its release
-  (``_opened_link``), since a release's pose is repeatable within one environment, not
-  across them. The transfer that would release there is rejected, since the fingers
-  would open into the marker anywhere in the descent's terminal band, and the can is
-  placed from another, the release clear of it.
+- ``blocked_place``: the grasp is pinned to one side grasp at ``PINNED_YAW``, and the
+  placement to ``success``'s target at its centre and yaw 0, so where the hand releases
+  is fixed by geometry, not by the planner's samples. A marker stands upright on the
+  work surface where the released hand opens its outer finger link, clear of the hand
+  holding the can there: measured by replaying the pinned pick to that release
+  (``_opened_link``). The fingers would open into the marker anywhere in the descent's
+  terminal band, so no transfer is kept: the transfer fails ``not_planned`` before the
+  arm moves, with the can held and attached and the gripper never commanded. (That a
+  rejected transfer gives way to another is ``test_drop``'s ``beside_bracket``.)
 - ``trajectory_only``: a planner that returns trajectories without paths still grasps.
 - ``gripper_timeout``: a 20 ms gripper deadline, shorter than the close, fails ``close``
   with ``timed_out``; the open, on a hand already open, ends within it.
@@ -172,10 +174,13 @@ DRIFT_TOLERANCE_M = 1e-4  # below the ~0.3 mm the can drifts in the fingers on t
 # turning at most 0.056 rad.
 CARRY_SCALING = 0.5
 # A marker, 8 mm in radius and 107 mm tall, up past the fingers' height at a release on
-# the work surface. ``beside_marker`` stands it where the opened outer finger link is.
+# the work surface. ``blocked_place`` stands it where the opened outer finger link is.
 MARKER_RADIUS, MARKER_HALF_HEIGHT = 0.008, 0.0535
 OPENED_LINK = "right_ur5e/gripper/right_follower"
 """The right hand's outer finger link: it moves furthest out as the hand opens."""
+PINNED_REGION, PINNED_YAW = 1, 4.169
+"""The side grasp ``success`` makes on macOS at geodude_assets e9538a2 (region ``body/side``
+1, at 4.169 rad about the can), as the one ``blocked_place`` pins."""
 
 
 def _scene(
@@ -455,15 +460,50 @@ def _pick_and_place(changes: dict[str, Any] | None = None) -> Session:
     return run
 
 
+def _pinned_grasp(can: Pose) -> GraspSpec:
+    """One side grasp of the can, at ``PINNED_YAW`` and mid-height: the hand's pose on
+    the can is fixed."""
+    spec = _grasp_spec(can)
+    region = spec.pregrasps[PINNED_REGION]
+    pinned = dataclasses.replace(
+        region,
+        position_bounds=((0.0, 0.0),) * 3,
+        rotation_bounds=((0.0, 0.0), (0.0, 0.0), (PINNED_YAW, PINNED_YAW)),
+    )
+    assert spec.pregrasp_labels is not None
+    return dataclasses.replace(
+        spec, pregrasps=(pinned,), pregrasp_labels=(spec.pregrasp_labels[PINNED_REGION],)
+    )
+
+
+def _pinned_place() -> PlaceSpec:
+    """The can upright at the target, at the region's centre and yaw 0."""
+    (target,) = _place_spec().regions
+    pinned = dataclasses.replace(
+        target, position_bounds=((0.0, 0.0),) * 3, rotation_bounds=((0.0, 0.0),) * 3
+    )
+    return _place_spec(regions=[pinned])
+
+
+def _pinned(ctx: RobotContext, planner: Planner, checker: Planner, can: Pose) -> dict[str, Any]:
+    """The pinned pick, placed at the pinned target."""
+    picked = _drive(ctx, grasp(ctx, planner, _pinned_grasp(can), check_planner=checker))
+    report = {"grasp": _report(picked)}
+    if picked.succeeded:
+        placing = place(ctx, planner, _pinned_place(), check_planner=checker)
+        report["place"] = _report(_drive(ctx, placing))
+    return report
+
+
 def _opened_link(
     ctx: RobotContext, planner: Planner, checker: Planner, can: Pose
 ) -> dict[str, Any]:
-    """``success``, replayed to its release, which it cancels before the fingers move:
-    where ``OPENED_LINK`` is, in x and y, with the hand holding the can there and with
-    its fingers at the gripper's declared ``open_positions``."""
-    picked = _drive(ctx, grasp(ctx, planner, _grasp_spec(can), check_planner=checker))
+    """The pinned pick, replayed to its release at the target, which it cancels before
+    the fingers move: where ``OPENED_LINK`` is, in x and y, with the hand holding the can
+    there and with its fingers at the gripper's declared ``open_positions``."""
+    picked = _drive(ctx, grasp(ctx, planner, _pinned_grasp(can), check_planner=checker))
     assert picked.succeeded, picked.stages
-    placing = place(ctx, planner, _place_spec(), check_planner=checker)
+    placing = place(ctx, planner, _pinned_place(), check_planner=checker)
     while not placing.done and placing.stage != "release":
         placing.advance()
         ctx.step()
@@ -637,7 +677,7 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     link = _session(plain, _opened_link)
     marked = tmp_path / "marker.xml"
     marked.write_text(_scene(marker=tuple(link["opened"])))
-    scenarios["beside_marker"] = {"link": link, **_session(marked, _pick_and_place())}
+    scenarios["blocked_place"] = {"link": link, **_session(marked, _pinned)}
     rested_ns = scenarios["success"]["place"]["values"]["tare_rest"]["end_ns"]
     scenarios["tare_settled"] = _session(plain, _tare_settled(rested_ns))
     report = {
@@ -763,20 +803,20 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     # A release is chosen where the opened hand fits anywhere the guard may stop the
     # descent: the transfer that would open the fingers into the marker is rejected like
     # an infeasible plan, and the can is placed from another.
-    # The marker stands clear of the link while the hand holds the can, by over twice its
-    # radius: only the opened fingers reach it.
-    link = scenarios["beside_marker"]["link"]
+    # The marker stands clear of the link while the hand holds the can, by over three
+    # times its radius: only the opened fingers reach it.
+    link = scenarios["blocked_place"]["link"]
     assert math.dist(link["held"], link["opened"]) > 3 * MARKER_RADIUS, link
-    beside = scenarios["beside_marker"]["place"]
-    assert beside["state"] == SkillState.SUCCEEDED, beside["stages"]
-    tried = beside["values"]["transfer_attempts"]
-    assert tried[-1]["opened"] == [], tried
-    rejected = [a for a in tried[:-1] if a["opened"]]
-    assert rejected, tried  # the transfer releasing beside the marker was tried, and rejected
-    for attempt in rejected:
-        assert all(c.startswith("marker/right_ur5e/gripper/") for c in attempt["opened"]), tried
-    # In ``success``, that first transfer was kept: only the marker rejects it.
-    assert scenarios["success"]["place"]["values"]["transfer_attempts"][0]["opened"] == []
+    # Nowhere in the target can the hand open: the place fails before the arm moves, the
+    # can still held and attached, and the gripper never commanded.
+    blocked = scenarios["blocked_place"]["place"]
+    assert blocked["state"] == SkillState.FAILED, blocked["stages"]
+    assert _failed(blocked) == ("transfer", Reason.NOT_PLANNED, None, True, True)
+    attempts = blocked["values"]["transfer_attempts"]
+    assert all(a["opened"] for a in attempts), attempts
+    for attempt in attempts:
+        assert all(c.startswith("marker/right_ur5e/gripper/") for c in attempt["opened"]), attempts
+    assert "gripper" not in blocked["values"] and "released_opening" not in blocked["values"]
 
     unconfirmed = scenarios["unconfirmed_release"]["place"]
     assert unconfirmed["state"] == SkillState.FAILED, unconfirmed["stages"]
