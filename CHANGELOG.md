@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+`obstructing` and `Ends` are public, so an application that commands a gripper itself,
+outside a skill, checks it as the skills do (personalrobotics/geodude#272).
+ssrobot's pin moves to 87dac58, whose reference gate pins ada_assets 0703586 as the tests
+do.
+
 Every gripper motion is checked against the scene before it runs
 (personalrobotics/ssgrasping#54).
 - **The check.** Before `Run.grip` commands a gripper, the planning scene is evaluated with

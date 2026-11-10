@@ -6,7 +6,7 @@ and observes where a dropped object lands. It owns no simulator, planner, kinema
 retiming, or runtime control, and imports none.
 """
 
-from ssgrasping._skill import Lookahead
+from ssgrasping._skill import Ends, Lookahead, obstructing
 from ssgrasping.candidates import Candidate, Candidates, Selection
 from ssgrasping.drop import DropSpec, drop
 from ssgrasping.execution import SkillExecution, run_skill, run_together
@@ -46,6 +46,7 @@ __all__ = [
     "Candidates",
     "Criterion",
     "DropSpec",
+    "Ends",
     "EstimateReason",
     "Evidence",
     "GeometryReason",
@@ -77,6 +78,7 @@ __all__ = [
     "grasp",
     "grasp_regions",
     "landing",
+    "obstructing",
     "place",
     "run_skill",
     "run_together",
