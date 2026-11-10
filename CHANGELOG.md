@@ -16,7 +16,8 @@ Every gripper motion is checked against the scene before it runs
   only if the hand, opened anywhere along the planned descent from `terminal_m` short of
   the regions to its end, touches nothing but the object and the target. A rejected seed
   is treated as an infeasible one, and `values["transfer_attempts"]` records what each
-  seed's opened fingers would touch (`opened`).
+  seed's opened fingers would touch (`opened`, empty when clear). The place's band is
+  sampled at most `BAND_STEP` apart in joint space, between waypoints too.
 - **Declared positions are required.** `preflight` fails `unavailable` for a gripper that
   declares no `open_positions` and `closed_positions`, so no gripper is silently
   unchecked. Both reference robots declare them (geodude_assets e9538a2, ada_assets
@@ -28,8 +29,13 @@ Every gripper motion is checked against the scene before it runs
   closing on it, attaching, and failing the lift (`test_grasp_place`'s `obstructed`).
 - **Limitation.** Only where the fingers end is checked, not their sweep. Both reference
   hands' fingers move monotonically between open and closed, so an opening sweeps no
-  further out than it ends. `Candidates`' race still checks only its transfer's
-  feasibility. `drop` chooses its own transfer, with the check.
+  further out than it ends. A close is checked fully closed, so in clutter a neighbour
+  that fully closed fingertips would reach refuses it, though the object would stop
+  them first. Contacts already present with the fingers where they are are not the
+  command's, and are not counted. As for any plan, an object of unknown pose refuses
+  the check. `Candidates`' race still checks only its transfer's feasibility. `drop`
+  chooses its own transfer, with the check. Checking every gripper command in ssrobot
+  itself is personalrobotics/ssrobot#249.
 - Pins move to ssrobot f83b287, geodude_assets e9538a2 and ada_assets 0703586.
 
 Candidates from several named, explicitly framed grasp regions

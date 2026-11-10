@@ -29,6 +29,9 @@ its reason and cause, and the attachment the skill left declared:
   state. With real masses, a rigid can either rises with this hand or stops the lift;
   none slips out, so no scenario here reaches ``acquired``'s refutation.
 - ``preflight``: an unknown channel fails ``preflight`` before anything is commanded.
+- ``undeclared``: Geodude's package with its grippers' ``open_positions`` and
+  ``closed_positions`` removed. No gripper command could be checked against the scene,
+  so the grasp fails ``preflight`` before anything is commanded.
 - ``external``: the same grasp on an externally clocked runtime, driven by ``run_skill``
   through ``update()`` alone.
 - ``cancelled``: an external-clock grasp cancelled while its approach runs.
@@ -73,6 +76,7 @@ import json
 import math
 import platform
 import re
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -94,6 +98,7 @@ from ssrobot import (
     WrenchGuard,
     WrenchPart,
     load_installed_package,
+    load_package,
 )
 from ssrobot.mujoco import MujocoRuntime
 from ssrobot.planning import CBiRRT
@@ -379,8 +384,9 @@ def _session(
     runtime_options: dict[str, Any] | None = None,
     wrap: Callable[[Any], Any] | None = None,
     registered: bool = False,
+    package: Any = None,
 ) -> Any:
-    package = load_installed_package("geodude_assets")
+    package = package or load_installed_package("geodude_assets")
     planner, checker = _planners(package)
     if strip:
         planner, checker = TrajectoryOnly(planner), TrajectoryOnly(checker)
@@ -400,6 +406,23 @@ def _session(
                 ctx.register(name, at, stamp=observation.stamp, source="pose_channel")
         can = next(o.known_pose() for o in ctx.snapshot().objects if o.name == "can")
         return run(ctx, planner, checker, can)
+
+
+def _undeclared(work: Path) -> Any:
+    """Geodude's package, copied to ``work`` with its grippers' declared positions
+    removed."""
+    root = work / "geodude_assets"
+    shutil.copytree(load_installed_package("geodude_assets").root, root)
+    manifest = root / "ssrobot.toml"
+    kept = [
+        line
+        for line in manifest.read_text().splitlines(keepends=True)
+        if not line.startswith(("open_positions =", "closed_positions ="))
+    ]
+    manifest.write_text("".join(kept))
+    package = load_package(root)
+    assert all(not g.open_positions for g in package.description.grippers)
+    return package
 
 
 def _drive(ctx: RobotContext, execution: SkillExecution) -> SkillResult:
@@ -568,6 +591,7 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
         "obstructed": _session(posted, _missed),
         "stuck": _session(stuck, _pick()),
         "preflight": _session(plain, _pick({"opening_channel": "right_gripper_width"})),
+        "undeclared": _session(plain, _pick(), package=_undeclared(tmp_path)),
         "external": _session(plain, _pick(), external=True),
         "cancelled": _session(plain, _cancelled, external=True),
         "drifted": _session(
@@ -674,6 +698,11 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     assert pre["state"] == SkillState.FAILED and [s["name"] for s in pre["stages"]] == ["preflight"]
     assert pre["stages"][0]["time_ns"] == 0  # nothing ran
     assert _failed(pre)[:2] == ("preflight", Reason.UNAVAILABLE)
+    undeclared = scenarios["undeclared"]["grasp"]
+    assert [s["name"] for s in undeclared["stages"]] == ["preflight"], undeclared["stages"]
+    assert undeclared["stages"][0]["time_ns"] == 0  # nothing ran
+    assert _failed(undeclared)[:2] == ("preflight", Reason.UNAVAILABLE)
+    assert "declares no open_positions" in undeclared["stages"][0]["detail"]
 
     assert scenarios["external"]["grasp"]["state"] == SkillState.SUCCEEDED
     assert scenarios["external"]["grasp"]["stages"][-1]["name"] == "retained"
@@ -701,13 +730,13 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     beside = scenarios["beside_marker"]["place"]
     assert beside["state"] == SkillState.SUCCEEDED, beside["stages"]
     tried = beside["values"]["transfer_attempts"]
-    assert tried[-1]["opened"] == "clear", tried
-    rejected = [a for a in tried[:-1] if a["opened"] != "clear"]
+    assert tried[-1]["opened"] == [], tried
+    rejected = [a for a in tried[:-1] if a["opened"]]
     assert rejected, tried  # the transfer releasing beside the marker was tried, and rejected
     for attempt in rejected:
         assert all(c.startswith("marker/right_ur5e/gripper/") for c in attempt["opened"]), tried
     # In ``success``, that first transfer was kept: only the marker rejects it.
-    assert scenarios["success"]["place"]["values"]["transfer_attempts"][0]["opened"] == "clear"
+    assert scenarios["success"]["place"]["values"]["transfer_attempts"][0]["opened"] == []
 
     unconfirmed = scenarios["unconfirmed_release"]["place"]
     assert unconfirmed["state"] == SkillState.FAILED, unconfirmed["stages"]

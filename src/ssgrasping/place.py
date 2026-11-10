@@ -90,6 +90,11 @@ from ssgrasping._skill import (
 from ssgrasping.execution import SkillExecution
 from ssgrasping.outcomes import Criterion, Evidence, Reason, Transition, TransitionEstimate
 
+BAND_STEP = 0.01
+"""The largest joint-space step, in radians or metres, between the configurations a
+release is checked at along the descent's terminal band: the planner's own edge
+resolution in the tests."""
+
 
 @dataclass(frozen=True, slots=True)
 class PlaceSpec:
@@ -378,10 +383,11 @@ def _releases(
 ) -> tuple[tuple[float, ...], ...]:
     """The arm's configurations along the planned ``descent`` where the release can
     happen: from ``terminal_m`` short of the regions, where the guard may first stop it,
-    to the path's end, ``overshoot_m`` past them. Its waypoints in that band, and the
-    band's start interpolated between two, by joint-space distance along the path: over a
-    straight move this short, a close proxy for the distance the hand has moved. Without
-    a path, the plan's end alone."""
+    to the path's end, ``overshoot_m`` past them. The band is found by joint-space
+    distance along the path, over a straight move this short a close proxy for the
+    distance the hand has moved, and sampled at most ``BAND_STEP`` apart, interpolating
+    between waypoints, so a sparse path is checked between them too. Without a path, the
+    plan's end alone."""
     assert descent is not None and descent.succeeded  # ``choose`` passes the planned descent
     joints = ctx.description.group(group).joints
     if descent.path is None:
@@ -397,13 +403,13 @@ def _releases(
     for k in range(1, len(points)):
         if along[k] < start:
             continue
-        if not band:
-            span = along[k] - along[k - 1]
-            f = (start - along[k - 1]) / span if span > 0 else 1.0
-            band.append(
-                tuple(p + f * (q - p) for p, q in zip(points[k - 1], points[k], strict=True))
-            )
-        band.append(points[k])
+        a, b = points[k - 1], points[k]
+        span = along[k] - along[k - 1]
+        first = (start - along[k - 1]) / span if along[k - 1] < start else 0.0
+        steps = max(1, math.ceil(span * (1.0 - first) / BAND_STEP))
+        for i in range(1 if band else 0, steps + 1):
+            f = first + (1.0 - first) * i / steps
+            band.append(tuple(p + f * (q - p) for p, q in zip(a, b, strict=True)))
     return tuple(band) or (points[-1],)
 
 

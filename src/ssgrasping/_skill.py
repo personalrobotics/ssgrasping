@@ -870,7 +870,7 @@ class Run:
                     continue
             if opens is not None:
                 touched = opens(projection, check)
-                entry["opened"] = list(touched) or "clear"
+                entry["opened"] = list(touched)
                 if touched:
                     continue
             return result, check, projection
@@ -901,34 +901,38 @@ def obstructing(
     allow: Sequence[str],
     qs: Sequence[Sequence[float]] | None = None,
 ) -> tuple[str, ...]:
-    """What the hand touches in ``snapshot``, besides ``allow``, with ``gripper``'s joints
-    where a command leaves them, its declared ``open_positions`` or ``closed_positions``
-    by ``ends``, and ``group`` at each of ``qs`` (where it is in ``snapshot`` when None):
-    each contact as ``first/second``, from the planning scene with no clearance.
+    """What the hand would newly touch in ``snapshot``, besides ``allow``, with
+    ``gripper``'s joints where a command leaves them, its declared ``open_positions`` or
+    ``closed_positions`` by ``ends``, and ``group`` at each of ``qs`` (where it is in
+    ``snapshot`` when None): each contact as ``first/second``, from the planning scene
+    with no clearance. A contact already there with the fingers where ``snapshot`` has
+    them is not the command's, so it is not counted: the command neither makes nor
+    clears it.
 
     Only where the fingers end is checked, not their sweep. A gripper whose fingers move
     monotonically between open and closed, as both reference robots' do, sweeps no
     further out than it ends when opening, nor further in when closing."""
     declared = ctx.description.gripper(gripper)
     positions = declared.open_positions if ends == "open" else declared.closed_positions
-    assert positions is not None  # preflight refuses a gripper that declares none
+    assert positions, gripper  # preflight refuses a gripper that declares none
     missing = set(declared.joints) - set(snapshot.joints)
     assert not missing, missing  # a snapshot measures every joint of the description
-    at = _at(snapshot, declared.joints, positions)
     if qs is None:
         qs = (tuple(snapshot.position(j) for j in ctx.description.group(group).joints),)
-    scene = ctx.planning_scene(at, group)
     allowed = set(allow)
-    return tuple(
-        sorted(
-            {
-                f"{c.first}/{c.second}"
-                for q in qs
-                for c in scene.contacts(q)
-                if c.first not in allowed and c.second not in allowed
-            }
-        )
-    )
+    ended = ctx.planning_scene(_at(snapshot, declared.joints, positions), group)
+    now = ctx.planning_scene(snapshot, group)
+    touched: set[str] = set()
+    for q in qs:
+        before = {(c.first, c.second) for c in now.contacts(q)}
+        touched |= {
+            f"{c.first}/{c.second}"
+            for c in ended.contacts(q)
+            if c.first not in allowed
+            and c.second not in allowed
+            and (c.first, c.second) not in before
+        }
+    return tuple(sorted(touched))
 
 
 def _at(snapshot: SceneSnapshot, joints: Sequence[str], q: Sequence[float]) -> SceneSnapshot:
@@ -969,7 +973,7 @@ def preflight(
     declared = next((g for g in d.grippers if g.name == gripper), None)
     if declared is None:
         problems.append(f"no gripper {gripper!r}")
-    elif declared.open_positions is None:
+    elif not declared.open_positions:
         problems.append(
             f"gripper {gripper!r} declares no open_positions and closed_positions, so its "
             "commands cannot be checked against the scene"

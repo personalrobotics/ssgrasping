@@ -393,8 +393,8 @@ def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> No
     beside = scenarios["beside_bracket"]["drop"]
     assert beside["state"] == SkillState.SUCCEEDED, beside["stages"]
     tried = beside["values"]["transfer_attempts"]
-    assert tried[-1]["opened"] == "clear", tried
-    rejected = [a for a in tried[:-1] if a["opened"] != "clear"]
+    assert tried[-1]["opened"] == [], tried
+    rejected = [a for a in tried[:-1] if a["opened"]]
     assert rejected, tried  # the zone beside the bracket was tried, and rejected
     for attempt in rejected:
         assert all(c.startswith("bracket/right_ur5e/gripper/") for c in attempt["opened"]), tried
@@ -404,7 +404,7 @@ def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> No
     blocked = scenarios["blocked_release"]["drop"]
     assert blocked["state"] == SkillState.FAILED, blocked["stages"]
     assert _failed(blocked) == ("transfer", Reason.NOT_PLANNED, None, True, True)
-    assert all(a["opened"] != "clear" for a in blocked["values"]["transfer_attempts"])
+    assert all(a["opened"] for a in blocked["values"]["transfer_attempts"])
     assert "gripper" not in blocked["values"] and "released_opening" not in blocked["values"]
 
     unconfirmed = scenarios["unconfirmed_release"]["drop"]
