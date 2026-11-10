@@ -18,10 +18,10 @@ time, scene revision, held and attached state, evidence kind, and, for a failed 
 its reason and cause, and the attachment the skill left declared:
 - ``success``: grasp, then place, on a manual clock; run twice, byte-identical.
 - ``missed``: a grasp where there is no can fails ``obstructed`` with nothing attached.
-- ``obstructed``: a grasp where there is no can, but a fixed post stops the fingers, as
-  the support could. The close stops short, so the attachment is declared, but the
-  fingers rest on the post, so the lift cannot plan: the grasp fails without claiming
-  ``acquired``.
+- ``obstructed``: a grasp where there is no can, but a fixed post stands between the
+  fingers. Closed, they would touch the post, which is neither the object nor its
+  support, so the close is refused before the fingers move: the grasp fails
+  ``gripper_obstructed`` at ``close``, with nothing attached and the fingers open.
 - ``stuck``: a full can stuck to the surface (glued, or in a spill). The close stops
   short on it, but the lift cannot pull free: the pads' friction on it, about 55 N,
   exceeds what the arm lifts, so the lift stalls short of its goal and fails
@@ -39,6 +39,11 @@ its reason and cause, and the attachment the skill left declared:
   carries after ``restrict``.)
 - ``unconfirmed_release``: the gripper opens only halfway, so ``release`` is not
   confirmed and the object stays attached.
+- ``beside_marker``: a marker stands upright on the work surface where ``success``'s
+  release opens the hand's outer finger link (``MARKER_XY``), clear of the hand holding
+  the can. The transfer that would release there is rejected, since the fingers would
+  open into the marker anywhere in the descent's terminal band, and the can is placed
+  from another, the release clear of it.
 - ``trajectory_only``: a planner that returns trajectories without paths still grasps.
 - ``gripper_timeout``: a 20 ms gripper deadline, shorter than the close, fails ``close``
   with ``timed_out``; the open, on a hand already open, ends within it.
@@ -159,12 +164,18 @@ DRIFT_TOLERANCE_M = 1e-4  # below the ~0.3 mm the can drifts in the fingers on t
 # monitor's 0.2 rad in the hand in 6 of 40 runs, on any machine; at 0.5, in none of 40,
 # turning at most 0.056 rad.
 CARRY_SCALING = 0.5
+# Where ``success``'s first transfer releases the can with the right outer finger link
+# opened (geodude_assets e9538a2): 38 mm outboard of it closed on the can, at the fingers'
+# height. A marker (8 mm radius, 107 mm tall) standing there touches only the opened hand.
+MARKER_XY = (0.0647, -0.4354)
+MARKER_RADIUS, MARKER_HALF_HEIGHT = 0.008, 0.0535
 
 
-def _scene(post: bool = False, stuck: bool = False) -> str:
+def _scene(post: bool = False, stuck: bool = False, marker: bool = False) -> str:
     """A full can on the work surface; with ``post``, a fixed post of the can's size where
-    ``_missed`` aims; with ``stuck``, the can held to the surface (glued, or stuck in a
-    spill) by a weld, though it is still a free object to the runtime. No can this size
+    ``_missed`` aims; with ``marker``, a marker standing at ``MARKER_XY``; with ``stuck``,
+    the can held to the surface (glued, or stuck in a spill) by a weld, though it is still
+    a free object to the runtime. No can this size
     slips from the 2F-140's grip by its weight: at about 46 N a pad, slipping at friction
     0.6 would take over 5.6 kg, denser than lead."""
     fixed = (
@@ -175,6 +186,11 @@ def _scene(post: bool = False, stuck: bool = False) -> str:
         if post
         else ""
     )
+    if marker:
+        fixed += f"""
+    <body name="marker" pos="{MARKER_XY[0]} {MARKER_XY[1]} {SURFACE_Z + MARKER_HALF_HEIGHT}">
+      <geom type="cylinder" size="{MARKER_RADIUS} {MARKER_HALF_HEIGHT}"/>
+    </body>"""
     weld = '\n  <equality>\n    <weld body1="can"/>\n  </equality>' if stuck else ""
     return f"""<mujoco>
   <worldbody>
@@ -486,6 +502,7 @@ CAUSES: dict[str, set[str] | None] = {
     Reason.COMMAND_FAILED: None,  # an execution diagnostic code, or the execution state
     Reason.COMMAND_CANCELED: None,
     Reason.TRANSITION_REFUTED: {t.value for t in Transition},
+    Reason.GRIPPER_OBSTRUCTED: {"open", "closed"},
 }
 """The vocabulary of each reason's cause: an ssrobot enum's values, or any ssrobot code
 (None). A reason not listed has no cause."""
@@ -540,6 +557,8 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     posted.write_text(_scene(post=True))
     stuck = tmp_path / "stuck.xml"
     stuck.write_text(_scene(stuck=True))
+    marked = tmp_path / "marker.xml"
+    marked.write_text(_scene(marker=True))
 
     first = json.dumps(_session(plain, _pick_and_place()), indent=2)
     again = json.dumps(_session(plain, _pick_and_place()), indent=2)
@@ -555,6 +574,7 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
             plain, _pick(), runtime_options={"attach_tolerance_m": DRIFT_TOLERANCE_M}
         ),
         "unconfirmed_release": _session(plain, _pick_and_place({"open_opening": 0.5})),
+        "beside_marker": _session(marked, _pick_and_place()),
         "trajectory_only": _session(plain, _pick(), strip=True),
         "gripper_timeout": _session(plain, _pick({"gripper_timeout_ns": GRIPPER_DEADLINE_NS})),
     }
@@ -634,18 +654,17 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     assert missed["state"] == SkillState.FAILED and missed["attachment"] is None
     assert _failed(missed) == ("obstructed", Reason.MISSED, None, False, False)
 
-    # Fingers stopped by something other than the object never make the grasp acquired.
+    # Fingers that would close on something other than the object, or its support, are
+    # never closed: the close is refused, named by what they would touch, and nothing is
+    # attached. The fingers are still open, as the open stage left them.
     obstructed = scenarios["obstructed"]["grasp"]
     assert obstructed["state"] == SkillState.FAILED, obstructed["stages"]
-    assert "acquired" not in [s["name"] for s in obstructed["stages"]]
-    # A lift that cannot plan, with the object held and declared attached: the arm has
-    # not moved since the close.
-    assert _failed(obstructed) == ("lift", Reason.NOT_PLANNED, "infeasible", True, True)
-    assert [(s["name"], s["succeeded"]) for s in obstructed["stages"][-3:]] == [
-        ("obstructed", True),
-        ("attach", True),
-        ("lift", False),
-    ]
+    assert _failed(obstructed) == ("close", Reason.GRIPPER_OBSTRUCTED, "closed", None, False)
+    assert obstructed["attachment"] is None
+    assert "close" not in obstructed["values"]["gripper"]  # never commanded
+    refused = obstructed["stages"][-1]
+    assert refused["evidence"] == "planned"
+    assert "post/" in refused["detail"], refused["detail"]
     stuck_can = scenarios["stuck"]["grasp"]
     assert stuck_can["state"] == SkillState.FAILED, stuck_can["stages"]
     assert "acquired" not in [s["name"] for s in stuck_can["stages"]]
@@ -675,6 +694,20 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
         "source": "attachment_monitor",
         "agrees": False,
     }
+
+    # A release is chosen where the opened hand fits anywhere the guard may stop the
+    # descent: the transfer that would open the fingers into the marker is rejected like
+    # an infeasible plan, and the can is placed from another.
+    beside = scenarios["beside_marker"]["place"]
+    assert beside["state"] == SkillState.SUCCEEDED, beside["stages"]
+    tried = beside["values"]["transfer_attempts"]
+    assert tried[-1]["opened"] == "clear", tried
+    rejected = [a for a in tried[:-1] if a["opened"] != "clear"]
+    assert rejected, tried  # the transfer releasing beside the marker was tried, and rejected
+    for attempt in rejected:
+        assert all(c.startswith("marker/right_ur5e/gripper/") for c in attempt["opened"]), tried
+    # In ``success``, that first transfer was kept: only the marker rejects it.
+    assert scenarios["success"]["place"]["values"]["transfer_attempts"][0]["opened"] == "clear"
 
     unconfirmed = scenarios["unconfirmed_release"]["place"]
     assert unconfirmed["state"] == SkillState.FAILED, unconfirmed["stages"]

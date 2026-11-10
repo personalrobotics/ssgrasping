@@ -18,6 +18,14 @@ reason and cause:
   bin; run twice, byte-identical.
 - ``unconfirmed_release``: the gripper opens only halfway, so ``release`` is not
   confirmed and the can stays attached.
+- ``beside_bracket``: a bracket is fixed over the bin, and the drop may release at one
+  of two zones with the hand's yaw fixed: one beside the bracket, where the fingers would
+  touch it opened though not holding the can, and one clear of it. Every transfer that
+  ends beside the bracket is rejected, naming what the opened fingers would touch, and
+  the can is released at the clear zone.
+- ``blocked_release``: the zone beside the bracket alone. No transfer ends where the hand
+  can open, so the transfer fails ``not_planned`` before the arm moves, with the can held
+  and attached and the gripper never commanded.
 - ``pulled``: the harness pulls the can down at ``PULL_N`` for ``PULL_NS``,
   ``PULL_AFTER_NS`` into the transfer, through the runtime's MuJoCo data, and it leaves
   the fingers. They close past its width, the transfer's opening guard stops the arm,
@@ -95,10 +103,18 @@ DOWN = (0.0, 1.0, 0.0, 0.0)  # x along the world's, z pointing down
 PULL_N = 200.0
 PULL_NS = 100_000_000
 PULL_AFTER_NS = 500_000_000
+# A bracket fixed over the bin, beside where a fixed-yaw drop zone puts the hand (``_beside``):
+# a 10 mm plate whose inner face is 85 mm from the hand's axis, along the fingers' opening,
+# at their height. Holding the can, the 2F-140's outer finger links are 61 mm from the axis
+# there; opened, 95 mm (geodude_assets e9538a2's declared positions). So only a release
+# touches it.
+SPAN = 0.10  # how far apart in x the two fixed-yaw zones are, either side of the bin's centre
+BRACKET = ((BIN[0] - SPAN / 2, BIN[1] - 0.090, 1.01), (0.02, 0.005, 0.03))
 
 
-def _scene() -> str:
-    """``test_grasp_place``'s full can, and the bin as a fixture."""
+def _scene(bracket: bool = False) -> str:
+    """``test_grasp_place``'s full can, and the bin as a fixture; with ``bracket``, the
+    bracket too."""
     walls = [
         ("bottom", (0.122, 0.122, 0.003), (0, 0, 0.003)),
         ("front", (0.132, 0.01, 0.397), (0, 0.129, 0.40)),
@@ -120,10 +136,34 @@ def _scene() -> str:
     </body>
     <body name="recycle_bin" pos="{BIN[0]} {BIN[1]} {BIN[2]}">
 {geoms}
-    </body>
+    </body>{_bracket() if bracket else ""}
   </worldbody>
 </mujoco>
 """
+
+
+def _bracket() -> str:
+    (x, y, z), (hx, hy, hz) = BRACKET
+    return f"""
+    <body name="bracket" pos="{x} {y} {z}">
+      <geom type="box" size="{hx} {hy} {hz}"/>
+    </body>"""
+
+
+def _beside(*xs: float) -> list[Tsr]:
+    """Drop zones over the bin at each x offset from its centre, at the legacy zone's
+    height, the hand pointing straight down at yaw 0: the fingers open along the world's
+    y, toward the bracket."""
+    z = BIN[2] + BIN_OUTER[2] + max(0.25, HEIGHT + 0.10)
+    return [
+        Tsr(
+            origin=Pose(position=(BIN[0] + x, BIN[1], z), quat_wxyz=DOWN),
+            offset=Pose(position=(0.0, 0.0, 0.0), quat_wxyz=(1.0, 0.0, 0.0, 0.0)),
+            position_bounds=((0.0, 0.0), (0.0, 0.0), (0.0, 0.0)),
+            rotation_bounds=((0.0, 0.0), (0.0, 0.0), (0.0, 0.0)),
+        )
+        for x in xs
+    ]
 
 
 def _drop_spec(**changes: Any) -> DropSpec:
@@ -300,8 +340,14 @@ def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> No
 
     first = json.dumps(_session(scene, _pick_and_drop()), indent=2)
     again = json.dumps(_session(scene, _pick_and_drop()), indent=2)
+    bracketed = tmp_path / "can_bin_and_bracket.xml"
+    bracketed.write_text(_scene(bracket=True))
     scenarios = {
         "success": json.loads(first),
+        "beside_bracket": _session(
+            bracketed, _pick_and_drop({"regions": _beside(-SPAN / 2, SPAN / 2)})
+        ),
+        "blocked_release": _session(bracketed, _pick_and_drop({"regions": _beside(-SPAN / 2)})),
         "unconfirmed_release": _session(scene, _pick_and_drop({"open_opening": 0.5})),
         "pulled": _session(scene, _pulled(pulls), wrap=_keeping(pulls)),
         "monitor_only": _session(scene, _slipped(slips), wrap=_wrapping(slips)),
@@ -341,6 +387,25 @@ def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> No
             "agrees": None,
         }
     ]
+
+    # A release is chosen where the opened hand fits: a transfer whose fingers would open
+    # into the bracket is rejected like an infeasible plan, and another is kept.
+    beside = scenarios["beside_bracket"]["drop"]
+    assert beside["state"] == SkillState.SUCCEEDED, beside["stages"]
+    tried = beside["values"]["transfer_attempts"]
+    assert tried[-1]["opened"] == "clear", tried
+    rejected = [a for a in tried[:-1] if a["opened"] != "clear"]
+    assert rejected, tried  # the zone beside the bracket was tried, and rejected
+    for attempt in rejected:
+        assert all(c.startswith("bracket/right_ur5e/gripper/") for c in attempt["opened"]), tried
+
+    # With nowhere the hand can open, the drop fails before the arm moves: the can is
+    # still held and attached, and the gripper was never commanded.
+    blocked = scenarios["blocked_release"]["drop"]
+    assert blocked["state"] == SkillState.FAILED, blocked["stages"]
+    assert _failed(blocked) == ("transfer", Reason.NOT_PLANNED, None, True, True)
+    assert all(a["opened"] != "clear" for a in blocked["values"]["transfer_attempts"])
+    assert "gripper" not in blocked["values"] and "released_opening" not in blocked["values"]
 
     unconfirmed = scenarios["unconfirmed_release"]["drop"]
     assert unconfirmed["state"] == SkillState.FAILED, unconfirmed["stages"]

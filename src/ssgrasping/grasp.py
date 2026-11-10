@@ -7,7 +7,13 @@ these stages, recording each:
    commanded before it passes.
 2. ``open``: open the gripper, so the pregrasp is planned with the fingers as they will
    approach. The command must succeed: it ends when the fingers' motion ends, and its
-   ``GripperResult`` is kept in ``values["gripper"]``, as for every gripper stage.
+   ``GripperResult`` is kept in ``values["gripper"]``, as for every gripper stage. Like
+   every gripper stage, it is first checked against the scene: with the fingers where
+   the command leaves them, the hand must touch nothing but what the command expects
+   (here nothing; for a close or the reopen after a miss, the object and its support,
+   since fully closed fingers can reach past where the object stops them; for the close
+   after the lift, the object), or the stage fails ``gripper_obstructed`` with nothing
+   commanded: fingers that would close on anything else are never closed.
 3. ``pregrasp``: plan into the pregrasp regions, and keep the plan only if the straight
    approach also plans from where it ends; otherwise plan again with the next seed, up
    to ``pregrasp_attempts``. The pregrasp alone is checked only for collision, so a
@@ -26,11 +32,11 @@ these stages, recording each:
    object's width is personalrobotics/ssgrasping#28's.
 7. ``attach``: declare the object attached, allowed to touch the hand and its support:
    the hypothesis the lift is planned under, not yet a claim that it is held.
-8. ``lift``: move straight along ``normal``, away from the support, by ``lift_m``,
-   under an opening guard midway between the opening the close stopped short at and
-   ``close_opening``. If the guard stops the lift, the fingers closed past the object's
-   width: ``retained`` is refuted, and the lift fails with the object reported not
-   held.
+8. ``lift``: move straight along ``normal``, away from the support, by ``lift_m``, at
+   ``lift_scaling`` of the joints' limits, under an opening guard midway between the
+   opening the close stopped short at and ``close_opening``. If the guard stops the
+   lift, the fingers closed past the object's width: ``retained`` is refuted, and the
+   lift fails with the object reported not held.
 9. ``acquired``: close the gripper again. If it still stops short, what stopped the
    fingers rose with them; if it reaches its target, it stayed behind, and the grasp
    fails. This is portable evidence, and the grasp's only claim that it holds the
@@ -129,6 +135,10 @@ class GraspSpec:
     its stage (``timed_out``)."""
     line_tolerance_m: float = 1e-3
     """Position tolerance of the straight approach and lift."""
+    lift_scaling: float = 1.0
+    """The fraction of the joints' velocity and acceleration limits the lift, the first
+    motion carrying the object, is planned at: as ``PlaceSpec.carry_scaling`` and
+    ``DropSpec.carry_scaling`` are for the carries that follow it."""
     pregrasp_attempts: int = 8
     """How many seeds to try for a pregrasp whose approach also plans."""
     clearance_m: float = 0.0
@@ -166,6 +176,7 @@ class GraspSpec:
             check_spec(0.0 <= getattr(self, name) <= 1.0, "between 0 and 1", name)
         check_spec(self.gripper_timeout_ns > 0, "must be positive", "gripper_timeout_ns")
         check_spec(self.pregrasp_attempts >= 1, "at least 1", "pregrasp_attempts")
+        check_spec(0.0 < self.lift_scaling <= 1.0, "in (0, 1]", "lift_scaling")
         check_spec(
             math.isfinite(self.clearance_m) and self.clearance_m >= 0,
             "must be finite and non-negative",
@@ -239,7 +250,15 @@ def _grasp(
     )
     arm = ctx.manipulator(spec.manipulator)
 
-    yield from run.grip("open", spec.gripper, spec.open_opening, spec.gripper_timeout_ns)
+    yield from run.grip(
+        "open",
+        spec.gripper,
+        spec.open_opening,
+        spec.gripper_timeout_ns,
+        ends="open",
+        group=arm.group,
+        allow=(),
+    )
     run.record(
         "open", True, f"opening {run.observe(spec.opening_channel)[0]:.3f}", Evidence.PORTABLE
     )
@@ -318,14 +337,30 @@ def _grasp(
     yield from run.move("approach", approach, planner, replan=replan_approach)
     run.boundary("close", "grasp verification: the closed opening decides what follows")
 
-    yield from run.grip("close", spec.gripper, spec.close_opening, spec.gripper_timeout_ns)
+    yield from run.grip(
+        "close",
+        spec.gripper,
+        spec.close_opening,
+        spec.gripper_timeout_ns,
+        ends="closed",
+        group=arm.group,
+        allow=(spec.object, spec.support),
+    )
     opening = float(run.observe(spec.opening_channel)[0])
     run.record("close", True, f"opening {opening:.3f}", Evidence.PORTABLE)
 
     closed = run.values["gripper"]["close"]  # type: ignore[index]
     if closed["termination"] == GripperTermination.REACHED_TARGET:
         run.held = False
-        yield from run.grip("obstructed", spec.gripper, spec.open_opening, spec.gripper_timeout_ns)
+        yield from run.grip(
+            "obstructed",
+            spec.gripper,
+            spec.open_opening,
+            spec.gripper_timeout_ns,
+            ends="open",
+            group=arm.group,
+            allow=(spec.object, spec.support),
+        )
         run.record(
             "obstructed",
             False,
@@ -356,7 +391,12 @@ def _grasp(
 
     run.begin("lift")
     lift = arm.plan_to_end_effector_offset(
-        spec.normal, spec.lift_m, planner=planner, position_tolerance=spec.line_tolerance_m
+        spec.normal,
+        spec.lift_m,
+        planner=planner,
+        position_tolerance=spec.line_tolerance_m,
+        velocity_scaling=spec.lift_scaling,
+        acceleration_scaling=spec.lift_scaling,
     )
 
     carry = retention(
@@ -366,7 +406,15 @@ def _grasp(
     )
     yield from run.move("lift", lift, planner, retain=carry)
 
-    yield from run.grip("acquired", spec.gripper, spec.close_opening, spec.gripper_timeout_ns)
+    yield from run.grip(
+        "acquired",
+        spec.gripper,
+        spec.close_opening,
+        spec.gripper_timeout_ns,
+        ends="closed",
+        group=arm.group,
+        allow=(spec.object,),
+    )
     lifted = float(run.observe(spec.opening_channel)[0])
     reclosed = run.values["gripper"]["acquired"]  # type: ignore[index]
     if reclosed["termination"] == GripperTermination.REACHED_TARGET:

@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+Every gripper motion is checked against the scene before it runs
+(personalrobotics/ssgrasping#54).
+- **The check.** Before `Run.grip` commands a gripper, the planning scene is evaluated with
+  the gripper's joints where the command leaves them: its declared `open_positions` or
+  `closed_positions` (personalrobotics/ssrobot#243), at the arm's current configuration.
+  A close and a release may touch the object and its support. The open before the
+  pregrasp may touch nothing, and the close after the lift may touch the object. Any
+  other contact fails the stage `gripper_obstructed` (new `Reason`), with cause `open` or
+  `closed`, naming what the fingers would touch; nothing is commanded.
+- **Releases chosen where the hand opens.** `drop`'s `choose` keeps a transfer only if
+  the hand, opened where it ends, touches nothing but the object. `place`'s keeps one
+  only if the hand, opened anywhere along the planned descent from `terminal_m` short of
+  the regions to its end, touches nothing but the object and the target. A rejected seed
+  is treated as an infeasible one, and `values["transfer_attempts"]` records what each
+  seed's opened fingers would touch (`opened`).
+- **Declared positions are required.** `preflight` fails `unavailable` for a gripper that
+  declares no `open_positions` and `closed_positions`, so no gripper is silently
+  unchecked. Both reference robots declare them (geodude_assets e9538a2, ada_assets
+  0703586).
+- **`GraspSpec.lift_scaling`**, default 1.0: the fraction of the joints' velocity and
+  acceleration limits the lift is planned at, in `grasp` and in `Candidates`' race.
+- **Behaviour change.** A grasp whose fingers would close on something other than the
+  object or its support is now refused at `close` (`gripper_obstructed`) instead of
+  closing on it, attaching, and failing the lift (`test_grasp_place`'s `obstructed`).
+- **Limitation.** Only where the fingers end is checked, not their sweep. Both reference
+  hands' fingers move monotonically between open and closed, so an opening sweeps no
+  further out than it ends. `Candidates`' race still checks only its transfer's
+  feasibility. `drop` chooses its own transfer, with the check.
+- Pins move to ssrobot f83b287, geodude_assets e9538a2 and ada_assets 0703586.
+
 Candidates from several named, explicitly framed grasp regions
 (personalrobotics/ssgrasping#46).
 - **Regions.** A `GraspObject` lists `GraspRegion`s: a named primitive placed in the

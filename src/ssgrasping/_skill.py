@@ -24,7 +24,7 @@ import threading
 from collections.abc import Callable, Generator, Sequence
 from concurrent.futures import Future, wait
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import Any, Literal
 
 from ssrobot import (
     CommandKind,
@@ -102,6 +102,11 @@ class Wait:
 
 
 Body = Generator[Wait, None, None]
+
+Ends = Literal["open", "closed"]
+"""Where a gripper command leaves the fingers: at the gripper's declared
+``open_positions``, or its ``closed_positions``. A close on an object stops short of
+them, so its fingers end no further in."""
 
 GRIPPER_TIMEOUT_NS = 5_000_000_000
 """The default deadline on a gripper command (``gripper_timeout_ns``): a failure bound
@@ -690,11 +695,38 @@ class Run:
                 status.state.value if status.diagnostic is None else status.diagnostic.code,
             )
 
-    def grip(self, name: str, gripper: str, opening: float, timeout_ns: int) -> Body:
+    def grip(
+        self,
+        name: str,
+        gripper: str,
+        opening: float,
+        timeout_ns: int,
+        *,
+        ends: Ends,
+        group: str,
+        allow: Sequence[str],
+    ) -> Body:
         """Command ``gripper`` to ``opening`` and wait for the command to end, which it
         does when the fingers' motion ends (``GripperResult``); require it to succeed by
-        ``timeout_ns``. The result is kept in ``values["gripper"][name]``."""
+        ``timeout_ns``. The result is kept in ``values["gripper"][name]``.
+
+        Nothing is commanded unless the hand, with the fingers where the command ``ends``
+        (the gripper's declared ``open_positions`` or ``closed_positions``) and ``group``
+        where it is, touches nothing but ``allow`` (``obstructing``): otherwise ``name``
+        fails, ``gripper_obstructed``, naming what the fingers would touch, with the
+        fingers unmoved and the object as it was. An arm trajectory is checked by the
+        planner before it runs; this is the same check for the fingers."""
         self.begin(name)
+        touched = obstructing(self.ctx, self.ctx.snapshot(), group, gripper, ends, allow)
+        if touched:
+            self.record(
+                name,
+                False,
+                f"the fingers {ends} would touch {', '.join(touched)}",
+                Evidence.PLANNED,
+                Reason.GRIPPER_OBSTRUCTED,
+                ends,
+            )
         command = GripperCommand(gripper=gripper, opening=opening)
         execution = self.ctx.submit(command, timeout_ns=timeout_ns)
         yield Wait(execution=execution)
@@ -785,6 +817,7 @@ class Run:
         attempts: int,
         *,
         planner: Planner,
+        opens: Callable[[PlanProjection, PlanResult | None], tuple[str, ...]] | None = None,
     ) -> tuple[PlanResult, PlanResult | None, PlanProjection | None]:
         """A plan for ``name`` from which the straight motion ``then`` also plans; with
         the follow-on plan and the projection it was planned on.
@@ -798,7 +831,14 @@ class Run:
         infeasible. Each seed's plan is kept only if ``follow`` plans on its projection
         (``ctx.project``): where it would leave the robot. That follow-on plan is
         returned, so a skill may continue it (``Run.kept``) once the plan runs, instead of
-        planning it again. The seeds tried are recorded in
+        planning it again.
+
+        Given ``opens``, a skill that releases the object where the plan leaves it keeps a
+        seed's plan only if the hand can open there: ``opens``, given the projection and
+        the follow-on plan, returns what the opened fingers would touch (``obstructing``),
+        and a seed whose fingers would touch anything is rejected like an infeasible plan.
+        So a release is chosen where the open hand fits, and ``Run.grip``'s check refuses
+        it only if the scene has changed since. The seeds tried are recorded in
         ``values[name + "_attempts"]``."""
         self.begin(name)
         snapshot = self.ctx.snapshot()
@@ -816,16 +856,28 @@ class Run:
                     raise
                 tried.append({"seed": seed, name: "unready", "detail": e.message})
                 continue
-            if follow is None or then is None:  # nothing follows: the first plan will do
-                tried.append({"seed": seed, name: "succeeded"})
+            if (follow is None or then is None) and opens is None:
+                tried.append({"seed": seed, name: "succeeded"})  # the first plan will do
                 return result, None, None
             projection = self.ctx.project(result, snapshot=snapshot)
-            check = follow(projection)
-            tried.append({"seed": seed, name: "succeeded", then: check.status.value})
-            if check.succeeded:
-                return result, check, projection
-        detail = f"no plan in {attempts} seeds" + (
-            "" if then is None else f" from which {then} plans"
+            entry: dict[str, object] = {"seed": seed, name: "succeeded"}
+            tried.append(entry)
+            check = None
+            if follow is not None and then is not None:
+                check = follow(projection)
+                entry[then] = check.status.value
+                if not check.succeeded:
+                    continue
+            if opens is not None:
+                touched = opens(projection, check)
+                entry["opened"] = list(touched) or "clear"
+                if touched:
+                    continue
+            return result, check, projection
+        detail = (
+            f"no plan in {attempts} seeds"
+            + ("" if then is None else f" from which {then} plans")
+            + ("" if opens is None else ", ending where the hand opens clear")
         )
         self.record(name, False, detail, Evidence.PLANNED, Reason.NOT_PLANNED)
         raise AssertionError  # unreachable: record raised
@@ -838,6 +890,45 @@ def _end(result: PlanResult) -> tuple[tuple[str, ...], tuple[float, ...]]:
         return result.path.joints, result.path.waypoints[-1]
     assert result.trajectory is not None  # a successful plan has one or the other
     return result.trajectory.joints, result.trajectory.goal
+
+
+def obstructing(
+    ctx: RobotContext,
+    snapshot: SceneSnapshot,
+    group: str,
+    gripper: str,
+    ends: Ends,
+    allow: Sequence[str],
+    qs: Sequence[Sequence[float]] | None = None,
+) -> tuple[str, ...]:
+    """What the hand touches in ``snapshot``, besides ``allow``, with ``gripper``'s joints
+    where a command leaves them, its declared ``open_positions`` or ``closed_positions``
+    by ``ends``, and ``group`` at each of ``qs`` (where it is in ``snapshot`` when None):
+    each contact as ``first/second``, from the planning scene with no clearance.
+
+    Only where the fingers end is checked, not their sweep. A gripper whose fingers move
+    monotonically between open and closed, as both reference robots' do, sweeps no
+    further out than it ends when opening, nor further in when closing."""
+    declared = ctx.description.gripper(gripper)
+    positions = declared.open_positions if ends == "open" else declared.closed_positions
+    assert positions is not None  # preflight refuses a gripper that declares none
+    missing = set(declared.joints) - set(snapshot.joints)
+    assert not missing, missing  # a snapshot measures every joint of the description
+    at = _at(snapshot, declared.joints, positions)
+    if qs is None:
+        qs = (tuple(snapshot.position(j) for j in ctx.description.group(group).joints),)
+    scene = ctx.planning_scene(at, group)
+    allowed = set(allow)
+    return tuple(
+        sorted(
+            {
+                f"{c.first}/{c.second}"
+                for q in qs
+                for c in scene.contacts(q)
+                if c.first not in allowed and c.second not in allowed
+            }
+        )
+    )
 
 
 def _at(snapshot: SceneSnapshot, joints: Sequence[str], q: Sequence[float]) -> SceneSnapshot:
@@ -861,7 +952,9 @@ def preflight(
     carries: str | None = None,
 ) -> None:
     """Record ``preflight``: every reference resolves, and every command, channel, and
-    guard the skill will use is declared available, before anything is commanded. A skill
+    guard the skill will use is declared available, before anything is commanded. The
+    gripper must declare where its fingers end open and closed, which every gripper
+    command is checked with (``Run.grip``). A skill
     that carries the object names the opening channel its carries are guarded on
     (``carries``)."""
     ctx = run.ctx
@@ -873,8 +966,14 @@ def preflight(
         problems.append(f"no manipulator {manipulator!r}")
     if end_effector not in {e.name for e in d.end_effectors}:
         problems.append(f"no end effector {end_effector!r}")
-    if gripper not in {g.name for g in d.grippers}:
+    declared = next((g for g in d.grippers if g.name == gripper), None)
+    if declared is None:
         problems.append(f"no gripper {gripper!r}")
+    elif declared.open_positions is None:
+        problems.append(
+            f"gripper {gripper!r} declares no open_positions and closed_positions, so its "
+            "commands cannot be checked against the scene"
+        )
     if run.obj not in info.objects:
         problems.append(f"no scene object {run.obj!r}")
     if support not in {f.name for f in d.frames} | set(info.fixtures):

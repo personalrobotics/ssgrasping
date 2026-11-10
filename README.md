@@ -39,7 +39,7 @@ documents its stages and their exact conditions.
 
 Failure is reported in terms of the physical situation rather than as a bare error.
 Before anything is commanded, a `preflight` stage confirms that every frame, command,
-and channel the skill will use is available. A missed grasp reopens the gripper,
+and channel the skill will use is available. Every commanded motion, arm or gripper, is checked against the scene before it runs. The planner validates each arm trajectory. A gripper command runs only if the hand, with its fingers where the command leaves them (the gripper's declared `open_positions` or `closed_positions`), touches nothing but what the command expects: the object and its support, for a close or a release. Otherwise the stage fails `gripper_obstructed` with nothing moved. `place` and `drop` also choose their transfers where the hand can open, so that refusal is rare. A gripper that declares no positions is refused at `preflight`. A missed grasp reopens the gripper,
 because that cleanup has an unambiguous meaning. Once an object has been declared
 attached, a later failure leaves the attachment in place and reports the object as
 held, because that is the physically conservative assumption, unless the gripper opening
@@ -73,6 +73,7 @@ The reason names the vocabulary of its cause, and a cause is a code, never prose
 | `no_contact` | The guarded descent ended without its guard triggering | `descend` | The `GuardCause` |
 | `outside_regions` | The held object is outside every target region | `contact` | None |
 | `transition_refuted` | Portable evidence refuted a manipulation transition the stage needs: for `retained`, the opening guard stopped a carry when the fingers closed past the object's width | `lift`, `transfer` | The `Transition` |
+| `gripper_obstructed` | The fingers, where the gripper command would leave them, would touch something the command does not expect: nothing was commanded | any gripper stage: `open`, `close`, `obstructed`, `acquired`, `release` | Where the command ends: `open` or `closed` |
 
 A stage that replans after a refusal and then succeeds has no reason; the refusal is in
 its lookahead log. A race's candidates record each plan's `plan_status`, the planner's

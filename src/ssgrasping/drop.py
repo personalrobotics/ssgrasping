@@ -9,15 +9,18 @@ falls.
    commanded before it passes.
 2. ``transfer``: plan the end effector into the drop regions, with the hand alone
    allowed, at ``carry_scaling`` of the joints' velocity and acceleration limits, and
-   execute. With a retreat, a plan is kept only if the retreat also plans from where it
-   ends; up to ``transfer_attempts`` seeds are tried. The regions are given for the end
+   execute. A plan is kept only if the hand, opened where it ends, touches nothing but
+   the object, and, with a retreat, only if the retreat also plans from there; up to
+   ``transfer_attempts`` seeds are tried. The regions are given for the end
    effector, as a container's drop zone usually is: the hand over the opening, pointing
    in. The transfer carries the object under an opening guard midway between the
    opening it is held at when the drop begins and ``close_opening``: if the guard stops
    it, ``retained`` is refuted, and the transfer fails with the object reported not
    held.
-3. ``release``: open the gripper, require the command to succeed and the opening to
-   reach ``released_opening``, and detach. An unconfirmed release keeps the attachment
+3. ``release``: open the gripper, once the hand, with the fingers open, is checked to
+   touch nothing but the object (``gripper_obstructed`` otherwise, with nothing
+   commanded); require the command to succeed and the opening to reach
+   ``released_opening``, and detach. An unconfirmed release keeps the attachment
    and reports the object's held state as unknown.
    A confirmed release then hands the object to the caller's ``released`` policy.
 4. ``retreat``: move straight along the container's outward ``normal`` by
@@ -56,6 +59,7 @@ from ssgrasping._skill import (
     Lookahead,
     Run,
     check_spec,
+    obstructing,
     preflight,
     retention,
     unit,
@@ -198,6 +202,9 @@ def _drop(
             (lambda start: _away(ctx, start, checker, spec)) if retreats else None,
             spec.transfer_attempts,
             planner=planner,
+            opens=lambda end, _: obstructing(
+                ctx, end.state, arm.group, spec.gripper, "open", (spec.object,)
+            ),
         )
         return transfer
 
@@ -215,7 +222,15 @@ def _drop(
     run.boundary(
         "release", "whether the fingers let go decides what follows; detaching changes the scene"
     )
-    yield from run.grip("release", spec.gripper, spec.open_opening, spec.gripper_timeout_ns)
+    yield from run.grip(
+        "release",
+        spec.gripper,
+        spec.open_opening,
+        spec.gripper_timeout_ns,
+        ends="open",
+        group=arm.group,
+        allow=(spec.object,),
+    )
     opening = float(run.observe(spec.opening_channel)[0])
     run.values["released_opening"] = opening
     if opening < spec.released_opening:
