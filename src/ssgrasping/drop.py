@@ -23,8 +23,9 @@ falls.
 3. ``release``: open the gripper, once the hand, with the fingers open, is checked to
    touch nothing but the object (``gripper_obstructed`` otherwise, with nothing
    commanded); require the command to succeed and the opening to reach
-   ``released_opening``, and detach. Where the object was let go, by the measured
-   joints and the declared attachment transform, is kept in ``values["released_at"]``.
+   ``released_opening``, and detach. Where a confirmed release let the object go, by the
+   measured joints and the declared attachment transform, is kept in
+   ``values["released_at"]``.
    An unconfirmed release keeps the attachment and reports the object's held state as
    unknown.
    A confirmed release then hands the object to the caller's ``released`` policy.
@@ -74,10 +75,14 @@ from ssgrasping._skill import (
 from ssgrasping.execution import SkillExecution
 from ssgrasping.outcomes import Criterion, Evidence, Reason, Transition, TransitionEstimate
 
+MAX_FALL_M = 1.0
+"""The longest fall a drop checks (``DropSpec.fall_m``), in metres: far more than any hand
+reaches below what it holds, and few enough steps that a units mistake fails loudly."""
 
-@dataclass(frozen=True, slots=True)
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class DropSpec:
-    """Everything a drop needs, explicitly."""
+    """Everything a drop needs, explicitly, by keyword."""
 
     manipulator: str
     end_effector: str
@@ -124,7 +129,11 @@ class DropSpec:
         object.__setattr__(self, "normal", unit(self.normal, "normal"))
         check_spec(len(self.regions) > 0, "at least one region", "regions")
         check_spec(self.retreat_m >= 0, "must be non-negative", "retreat_m")
-        check_spec(math.isfinite(self.fall_m) and self.fall_m > 0, "finite and positive", "fall_m")
+        check_spec(
+            math.isfinite(self.fall_m) and 0 < self.fall_m <= MAX_FALL_M,
+            f"in (0, {MAX_FALL_M}] m",
+            "fall_m",
+        )
         check_spec(self.line_tolerance_m > 0, "must be positive", "line_tolerance_m")
         check_spec(self.gripper_timeout_ns > 0, "must be positive", "gripper_timeout_ns")
         for name in ("open_opening", "close_opening", "released_opening"):
@@ -233,16 +242,6 @@ def _drop(
     run.boundary(
         "release", "whether the fingers let go decides what follows; detaching changes the scene"
     )
-    # Where the object is let go: by the measured joints, the end effector's kinematics,
-    # and the declared attachment transform, as ``place`` judges contact. The arm does not
-    # move while the fingers open.
-    snapshot = ctx.snapshot()
-    q = tuple(snapshot.position(j) for j in ctx.description.group(arm.group).joints)
-    frame = ctx.description.end_effector(attachment.end_effector).frame
-    at = compose(
-        ctx.planning_scene(snapshot, arm.group).forward_kinematics(q, frame), attachment.transform
-    )
-    run.values["released_at"] = [list(at.position), list(at.quat_wxyz)]
     yield from run.grip(
         "release",
         spec.gripper,
@@ -263,6 +262,16 @@ def _drop(
             Evidence.PORTABLE,
             Reason.RELEASE_UNCONFIRMED,
         )
+    # Where the object was let go, once it was: by the measured joints, the end effector's
+    # kinematics, and the declared attachment transform, as ``place`` judges contact. The
+    # arm does not move while the fingers open.
+    snapshot = ctx.snapshot()
+    q = tuple(snapshot.position(j) for j in ctx.description.group(arm.group).joints)
+    frame = ctx.description.end_effector(attachment.end_effector).frame
+    at = compose(
+        ctx.planning_scene(snapshot, arm.group).forward_kinematics(q, frame), attachment.transform
+    )
+    run.values["released_at"] = [list(at.position), list(at.quat_wxyz)]
     ctx.detach(spec.object)
     run.held = False
     run.record("release", True, f"opening {opening:.3f}; detached", Evidence.PORTABLE)

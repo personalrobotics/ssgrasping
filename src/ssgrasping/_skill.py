@@ -879,7 +879,7 @@ class Run:
         detail = (
             f"no plan in {attempts} seeds"
             + ("" if then is None else f" from which {then} plans")
-            + ("" if opens is None else ", ending where the hand opens clear")
+            + ("" if opens is None else ", ending where the release is clear")
         )
         self.record(name, False, detail, Evidence.PLANNED, Reason.NOT_PLANNED)
         raise AssertionError  # unreachable: record raised
@@ -981,8 +981,12 @@ def falls_clear(
     falls, nor between the steps. ``fall_m`` must reach at least as far below the object
     as the hand does.
 
+    Another object held, such as one in another hand, is the robot's here: a fall onto it
+    is not clear.
+
     Refused (``ValidationError``): ``obj`` not attached in ``snapshot``; a gripper that
-    declares no positions; ``fall_m`` not finite and positive."""
+    declares no positions; a snapshot that does not measure every one of its joints;
+    ``fall_m`` not finite and positive."""
     attachment = next((a for a in snapshot.attachments if a.object == obj), None)
     if attachment is None:
         raise ValidationError("not_attached", f"{obj!r} is not attached", path="obj")
@@ -995,6 +999,11 @@ def falls_clear(
             f"gripper {gripper!r} declares no open_positions and closed_positions",
             path="gripper",
         )
+    missing = sorted(set(declared.joints) - set(snapshot.joints))
+    if missing:
+        raise ValidationError(
+            "missing_joints", f"the snapshot does not measure {', '.join(missing)}", path="snapshot"
+        )
     if q is None:
         q = tuple(snapshot.position(j) for j in ctx.description.group(group).joints)
     frame = ctx.description.end_effector(attachment.end_effector).frame
@@ -1005,7 +1014,7 @@ def falls_clear(
     opened = _at(snapshot.with_attachments(others), declared.joints, declared.open_positions)
     measured = any(o.status is ObjectStatus.MEASURED for o in opened.objects)
     status = ObjectStatus.MEASURED if measured else ObjectStatus.REGISTERED
-    robot = {f.name for f in ctx.description.frames}
+    robot = {f.name for f in ctx.description.frames} | {a.object for a in others}
     x, y, z = released.position
     steps = max(1, math.ceil(fall_m / FALL_STEP))
     touched: set[str] = set()

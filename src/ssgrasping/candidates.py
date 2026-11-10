@@ -85,7 +85,7 @@ from ssrobot import (
 )
 
 from ssgrasping._poses import compose, for_hand, invert
-from ssgrasping._skill import Ahead, Kept, Lookahead, lookahead_entry
+from ssgrasping._skill import Ahead, Kept, Lookahead, _at, check_spec, lookahead_entry
 from ssgrasping.drop import DropSpec, release_clear
 from ssgrasping.execution import SkillExecution
 from ssgrasping.grasp import GraspSpec, _approach_goal, _selected_grasp
@@ -93,7 +93,8 @@ from ssgrasping.grasp import GraspSpec, _approach_goal, _selected_grasp
 
 @dataclass(frozen=True, slots=True)
 class Candidate:
-    """One way to grasp, and the drop it leads to."""
+    """One way to grasp, and the drop it leads to: of the same object, by the same
+    manipulator, end effector and gripper (``invalid_spec`` otherwise)."""
 
     label: str
     grasp: GraspSpec
@@ -102,6 +103,15 @@ class Candidate:
     """Plans the follow-on checks (approach, lift, retreat), as in ``grasp``."""
     drop: DropSpec | None = None
     priority: int = 0
+
+    def __post_init__(self) -> None:
+        if self.drop is not None:
+            for name in ("object", "manipulator", "end_effector", "gripper"):
+                check_spec(
+                    getattr(self.drop, name) == getattr(self.grasp, name),
+                    f"the drop's {name} is the grasp's",
+                    f"drop.{name}",
+                )
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,9 +282,14 @@ class Candidates:
             # module.
             def releases(result: StageResult) -> str | None:
                 """Why the drop could not release where this transfer ends, as ``drop``
-                judges it (``release_clear``): None when it could."""
+                judges it (``release_clear``): None when it could. The race plans with
+                the fingers open, as they are before the grasp, so the release is judged
+                from the hand closed at its declared ``closed_positions``, as ``drop``
+                carries it: what opening it would newly touch, and the object's fall."""
                 assert drop is not None
-                stopped = release_clear(ctx, result.projection.state, arm.group, drop)
+                gripper = ctx.description.gripper(drop.gripper)
+                closed = _at(result.projection.state, gripper.joints, gripper.closed_positions)
+                stopped = release_clear(ctx, closed, arm.group, drop)
                 return f"release not clear: {', '.join(stopped)}" if stopped else None
 
             stages.append(

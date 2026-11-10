@@ -23,7 +23,7 @@ A drop is a placement released in the air (personalrobotics/ssgrasping#53).
 - **Where a drop let go.** `drop` records `values["released_at"]`: the object's pose by
   the measured joints and the attachment.
 - **Not checked.** The object's turning as it falls, and its fall between steps.
-- ssrobot's pin moves to the commit that adds `Stage.accept` (personalrobotics/ssrobot#250).
+- ssrobot's pin moves to 297e268, which adds `Stage.accept` (personalrobotics/ssrobot#250).
 
 `obstructing` and `Ends` are public, so an application that commands a gripper itself,
 outside a skill, checks it as the skills do (personalrobotics/geodude#272).
