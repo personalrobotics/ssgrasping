@@ -384,6 +384,11 @@ def _report(result: SkillResult) -> dict[str, Any]:
             }
             for e in result.evaluations
         ],
+        # The privileged readings behind each evaluation's reference, such as the object's
+        # pose before and after a carry: what a disagreement is diagnosed from.
+        "evaluation_evidence": [
+            [[o.channel, o.time_ns, list(o.value)] for o in e.evidence] for e in result.evaluations
+        ],
     }
 
 
