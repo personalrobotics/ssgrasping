@@ -911,12 +911,29 @@ def obstructing(
 
     Only where the fingers end is checked, not their sweep. A gripper whose fingers move
     monotonically between open and closed, as both reference robots' do, sweeps no
-    further out than it ends when opening, nor further in when closing."""
+    further out than it ends when opening, nor further in when closing. ``snapshot`` must
+    be the scene as it is when the command is sent.
+
+    Refused (``ValidationError``): ``ends`` other than ``"open"`` or ``"closed"``; ``allow``
+    given as one string rather than a sequence of names; a gripper that declares no
+    positions; a snapshot that does not measure every one of its joints."""
+    if ends not in ("open", "closed"):
+        raise ValidationError("invalid_ends", f"{ends!r} is not 'open' or 'closed'", path="ends")
+    if isinstance(allow, str):
+        raise ValidationError("wrong_type", "a sequence of names, not one string", path="allow")
     declared = ctx.description.gripper(gripper)
     positions = declared.open_positions if ends == "open" else declared.closed_positions
-    assert positions, gripper  # preflight refuses a gripper that declares none
-    missing = set(declared.joints) - set(snapshot.joints)
-    assert not missing, missing  # a snapshot measures every joint of the description
+    if not positions:
+        raise ValidationError(
+            "undeclared_positions",
+            f"gripper {gripper!r} declares no open_positions and closed_positions",
+            path="gripper",
+        )
+    missing = sorted(set(declared.joints) - set(snapshot.joints))
+    if missing:
+        raise ValidationError(
+            "missing_joints", f"the snapshot does not measure {', '.join(missing)}", path="snapshot"
+        )
     if qs is None:
         qs = (tuple(snapshot.position(j) for j in ctx.description.group(group).joints),)
     allowed = set(allow)

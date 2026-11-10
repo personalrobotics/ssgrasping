@@ -31,7 +31,11 @@ its reason and cause, and the attachment the skill left declared:
 - ``preflight``: an unknown channel fails ``preflight`` before anything is commanded.
 - ``undeclared``: Geodude's package with its grippers' ``open_positions`` and
   ``closed_positions`` removed. No gripper command could be checked against the scene,
-  so the grasp fails ``preflight`` before anything is commanded.
+  so the grasp fails ``preflight`` before anything is commanded; and ``obstructing``,
+  called by an application outside any skill, refuses the gripper too.
+- ``refusals``: ``obstructing`` refuses ``ends`` other than ``open`` or ``closed``, and
+  ``allow`` given as one string, rather than checking the wrong configuration or
+  allowing the wrong bodies.
 - ``external``: the same grasp on an externally clocked runtime, driven by ``run_skill``
   through ``update()`` alone.
 - ``cancelled``: an external-clock grasp cancelled while its approach runs.
@@ -99,6 +103,7 @@ from ssrobot import (
     RestOutcome,
     RobotContext,
     Tsr,
+    ValidationError,
     WrenchGuard,
     WrenchPart,
     load_installed_package,
@@ -122,6 +127,7 @@ from ssgrasping import (
     Transition,
     grasp,
     grasp_regions,
+    obstructing,
     place,
     run_skill,
     sstsr,
@@ -417,6 +423,25 @@ def _session(
         return run(ctx, planner, checker, can)
 
 
+def _refused(ctx: RobotContext, **changes: Any) -> str | None:
+    """The code ``obstructing`` refuses its arguments with, ``changes`` applied; None if
+    it checks them."""
+    args: dict[str, Any] = {"ends": "open", "allow": ("can",), **changes}
+    try:
+        obstructing(ctx, ctx.snapshot(), "right_arm", "right_gripper", **args)
+    except ValidationError as e:
+        return e.code
+    return None
+
+
+def _refusals(ctx: RobotContext, planner: Planner, checker: Planner, can: Pose) -> dict[str, Any]:
+    return {
+        "checked": _refused(ctx),
+        "ends": _refused(ctx, ends="opened"),
+        "allow": _refused(ctx, allow="can"),
+    }
+
+
 def _undeclared(work: Path) -> Any:
     """Geodude's package, copied to ``work`` with its grippers' declared positions
     removed."""
@@ -665,6 +690,10 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
         "stuck": _session(stuck, _pick()),
         "preflight": _session(plain, _pick({"opening_channel": "right_gripper_width"})),
         "undeclared": _session(plain, _pick(), package=_undeclared(tmp_path)),
+        "undeclared_check": _session(
+            plain, lambda ctx, *_: {"code": _refused(ctx)}, package=_undeclared(tmp_path / "again")
+        ),
+        "refusals": _session(plain, _refusals),
         "external": _session(plain, _pick(), external=True),
         "cancelled": _session(plain, _cancelled, external=True),
         "drifted": _session(
@@ -779,6 +808,8 @@ def test_geodude_picks_and_places_a_can(artifacts: Path, tmp_path: Path) -> None
     assert undeclared["stages"][0]["time_ns"] == 0  # nothing ran
     assert _failed(undeclared)[:2] == ("preflight", Reason.UNAVAILABLE)
     assert "declares no open_positions" in undeclared["stages"][0]["detail"]
+    assert scenarios["undeclared_check"] == {"code": "undeclared_positions"}
+    assert scenarios["refusals"] == {"checked": None, "ends": "invalid_ends", "allow": "wrong_type"}
 
     assert scenarios["external"]["grasp"]["state"] == SkillState.SUCCEEDED
     assert scenarios["external"]["grasp"]["stages"][-1]["name"] == "retained"
