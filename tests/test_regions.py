@@ -117,7 +117,7 @@ def _pick(scene: Path) -> dict[str, Any]:
             approach_m=STANDOFF,
             regions=("body",),
         )
-        spec = body.spec(support="vention_base", normal=UP, lift_m=0.06)
+        spec = body.spec(support="vention_base", normal=UP, lift_m=0.06, clearance_m=0.005)
         result = _drive(ctx, grasp(ctx, planner, spec, check_planner=checker))
         lifted = ctx.observe(ObservationRequest(channels=("mug.pose",))).readings[0].value
     return {

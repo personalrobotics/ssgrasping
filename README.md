@@ -29,7 +29,12 @@ closes again: only if the fingers still stop short is the object acquired. It fi
 confirms that the object is clear of everything. `place` carries a held object to a target region, waits until the arm
 is observed at rest, so the force guard tares a settled wrist, descends under that guard
 until contact, releases the object, and retreats. `drop`
-carries the object over a container and lets it fall. It ends at the confirmed
+carries the object over a container and lets it fall: a placement released in the air.
+Its regions are for the object, such as its resting orientations over a container's
+opening, and it composes them with how the object is actually held, as `place` does, so
+a bottle held from the side is let go upright with the hand level. It releases only
+where the opened hand touches nothing but the object and the object's fall is clear of
+the robot. It ends at the confirmed
 release, so the robot can move on at once. Where a placed or dropped object came to
 rest is not something a physical robot observes yet, so it is never a stage (see
 *Manipulation transitions*). `landing` scores a drop's `landed` estimate against the
@@ -83,8 +88,8 @@ own status, so a planning timeout is told from an infeasible goal without its de
 
 `GraspSpec`, `PlaceSpec`, `DropSpec`, and `LandingSpec` name everything a skill needs: the manipulator,
 end effector, gripper, and gripper-opening channel; the object and the support it rests
-on, with the support's outward normal; the regions in which the hand or the object
-must end, as task space regions; and the distances, tolerances, and attempt limits for
+on, with the support's outward normal; the regions in which the hand (a grasp's
+pregrasps) or the object (a placement's and a drop's) must end, as task space regions; and the distances, tolerances, and attempt limits for
 each stage. Nothing is inferred from names. Joint rest uses the criteria the runtime
 declares for the arm's channel.
 
@@ -341,7 +346,9 @@ with RobotContext(package.description, runtime) as ctx:
     # Backed off 8 cm along the hand's approach axis: the distance the grasp then
     # approaches in a straight line.
     regions = grasp_regions(can, profile, sstsr.SstsrTemplates(hand), approach_m=0.08)
-    spec = regions.spec(support="vention_base", normal=(0.0, 0.0, 1.0), lift_m=0.06)
+    spec = regions.spec(
+        support="vention_base", normal=(0.0, 0.0, 1.0), lift_m=0.06, clearance_m=0.005
+    )
     result = run_skill(ctx, grasp(ctx, planner, spec, check_planner=checker), max_ticks=200_000)
 
 print(result.state.value)

@@ -71,7 +71,7 @@ from ssrobot import (
     WrenchGuard,
 )
 
-from ssgrasping._poses import compose, inside, invert, offset_interval
+from ssgrasping._poses import compose, for_hand, inside, offset_interval
 from ssgrasping._skill import (
     GRIPPER_TIMEOUT_NS,
     REST_TIMEOUT_NS,
@@ -96,9 +96,9 @@ release is checked at along the descent's terminal band: the planner's own edge
 resolution in the tests."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class PlaceSpec:
-    """Everything a placement needs, explicitly."""
+    """Everything a placement needs, explicitly, by keyword."""
 
     manipulator: str
     end_effector: str
@@ -148,11 +148,13 @@ class PlaceSpec:
     holds it by friction alone."""
     transfer_attempts: int = 8
     """How many seeds to try for a transfer whose descent also plans."""
-
-    clearance_m: float = 0.0
+    clearance_m: float
     """The clearance the transfer, a move through free space carrying the object, keeps
     from the environment (``PlanningRequest.clearance_m``). The guarded descent and the
-    retreat, which must come close to the target, keep none."""
+    retreat, which must come close to the target, keep none.
+    Required, with no default: a move through free space planned with none may skim what
+    it passes by half a millimetre, and a held object dragged so turns in the hand
+    (personalrobotics/ssgrasping#57's Linux carry)."""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "normal", unit(self.normal, "normal"))
@@ -237,9 +239,9 @@ def _place(
     assert attachment is not None
     arm = ctx.manipulator(spec.manipulator)
     hand = attachment.allow
-    object_to_hand = invert(attachment.transform)
     raised = [
-        _moved(_for_hand(r, object_to_hand), spec.normal, spec.preplace_m) for r in spec.regions
+        _moved(for_hand(r, attachment.transform), spec.normal, spec.preplace_m)
+        for r in spec.regions
     ]
     transfer, _, _ = run.choose(
         "transfer",
@@ -451,11 +453,6 @@ def _allowing(snapshot: SceneSnapshot, spec: PlaceSpec) -> SceneSnapshot:
         for a in snapshot.attachments
     )
     return snapshot.with_attachments(attachments)
-
-
-def _for_hand(region: Tsr, object_to_hand: Pose) -> Tsr:
-    """``region`` for the object frame, as a region for the end effector frame holding it."""
-    return replace(region, offset=compose(region.offset, object_to_hand))
 
 
 def _moved(region: Tsr, direction: tuple[float, float, float], distance: float) -> Tsr:

@@ -7,21 +7,27 @@ falls.
 1. ``preflight``: every reference resolves, and every command and channel the drop uses
    is available, with a guard on the opening channel for the transfer. Nothing is
    commanded before it passes.
-2. ``transfer``: plan the end effector into the drop regions, with the hand alone
-   allowed, at ``carry_scaling`` of the joints' velocity and acceleration limits, and
-   execute. A plan is kept only if the hand, opened where it ends, touches nothing but
-   the object, and, with a retreat, only if the retreat also plans from there; up to
-   ``transfer_attempts`` seeds are tried. The regions are given for the end
-   effector, as a container's drop zone usually is: the hand over the opening, pointing
-   in. The transfer carries the object under an opening guard midway between the
-   opening it is held at when the drop begins and ``close_opening``: if the guard stops
-   it, ``retained`` is refuted, and the transfer fails with the object reported not
-   held.
+2. ``transfer``: plan the end effector to release the object in the drop regions, with
+   the hand alone allowed, at ``carry_scaling`` of the joints' velocity and acceleration
+   limits, and execute. The regions are given for the object, as ``place``'s are, such
+   as its resting orientations over a container's opening (sstsr's ``OpeningPlacer``):
+   the held object's attachment transform turns them into regions for the end effector,
+   so the hand goes wherever holding the object so puts it in one. A plan is kept only
+   if its release is clear (``release_clear``): the hand, opened where it ends, touches
+   nothing but the object, and the object, released there, falls ``fall_m`` touching no
+   part of the robot; and, with a retreat, only if the retreat also plans from there.
+   Up to ``transfer_attempts`` seeds are tried. The transfer carries the object under an
+   opening guard midway between the opening it is held at when the drop begins and
+   ``close_opening``: if the guard stops it, ``retained`` is refuted, and the transfer
+   fails with the object reported not held.
 3. ``release``: open the gripper, once the hand, with the fingers open, is checked to
    touch nothing but the object (``gripper_obstructed`` otherwise, with nothing
    commanded); require the command to succeed and the opening to reach
-   ``released_opening``, and detach. An unconfirmed release keeps the attachment
-   and reports the object's held state as unknown.
+   ``released_opening``, and detach. Where a confirmed release let the object go, by the
+   measured joints and the declared attachment transform, is kept in
+   ``values["released_at"]``.
+   An unconfirmed release keeps the attachment and reports the object's held state as
+   unknown.
    A confirmed release then hands the object to the caller's ``released`` policy.
 4. ``retreat``: move straight along the container's outward ``normal`` by
    ``retreat_m``; none when ``retreat_m`` is 0, so the next motion can start, and be
@@ -53,12 +59,14 @@ from ssrobot import (
     Tsr,
 )
 
+from ssgrasping._poses import compose, for_hand
 from ssgrasping._skill import (
     GRIPPER_TIMEOUT_NS,
     Body,
     Lookahead,
     Run,
     check_spec,
+    falls_clear,
     obstructing,
     preflight,
     retention,
@@ -67,10 +75,14 @@ from ssgrasping._skill import (
 from ssgrasping.execution import SkillExecution
 from ssgrasping.outcomes import Criterion, Evidence, Reason, Transition, TransitionEstimate
 
+MAX_FALL_M = 1.0
+"""The longest fall a drop checks (``DropSpec.fall_m``), in metres: far more than any hand
+reaches below what it holds, and few enough steps that a units mistake fails loudly."""
 
-@dataclass(frozen=True, slots=True)
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class DropSpec:
-    """Everything a drop needs, explicitly."""
+    """Everything a drop needs, explicitly, by keyword."""
 
     manipulator: str
     end_effector: str
@@ -86,8 +98,11 @@ class DropSpec:
     """The container opening's outward unit normal, in the world: the retreat's
     direction."""
     regions: Sequence[Tsr]
-    """Where the end effector may be when it lets go, in the world."""
+    """Where the object's frame may be when it is let go, in the world."""
     retreat_m: float
+    fall_m: float
+    """How far below its release the object's fall is checked clear of the robot: at
+    least as far as the hand reaches below the object it holds."""
     open_opening: float = 1.0
     close_opening: float = 0.0
     """The closing target the object is held with: the grasp's ``close_opening``. The
@@ -105,15 +120,23 @@ class DropSpec:
     holds it by friction alone."""
     transfer_attempts: int = 8
     """How many seeds to try for a transfer whose retreat also plans."""
-    clearance_m: float = 0.0
+    clearance_m: float
     """The clearance the transfer, a move through free space carrying the object, keeps
     from the environment (``PlanningRequest.clearance_m``). The retreat, which starts
-    over the container, keeps none."""
+    over the container, keeps none.
+    Required, with no default: a move through free space planned with none may skim what
+    it passes by half a millimetre, and a held object dragged so turns in the hand
+    (personalrobotics/ssgrasping#57's Linux carry)."""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "normal", unit(self.normal, "normal"))
         check_spec(len(self.regions) > 0, "at least one region", "regions")
         check_spec(self.retreat_m >= 0, "must be non-negative", "retreat_m")
+        check_spec(
+            math.isfinite(self.fall_m) and 0 < self.fall_m <= MAX_FALL_M,
+            f"in (0, {MAX_FALL_M}] m",
+            "fall_m",
+        )
         check_spec(self.line_tolerance_m > 0, "must be positive", "line_tolerance_m")
         check_spec(self.gripper_timeout_ns > 0, "must be positive", "gripper_timeout_ns")
         for name in ("open_opening", "close_opening", "released_opening"):
@@ -183,15 +206,17 @@ def _drop(
             Evidence.PLANNED,
             Reason.NOT_ATTACHED,
         )
+    assert attachment is not None
     arm = ctx.manipulator(spec.manipulator)
     retreats = spec.retreat_m > 0
+    hand = [for_hand(r, attachment.transform) for r in spec.regions]
 
     def choose() -> PlanResult:
         transfer, _, _ = run.choose(
             "transfer",
             "retreat" if retreats else None,
             lambda snapshot, seed: arm.plan_to_tsr(
-                spec.regions,
+                hand,
                 snapshot=snapshot,
                 planner=planner,
                 seed=seed,
@@ -202,9 +227,7 @@ def _drop(
             (lambda start: _away(ctx, start, checker, spec)) if retreats else None,
             spec.transfer_attempts,
             planner=planner,
-            opens=lambda end, _: obstructing(
-                ctx, end.state, arm.group, spec.gripper, "open", (spec.object,)
-            ),
+            opens=lambda end, _: release_clear(ctx, end.state, arm.group, spec),
         )
         return transfer
 
@@ -242,6 +265,16 @@ def _drop(
             Evidence.PORTABLE,
             Reason.RELEASE_UNCONFIRMED,
         )
+    # Where the object was let go, once it was: by the measured joints, the end effector's
+    # kinematics, and the declared attachment transform, as ``place`` judges contact. The
+    # arm does not move while the fingers open.
+    snapshot = ctx.snapshot()
+    q = tuple(snapshot.position(j) for j in ctx.description.group(arm.group).joints)
+    frame = ctx.description.end_effector(attachment.end_effector).frame
+    at = compose(
+        ctx.planning_scene(snapshot, arm.group).forward_kinematics(q, frame), attachment.transform
+    )
+    run.values["released_at"] = [list(at.position), list(at.quat_wxyz)]
     ctx.detach(spec.object)
     run.held = False
     run.record("release", True, f"opening {opening:.3f}; detached", Evidence.PORTABLE)
@@ -252,6 +285,18 @@ def _drop(
     if retreats:
         run.begin("retreat")
         yield from run.move("retreat", _away(ctx, ctx.snapshot(), planner, spec), planner)
+
+
+def release_clear(
+    ctx: RobotContext, state: SceneSnapshot, group: str, spec: DropSpec
+) -> tuple[str, ...]:
+    """What would stop ``spec``'s release in ``state``, with ``group`` where it is there:
+    what the hand, opened, would touch besides the object (``obstructing``), and what of
+    the robot the object would touch as it falls ``fall_m`` (``falls_clear``). None when
+    the release is clear. The drop's transfer and ``Candidates``' race of it are kept only
+    where it is."""
+    opened = obstructing(ctx, state, group, spec.gripper, "open", (spec.object,))
+    return opened + falls_clear(ctx, state, group, spec.gripper, spec.object, spec.fall_m)
 
 
 def _away(

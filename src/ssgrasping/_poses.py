@@ -6,6 +6,7 @@ Pure Python, so the base package needs nothing beyond ssrobot's neutral core.
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 
 from ssrobot import Pose, Tsr
 
@@ -53,6 +54,14 @@ def invert(a: Pose) -> Pose:
     q = _conjugate(a.quat_wxyz)
     t = rotate(q, a.position)
     return Pose(position=(-t[0], -t[1], -t[2]), quat_wxyz=_normalized(q))
+
+
+def for_hand(region: Tsr, held: Pose) -> Tsr:
+    """``region``, for the frame of an object held at ``held`` (its pose in the end
+    effector's frame), as a region for the end effector holding it. Only the offset
+    changes, so the bounds still act in the region's own frame: a pose of the hand in it
+    puts the object where ``region`` allows, exactly."""
+    return replace(region, offset=compose(region.offset, invert(held)))
 
 
 def axis(pose: Pose, index: int) -> Vector:

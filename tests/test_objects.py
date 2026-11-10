@@ -259,7 +259,7 @@ def test_framed_regions_compose_the_object_and_region_frames(artifacts: Path) ->
         "body",
         "handle",
     }
-    spec = regions.spec(support="table", normal=(0.0, 0.0, 1.0), lift_m=0.05)
+    spec = regions.spec(support="table", normal=(0.0, 0.0, 1.0), lift_m=0.05, clearance_m=0.005)
     assert spec.pregrasp_labels == labels and tuple(spec.pregrasps) == regions.tsrs
     # Each label is paired with a region of its own region's candidates.
     assert spec.pregrasp_labels is not None
@@ -364,7 +364,7 @@ def test_unreachable_geometry_is_an_ordinary_result(artifacts: Path) -> None:
     single = tuple(np.array([0.033, 0.123], dtype=np.float32))
     assert np.allclose(Primitive("cylinder", single).dimensions, (0.033, 0.123), atol=1e-6)
     with pytest.raises(ValueError, match="no pregrasp regions"):
-        wide.spec(support="table", normal=(0.0, 0.0, 1.0), lift_m=0.05)
+        wide.spec(support="table", normal=(0.0, 0.0, 1.0), lift_m=0.05, clearance_m=0.005)
     (artifacts / "no_regions.json").write_text(
         json.dumps(
             {r.object.name: r.provenance["regions"] for r in (wide, unsupported, flat)},
@@ -387,7 +387,8 @@ def _pregrasps(labels: Any) -> GraspSpec:
         approach_m=APPROACH,
     )
     return dataclasses.replace(
-        one.spec(support="table", normal=(0.0, 0.0, 1.0), lift_m=0.05), pregrasp_labels=labels
+        one.spec(support="table", normal=(0.0, 0.0, 1.0), lift_m=0.05, clearance_m=0.005),
+        pregrasp_labels=labels,
     )
 
 
