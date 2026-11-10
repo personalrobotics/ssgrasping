@@ -2,30 +2,37 @@
 
 The bin is a fixture, a primitive copy of prl_assets' ``recycle_bin`` walls, standing on
 the floor where Geodude's recycling demo puts the bin on the right arm's side. The can,
-its grasp, and the planners are ``test_grasp_place``'s. The drop region is the legacy
-demo's container drop zone (mj_manipulator's ``_generate_container_drop_tsrs``), from
-the bin's prl_assets ``geometric_properties`` and placement policy, as an application
-would supply it: the hand pointing straight down over the bin's opening, its position
-anywhere over the interior less the policy's margin, ``max(0.25, can height + 0.10)``
-above the rim (+2 cm / -5 cm), at any yaw.
+its grasp, and the planners are ``test_grasp_place``'s. The drop region is for the can,
+as a drop's regions are (personalrobotics/ssgrasping#53), as sstsr's ``OpeningPlacer``
+gives them for a container's opening: the can upright over the bin, at any yaw, its
+lowest point 2 to 10 cm above the rim, its side ``RELEASE_MARGIN_M`` inside the walls
+(``_upright``). ``drop`` composes it with how the side grasp holds the can, so the hand
+releases it level, the can standing.
 
 Each scenario is one contract case, recorded in ``drop.json`` with every stage's time,
 scene revision, held and attached state, evidence kind, and, for a failed stage, its
 reason and cause:
-- ``success``: grasp, then drop on a manual clock: the can is released over the bin, the
-  drop ends after its retreat with ``landed`` unobserved, and ``landing`` then scores
-  that against the can's privileged pose, for evaluation only, finding it inside the
-  bin; run twice, byte-identical.
+- ``success``: grasp, then drop on a manual clock: the can is released upright over the
+  bin, where the region puts it (``values["released_at"]``, by the measured joints and
+  the attachment), the drop ends after its retreat with ``landed`` unobserved, and
+  ``landing`` then scores that against the can's privileged pose, for evaluation only,
+  finding it inside the bin; run twice, byte-identical.
 - ``unconfirmed_release``: the gripper opens only halfway, so ``release`` is not
   confirmed and the can stays attached.
 - ``beside_bracket``: a bracket is fixed over the bin, and the drop may release at one
-  of two zones with the hand's yaw fixed: one beside the bracket, where the fingers would
-  touch it opened though not holding the can, and one clear of it. Every transfer that
+  of two zones with the hand's pose fixed, given as regions for the can as the grasp
+  holds it (``_holding``), which ``drop`` composes back into exactly those hand poses:
+  one beside the bracket, where the fingers would touch it opened though not holding the
+  can, and one clear of it. Every transfer that
   ends beside the bracket is rejected, naming what the opened fingers would touch, and
   the can is released at the clear zone.
 - ``blocked_release``: the zone beside the bracket alone. No transfer ends where the hand
   can open, so the transfer fails ``not_planned`` before the arm moves, with the can held
   and attached and the gripper never commanded.
+- ``fall_blocked``: the can's one region has it lying over the bin, turned about its axis
+  so the fingers holding it close vertically (``_lying``): one finger is under it, in its
+  fall. Every transfer reaches it, and every one is rejected, naming the finger as
+  ``fall/...``; the transfer fails ``not_planned`` with the can held and attached.
 - ``pulled``: the harness pulls the can down at ``PULL_N`` for ``PULL_NS``,
   ``PULL_AFTER_NS`` into the transfer, through the runtime's MuJoCo data, and it leaves
   the fingers. They close past its width, the transfer's opening guard stops the arm,
@@ -59,6 +66,8 @@ from typing import Any
 from ssrobot import AttachmentViolation, Planner, Pose, RobotContext, RuntimeUpdate, Tsr
 
 from ssgrasping import (
+    Candidate,
+    Candidates,
     DropSpec,
     LandingSpec,
     Reason,
@@ -69,7 +78,9 @@ from ssgrasping import (
     drop,
     grasp,
     landing,
+    run_together,
 )
+from ssgrasping._poses import compose, inside, invert, rotate
 from tests.test_grasp_place import (
     CAN_MASS,
     CAN_XY,
@@ -92,8 +103,6 @@ from tests.test_grasp_place import (
 BIN = (0.85, -0.35, 0.01)  # the base of the recycling demo's right-side bin
 # prl_assets' recycle_bin: geometric_properties and placement policy.
 BIN_OUTER = (0.25, 0.25, 0.80)
-BIN_WALL = 0.003
-DROP_MARGIN = 0.05
 # Its MJCF: 20 mm walls with inner faces at +-0.119 m, and a 6 mm floor.
 BIN_INNER_HALF = 0.119
 BIN_FLOOR = 0.006
@@ -103,6 +112,14 @@ DOWN = (0.0, 1.0, 0.0, 0.0)  # x along the world's, z pointing down
 PULL_N = 200.0
 PULL_NS = 100_000_000
 PULL_AFTER_NS = 500_000_000
+RIM_Z = BIN[2] + 0.797  # the top of the bin's walls
+LOWEST = (0.02, 0.10)  # how far above the rim the released can's lowest point may be
+# Inside the walls by the can's radius and this: the 5 mm clearance Geodude keeps and the
+# 16 mm a released object strays sideways before it falls past the rim (Geodude's
+# calibrate_release.py, 83 free releases).
+RELEASE_MARGIN_M = 0.021
+LYING_ABOVE_M = 0.15
+FALL_M = 0.20  # beyond how far the 2F-140, holding the can, reaches below it
 # A bracket fixed over the bin, beside where a fixed-yaw drop zone puts the hand (``_beside``):
 # a 10 mm plate whose inner face is 85 mm from the hand's axis, along the fingers' opening,
 # at their height. Holding the can, the 2F-140's outer finger links are 61 mm from the axis
@@ -166,17 +183,57 @@ def _beside(*xs: float) -> list[Tsr]:
     ]
 
 
-def _drop_spec(**changes: Any) -> DropSpec:
-    """The legacy demo's drop zone over the bin."""
-    hx = BIN_OUTER[0] / 2 - BIN_WALL - DROP_MARGIN
-    hy = BIN_OUTER[1] / 2 - BIN_WALL - DROP_MARGIN
-    clearance = max(0.25, HEIGHT + 0.10)
-    zone = Tsr(
-        origin=Pose(position=(BIN[0], BIN[1], BIN[2] + BIN_OUTER[2] + clearance), quat_wxyz=DOWN),
+def _holding(hand: list[Tsr]) -> Any:
+    """Regions for the object that put the hand exactly in ``hand``, for the can as the
+    grasp holds it: ``drop`` composes them back into ``hand`` (``for_hand``)."""
+
+    def regions(held: Pose) -> list[Tsr]:
+        return [dataclasses.replace(r, offset=compose(r.offset, held)) for r in hand]
+
+    return regions
+
+
+def _upright() -> Tsr:
+    """The can upright over the bin's opening, at any yaw: its axis vertical, its lowest
+    point ``LOWEST`` above the rim, and its side ``RELEASE_MARGIN_M`` inside the walls."""
+    half = BIN_INNER_HALF - RADIUS - RELEASE_MARGIN_M
+    return Tsr(
+        origin=Pose(position=(BIN[0], BIN[1], RIM_Z + HEIGHT / 2), quat_wxyz=(1.0, 0.0, 0.0, 0.0)),
         offset=Pose(position=(0.0, 0.0, 0.0), quat_wxyz=(1.0, 0.0, 0.0, 0.0)),
-        position_bounds=((-hx, hx), (-hy, hy), (-0.02, 0.05)),
+        position_bounds=((-half, half), (-half, half), LOWEST),
         rotation_bounds=((0.0, 0.0), (0.0, 0.0), (-math.pi, math.pi)),
     )
+
+
+def _lying(held: Pose) -> list[Tsr]:
+    """The can lying over the bin's centre, ``LYING_ABOVE_M`` above the rim so the hand
+    clears it, its axis along the world's x, turned about it so the fingers holding it,
+    as ``held`` has them, close vertically: one finger under it."""
+    # The fingers close along the hand's y: in the can's frame, perpendicular to its axis
+    # for a side grasp.
+    closing = rotate(invert(held).quat_wxyz, (0.0, 1.0, 0.0))
+    angle = math.atan2(closing[1], closing[0])  # the closing direction about the can's axis
+    # Turn the can about its axis so that direction is its x; then lay it down, x up.
+    spin = (math.cos(-angle / 2), 0.0, 0.0, math.sin(-angle / 2))
+    lay = (math.cos(-math.pi / 4), 0.0, math.sin(-math.pi / 4), 0.0)  # z to x, x to z
+    lying = compose(
+        Pose(position=(0.0, 0.0, 0.0), quat_wxyz=lay),
+        Pose(position=(0.0, 0.0, 0.0), quat_wxyz=spin),
+    )
+    return [
+        Tsr(
+            origin=Pose(
+                position=(BIN[0], BIN[1], RIM_Z + RADIUS + LYING_ABOVE_M), quat_wxyz=lying.quat_wxyz
+            ),
+            offset=Pose(position=(0.0, 0.0, 0.0), quat_wxyz=(1.0, 0.0, 0.0, 0.0)),
+            position_bounds=((0.0, 0.0),) * 3,
+            rotation_bounds=((0.0, 0.0),) * 3,
+        )
+    ]
+
+
+def _drop_spec(**changes: Any) -> DropSpec:
+    """The can released upright over the bin (``_upright``)."""
     spec = DropSpec(
         manipulator="right_arm",
         end_effector="right_hand",
@@ -185,8 +242,9 @@ def _drop_spec(**changes: Any) -> DropSpec:
         object="can",
         container="recycle_bin",
         normal=UP,
-        regions=[zone],
+        regions=[_upright()],
         retreat_m=0.08,
+        fall_m=FALL_M,
         carry_scaling=CARRY_SCALING,
     )
     return dataclasses.replace(spec, **changes)
@@ -226,7 +284,15 @@ def _pick_and_drop(changes: dict[str, Any] | None = None, remove: bool = False) 
         picked = _drive(ctx, grasp(ctx, planner, _grasp_spec(can), check_planner=checker))
         report = {"grasp": _report(picked)}
         if picked.succeeded:
-            spec = _drop_spec(**(changes or {}))
+            attachment = ctx.scene.attachment("can")
+            assert attachment is not None
+            # A change given as a function of how the can is held is made from it.
+            spec = _drop_spec(
+                **{
+                    k: v(attachment.transform) if callable(v) else v
+                    for k, v in (changes or {}).items()
+                }
+            )
             released = assumed_landed if remove else None
             dropping = drop(ctx, planner, spec, check_planner=checker, released=released)
             dropped = _drive(ctx, dropping)
@@ -345,9 +411,12 @@ def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> No
     scenarios = {
         "success": json.loads(first),
         "beside_bracket": _session(
-            bracketed, _pick_and_drop({"regions": _beside(-SPAN / 2, SPAN / 2)})
+            bracketed, _pick_and_drop({"regions": _holding(_beside(-SPAN / 2, SPAN / 2))})
         ),
-        "blocked_release": _session(bracketed, _pick_and_drop({"regions": _beside(-SPAN / 2)})),
+        "blocked_release": _session(
+            bracketed, _pick_and_drop({"regions": _holding(_beside(-SPAN / 2))})
+        ),
+        "fall_blocked": _session(scene, _pick_and_drop({"regions": _lying})),
         "unconfirmed_release": _session(scene, _pick_and_drop({"open_opening": 0.5})),
         "pulled": _session(scene, _pulled(pulls), wrap=_keeping(pulls)),
         "monitor_only": _session(scene, _slipped(slips), wrap=_wrapping(slips)),
@@ -406,6 +475,24 @@ def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> No
     assert _failed(blocked) == ("transfer", Reason.NOT_PLANNED, None, True, True)
     assert all(a["opened"] for a in blocked["values"]["transfer_attempts"])
     assert "gripper" not in blocked["values"] and "released_opening" not in blocked["values"]
+
+    # The can is let go upright, where its region puts it: the hand level, holding it from
+    # the side, as no hand-down drop zone could.
+    position, quat = success["drop"]["values"]["released_at"]
+    released = Pose(position=tuple(position), quat_wxyz=tuple(quat))
+    assert inside(released, _upright(), (2e-3, 0.05)), released
+    assert rotate(released.quat_wxyz, (0.0, 0.0, 1.0))[2] > math.cos(0.05), released
+
+    # A release whose fall a finger is in is never chosen.
+    fallen = scenarios["fall_blocked"]["drop"]
+    assert fallen["state"] == SkillState.FAILED, fallen["stages"]
+    assert _failed(fallen) == ("transfer", Reason.NOT_PLANNED, None, True, True)
+    attempts = fallen["values"]["transfer_attempts"]
+    assert all(a["transfer"] == "succeeded" for a in attempts), attempts  # each reached it
+    for attempt in attempts:
+        assert attempt["opened"], attempts
+        assert all(c.startswith("fall/right_ur5e/gripper/") for c in attempt["opened"]), attempts
+    assert "gripper" not in fallen["values"]
 
     unconfirmed = scenarios["unconfirmed_release"]["drop"]
     assert unconfirmed["state"] == SkillState.FAILED, unconfirmed["stages"]
@@ -477,3 +564,57 @@ def test_geodude_drops_a_can_into_its_bin(artifacts: Path, tmp_path: Path) -> No
             "agrees": False,
         }
     ]
+
+
+def _held(ctx: RobotContext, planner: Planner, checker: Planner, can: Pose) -> dict[str, Any]:
+    """How the grasp holds the can, once picked: its attachment transform. The grasp and
+    the race plan in the same scene with the same seeds, so the race's predicts it."""
+    picked = _drive(ctx, grasp(ctx, planner, _grasp_spec(can), check_planner=checker))
+    attachment = ctx.scene.attachment("can")
+    assert picked.succeeded and attachment is not None, picked.stages
+    return {"held": attachment.transform}
+
+
+def _race(regions: list[Tsr]) -> Any:
+    """A race of the pinned grasp alone, leading to a drop into ``regions``."""
+
+    def run(ctx: RobotContext, planner: Planner, checker: Planner, can: Pose) -> dict[str, Any]:
+        candidate = Candidate(
+            label="right",
+            grasp=_grasp_spec(can),
+            planner=planner,
+            checker=checker,
+            drop=_drop_spec(regions=regions),
+        )
+        race = Candidates(ctx, [candidate])
+        run_together(ctx, [race], max_ticks=MAX_TICKS)
+        assert race.report is not None
+        return {"selected": race.selection is not None, "report": race.report}
+
+    return run
+
+
+def test_the_race_checks_the_drop_that_runs(artifacts: Path, tmp_path: Path) -> None:
+    """``Candidates`` races a drop as ``drop`` runs it: its regions, for the object,
+    composed with how the grasp would hold it, and each transfer kept only where the
+    release would be clear (``release_clear``). Raced into the can lying with a finger
+    under it (``_lying``, from how the grasp holds it, measured by picking it once), every
+    transfer is reached and ``rejected``, and the candidate fails in the race, its detail
+    naming the finger, before anything is held; raced into the can upright over the bin
+    (``_upright``), it is selected. The evidence is ``race.json``."""
+    scene = tmp_path / "can_and_bin.xml"
+    scene.write_text(_scene())
+    held = _session(scene, _held)["held"]
+    report = {
+        "lying": _session(scene, _race(_lying(held))),
+        "upright": _session(scene, _race([_upright()])),
+    }
+    (artifacts / "race.json").write_text(json.dumps(report, indent=2, default=str) + "\n")
+
+    lying = report["lying"]
+    assert not lying["selected"], lying["report"]
+    (candidate,) = lying["report"]["candidates"]
+    transfers = [p for p in candidate["plans"] if p["stage"] == "transfer"]
+    assert transfers and all(p["status"] == "rejected" for p in transfers), transfers
+    assert "release not clear: fall/right_ur5e/gripper/" in candidate["detail"], candidate
+    assert report["upright"]["selected"], report["upright"]["report"]

@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+A drop is a placement released in the air (personalrobotics/ssgrasping#53).
+- **Breaking: `DropSpec.regions` are for the object.**
+  - They are where the object's frame may be when it is let go, such as sstsr's
+    `OpeningPlacer` resting orientations over a container's opening.
+  - `drop` composes them with the held attachment, as `place` does, through the shared
+    `for_hand`.
+  - Hand-frame drop zones must be given as object regions; composed with the grasp, the
+    same hand poses come back exactly.
+- **New required `DropSpec.fall_m`.** A transfer is kept only where its release is clear
+  (`drop.release_clear`): the opened hand touches nothing but the object, and the
+  object, released there and lowered `fall_m` every `FALL_STEP`, touches none of the
+  robot's moving parts (`falls_clear`, naming each as `fall/<frame>`).
+- **The race checks the drop that runs.** `Candidates`' `transfer` stage composes the
+  regions with the hold the lift predicts. It rejects (ssrobot's `Stage.accept`) a
+  transfer whose release is not clear, naming why, and tries the next seed.
+  - The race plans with the fingers open, as they are before the grasp. That is more
+    cautious than the closed hand `drop` carries: a release only the closed hand
+    reaches fails the race as infeasible.
+- **Where a drop let go.** `drop` records `values["released_at"]`: the object's pose by
+  the measured joints and the attachment.
+- **Not checked.** The object's turning as it falls, and its fall between steps.
+- ssrobot's pin moves to the commit that adds `Stage.accept` (personalrobotics/ssrobot#250).
+
 `obstructing` and `Ends` are public, so an application that commands a gripper itself,
 outside a skill, checks it as the skills do (personalrobotics/geodude#272).
 ssrobot's pin moves to 87dac58, whose reference gate pins ada_assets 0703586 as the tests

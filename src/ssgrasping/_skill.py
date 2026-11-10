@@ -35,6 +35,7 @@ from ssrobot import (
     GripperCommand,
     GuardCause,
     JointRest,
+    ObjectStatus,
     ObservationRequest,
     OpeningGuard,
     Planner,
@@ -54,6 +55,7 @@ from ssrobot import (
     dumps,
 )
 
+from ssgrasping._poses import compose
 from ssgrasping.outcomes import (
     Criterion,
     EstimateReason,
@@ -949,6 +951,73 @@ def obstructing(
             and c.second not in allowed
             and (c.first, c.second) not in before
         }
+    return tuple(sorted(touched))
+
+
+FALL_STEP = 0.01
+"""How far apart, in metres, a released object's fall is checked (``falls_clear``)."""
+
+
+def falls_clear(
+    ctx: RobotContext,
+    snapshot: SceneSnapshot,
+    group: str,
+    gripper: str,
+    obj: str,
+    fall_m: float,
+    q: Sequence[float] | None = None,
+) -> tuple[str, ...]:
+    """What of the robot ``obj``, held in ``snapshot`` and released there with ``group``
+    at ``q`` (where it is in ``snapshot`` when None), would touch as it falls: each robot
+    frame as ``fall/<frame>``, none when its fall is clear.
+
+    The object is detached where the hand holds it, ``gripper``'s fingers at its declared
+    ``open_positions``, and lowered straight down every ``FALL_STEP`` to ``fall_m``
+    below; at each, the contacts the planning scene reports between it and a robot frame
+    are its fall's: its moving parts, such as the hand and arm. A planning scene reports
+    none with a fixed part of the robot, such as a worktop.
+    Its contacts with anything else, such as a container it falls into, are where it
+    lands, not its fall. Only a straight drop is checked: not the object's turning as it
+    falls, nor between the steps. ``fall_m`` must reach at least as far below the object
+    as the hand does.
+
+    Refused (``ValidationError``): ``obj`` not attached in ``snapshot``; a gripper that
+    declares no positions; ``fall_m`` not finite and positive."""
+    attachment = next((a for a in snapshot.attachments if a.object == obj), None)
+    if attachment is None:
+        raise ValidationError("not_attached", f"{obj!r} is not attached", path="obj")
+    if not (math.isfinite(fall_m) and fall_m > 0):
+        raise ValidationError("out_of_limits", "finite and positive", path="fall_m")
+    declared = ctx.description.gripper(gripper)
+    if not declared.open_positions:
+        raise ValidationError(
+            "undeclared_positions",
+            f"gripper {gripper!r} declares no open_positions and closed_positions",
+            path="gripper",
+        )
+    if q is None:
+        q = tuple(snapshot.position(j) for j in ctx.description.group(group).joints)
+    frame = ctx.description.end_effector(attachment.end_effector).frame
+    released = compose(
+        ctx.planning_scene(snapshot, group).forward_kinematics(q, frame), attachment.transform
+    )
+    others = [a for a in snapshot.attachments if a.object != obj]
+    opened = _at(snapshot.with_attachments(others), declared.joints, declared.open_positions)
+    measured = any(o.status is ObjectStatus.MEASURED for o in opened.objects)
+    status = ObjectStatus.MEASURED if measured else ObjectStatus.REGISTERED
+    robot = {f.name for f in ctx.description.frames}
+    x, y, z = released.position
+    steps = max(1, math.ceil(fall_m / FALL_STEP))
+    touched: set[str] = set()
+    for k in range(1, steps + 1):
+        lowered = Pose(position=(x, y, z - fall_m * k / steps), quat_wxyz=released.quat_wxyz)
+        objects = tuple(
+            replace(o, pose=lowered, status=status) if o.name == obj else o for o in opened.objects
+        )
+        for c in ctx.planning_scene(replace(opened, objects=objects), group).contacts(q):
+            other = c.second if c.first == obj else c.first if c.second == obj else None
+            if other in robot:
+                touched.add(f"fall/{other}")
     return tuple(sorted(touched))
 
 

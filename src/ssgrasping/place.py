@@ -71,7 +71,7 @@ from ssrobot import (
     WrenchGuard,
 )
 
-from ssgrasping._poses import compose, inside, invert, offset_interval
+from ssgrasping._poses import compose, for_hand, inside, offset_interval
 from ssgrasping._skill import (
     GRIPPER_TIMEOUT_NS,
     REST_TIMEOUT_NS,
@@ -237,9 +237,9 @@ def _place(
     assert attachment is not None
     arm = ctx.manipulator(spec.manipulator)
     hand = attachment.allow
-    object_to_hand = invert(attachment.transform)
     raised = [
-        _moved(_for_hand(r, object_to_hand), spec.normal, spec.preplace_m) for r in spec.regions
+        _moved(for_hand(r, attachment.transform), spec.normal, spec.preplace_m)
+        for r in spec.regions
     ]
     transfer, _, _ = run.choose(
         "transfer",
@@ -451,11 +451,6 @@ def _allowing(snapshot: SceneSnapshot, spec: PlaceSpec) -> SceneSnapshot:
         for a in snapshot.attachments
     )
     return snapshot.with_attachments(attachments)
-
-
-def _for_hand(region: Tsr, object_to_hand: Pose) -> Tsr:
-    """``region`` for the object frame, as a region for the end effector frame holding it."""
-    return replace(region, offset=compose(region.offset, object_to_hand))
 
 
 def _moved(region: Tsr, direction: tuple[float, float, float], distance: float) -> Tsr:

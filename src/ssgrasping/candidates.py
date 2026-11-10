@@ -16,10 +16,15 @@ the stage before it would leave the robot:
    its pose relative to the hand there, allowed to touch the hand and the support), with
    the check planner;
 4. with a drop, ``transfer``: from the lift's projection, holding the object allowed to
-   touch only the hand, into the drop regions at the drop's ``carry_scaling``, up to the
-   drop's ``transfer_attempts`` seeds from the same lift; and, when the drop retreats,
-   ``retreat`` from where it ends, with the check planner. A candidate whose container is
-   out of reach fails here, however short its approach.
+   touch only the hand, to release it in the drop's regions (for the object, composed
+   with the transform the lift holds it at, as ``drop`` composes them with the actual
+   one) at the drop's ``carry_scaling``, up to the drop's ``transfer_attempts`` seeds
+   from the same lift. A transfer is kept only where the release would be clear, as
+   ``drop`` judges it (``release_clear``): one where the hand could not open, or the
+   object would fall onto the robot, is ``rejected`` with why, and the next seed tried.
+   When the drop retreats, ``retreat`` from where it ends, with the check planner. A
+   candidate whose container is out of reach, or whose every release is blocked, fails
+   here, however short its approach.
 
 The pregrasp's seeds are attempts at the whole prefix, so a pregrasp whose approach or
 lift does not plan is replaced by the next. Once every transfer seed has failed, though,
@@ -79,9 +84,9 @@ from ssrobot import (
     dumps,
 )
 
-from ssgrasping._poses import compose, invert
+from ssgrasping._poses import compose, for_hand, invert
 from ssgrasping._skill import Ahead, Kept, Lookahead, lookahead_entry
-from ssgrasping.drop import DropSpec
+from ssgrasping.drop import DropSpec, release_clear
 from ssgrasping.execution import SkillExecution
 from ssgrasping.grasp import GraspSpec, _approach_goal, _selected_grasp
 
@@ -248,8 +253,10 @@ class Candidates:
                     for a in at.state.attachments
                 )
                 state = at.state.with_attachments(attachments)
+                held = next(a for a in attachments if a.object == g.object)
                 request = arm.request(
-                    TsrGoal(tsrs=tuple(drop.regions)),
+                    # The drop's regions are for the object: as the grasp would hold it.
+                    TsrGoal(tsrs=tuple(for_hand(r, held.transform) for r in drop.regions)),
                     snapshot=state,
                     seed=previous.plan.request.seed,
                     velocity_scaling=drop.carry_scaling,
@@ -263,12 +270,20 @@ class Candidates:
             # Retried from the same lift, as ``drop`` retries it; and, once every seed
             # fails, the candidate fails rather than planning another prefix: see the
             # module.
+            def releases(result: StageResult) -> str | None:
+                """Why the drop could not release where this transfer ends, as ``drop``
+                judges it (``release_clear``): None when it could."""
+                assert drop is not None
+                stopped = release_clear(ctx, result.projection.state, arm.group, drop)
+                return f"release not clear: {', '.join(stopped)}" if stopped else None
+
             stages.append(
                 Stage(
                     "transfer",
                     transfer,
                     seeds=tuple(range(drop.transfer_attempts)),
                     retry_prefix=False,
+                    accept=releases,
                 )
             )
             if drop.retreat_m > 0:
