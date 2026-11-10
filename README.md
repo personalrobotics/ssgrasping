@@ -346,7 +346,9 @@ with RobotContext(package.description, runtime) as ctx:
     # Backed off 8 cm along the hand's approach axis: the distance the grasp then
     # approaches in a straight line.
     regions = grasp_regions(can, profile, sstsr.SstsrTemplates(hand), approach_m=0.08)
-    spec = regions.spec(support="vention_base", normal=(0.0, 0.0, 1.0), lift_m=0.06)
+    spec = regions.spec(
+        support="vention_base", normal=(0.0, 0.0, 1.0), lift_m=0.06, clearance_m=0.005
+    )
     result = run_skill(ctx, grasp(ctx, planner, spec, check_planner=checker), max_ticks=200_000)
 
 print(result.state.value)
