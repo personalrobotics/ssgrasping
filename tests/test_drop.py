@@ -85,6 +85,7 @@ from tests.test_grasp_place import (
     CAN_MASS,
     CAN_XY,
     CARRY_SCALING,
+    CLEARANCE_M,
     HEIGHT,
     MAX_TICKS,
     RADIUS,
@@ -246,6 +247,7 @@ def _drop_spec(**changes: Any) -> DropSpec:
         retreat_m=0.08,
         fall_m=FALL_M,
         carry_scaling=CARRY_SCALING,
+        clearance_m=CLEARANCE_M,
     )
     return dataclasses.replace(spec, **changes)
 

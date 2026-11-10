@@ -179,6 +179,10 @@ DRIFT_TOLERANCE_M = 1e-4  # below the ~0.3 mm the can drifts in the fingers on t
 # monitor's 0.2 rad in the hand in 6 of 40 runs, on any machine; at 0.5, in none of 40,
 # turning at most 0.056 rad.
 CARRY_SCALING = 0.5
+CLEARANCE_M = 0.005
+"""The clearance every move through free space keeps from the environment, as Geodude's
+does: planned with none, a carry may skim the worktop by half a millimetre and drag the
+can, turning it in the hand (on Linux, 18 degrees at the start of a drop's transfer)."""
 # A marker, 8 mm in radius and 107 mm tall, up past the fingers' height at a release on
 # the work surface. ``blocked_place`` stands it where the opened outer finger link is.
 MARKER_RADIUS, MARKER_HALF_HEIGHT = 0.008, 0.0535
@@ -258,7 +262,7 @@ def _grasp_spec(can: Pose, **changes: Any) -> GraspSpec:
         sstsr.SstsrTemplates(HAND),
         approach_m=STANDOFF,
     )
-    spec = regions.spec(support="vention_base", normal=UP, lift_m=0.06)
+    spec = regions.spec(support="vention_base", normal=UP, lift_m=0.06, clearance_m=CLEARANCE_M)
     return dataclasses.replace(spec, **changes)
 
 
@@ -291,6 +295,7 @@ def _place_spec(**changes: Any) -> PlaceSpec:
         ),
         retreat_m=0.08,
         carry_scaling=CARRY_SCALING,
+        clearance_m=CLEARANCE_M,
     )
     return dataclasses.replace(spec, **changes)
 

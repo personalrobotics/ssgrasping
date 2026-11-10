@@ -419,11 +419,18 @@ class GraspRegions:
         }
 
     def spec(
-        self, *, support: str, normal: tuple[float, float, float], lift_m: float, **options: Any
+        self,
+        *,
+        support: str,
+        normal: tuple[float, float, float],
+        lift_m: float,
+        clearance_m: float,
+        **options: Any,
     ) -> GraspSpec:
         """A ``GraspSpec`` over the regions that have pregrasp regions, each labelled
         ``region/strategy``: the profile's names, the object, and the approach the regions
-        are backed off by. ``options`` are any other ``GraspSpec`` fields. Refuses when no
+        are backed off by, keeping ``clearance_m`` (required, as ``GraspSpec``'s is).
+        ``options`` are any other ``GraspSpec`` fields. Refuses when no
         region has pregrasp regions; refused regions stay recorded in ``provenance``."""
         if not self.ok:
             details = "; ".join(f"{r.region.name}: {r.detail}" for r in self.regions)
@@ -440,6 +447,7 @@ class GraspRegions:
             pregrasp_labels=self.labels,
             approach_m=self.approach_m,
             lift_m=lift_m,
+            clearance_m=clearance_m,
             **options,
         )
 

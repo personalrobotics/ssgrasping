@@ -105,9 +105,9 @@ Measured from the robot's actual pose instead, a pregrasp that reached its regio
 read as having reached none whenever the arm tracked a few millimetres off."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class GraspSpec:
-    """Everything a grasp needs, explicitly: nothing is inferred from names."""
+    """Everything a grasp needs, explicitly, by keyword: nothing is inferred from names."""
 
     manipulator: str
     """The manipulator that moves, by name."""
@@ -141,10 +141,13 @@ class GraspSpec:
     ``DropSpec.carry_scaling`` are for the carries that follow it."""
     pregrasp_attempts: int = 8
     """How many seeds to try for a pregrasp whose approach also plans."""
-    clearance_m: float = 0.0
+    clearance_m: float
     """The clearance the pregrasp, a move through free space, keeps from the
     environment (``PlanningRequest.clearance_m``). The approach and the lift, which must
-    come close to the object and its support, keep none."""
+    come close to the object and its support, keep none.
+    Required, with no default: a move through free space planned with none may skim what
+    it passes by half a millimetre, and a held object dragged so turns in the hand
+    (personalrobotics/ssgrasping#57's Linux carry)."""
     pregrasp_labels: Sequence[str] | None = None
     """A name for each of ``pregrasps``, such as ``GraspRegions``' ``region/strategy``.
     With them, the grasp records in ``values["pregrasp_region"]`` the labels of the

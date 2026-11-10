@@ -96,9 +96,9 @@ release is checked at along the descent's terminal band: the planner's own edge
 resolution in the tests."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class PlaceSpec:
-    """Everything a placement needs, explicitly."""
+    """Everything a placement needs, explicitly, by keyword."""
 
     manipulator: str
     end_effector: str
@@ -148,11 +148,13 @@ class PlaceSpec:
     holds it by friction alone."""
     transfer_attempts: int = 8
     """How many seeds to try for a transfer whose descent also plans."""
-
-    clearance_m: float = 0.0
+    clearance_m: float
     """The clearance the transfer, a move through free space carrying the object, keeps
     from the environment (``PlanningRequest.clearance_m``). The guarded descent and the
-    retreat, which must come close to the target, keep none."""
+    retreat, which must come close to the target, keep none.
+    Required, with no default: a move through free space planned with none may skim what
+    it passes by half a millimetre, and a held object dragged so turns in the hand
+    (personalrobotics/ssgrasping#57's Linux carry)."""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "normal", unit(self.normal, "normal"))

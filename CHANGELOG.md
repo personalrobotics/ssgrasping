@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+**Breaking: `clearance_m` is required** on `GraspSpec`, `PlaceSpec` and `DropSpec`, and on
+`GraspRegions.spec`, with no default; the three specs are keyword-only. With the old
+default of 0, a move through free space may skim what it passes by half a millimetre. In
+the drop test on Linux, an upright carry planned that way dragged the can across the
+worktop at the start of its transfer, and it turned 18 degrees in the hand. The tests
+keep Geodude's 5 mm.
+
 A drop is a placement released in the air (personalrobotics/ssgrasping#53).
 - **Breaking: `DropSpec.regions` are for the object.**
   - They are where the object's frame may be when it is let go, such as sstsr's
