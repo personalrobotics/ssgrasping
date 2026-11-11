@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+ssrobot's pin moves to e1761b1, whose planning model leaves out geometry that cannot
+collide, and with it sscbirrt to 3.16.0, which checks each trajectory piece at its own
+speed (personalrobotics/ssrobot#251, personalrobotics/sscbirrt#279).
+
 **Breaking: `clearance_m` is required** on `GraspSpec`, `PlaceSpec` and `DropSpec`, and on
 `GraspRegions.spec`, with no default; the three specs are keyword-only. With the old
 default of 0, a move through free space may skim what it passes by half a millimetre. In
