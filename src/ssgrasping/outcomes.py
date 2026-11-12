@@ -72,6 +72,7 @@ class Reason(enum.StrEnum):
     NO_CONTACT = "no_contact"
     OUTSIDE_REGIONS = "outside_regions"
     TRANSITION_REFUTED = "transition_refuted"
+    TRANSITION_UNOBSERVED = "transition_unobserved"
     GRIPPER_OBSTRUCTED = "gripper_obstructed"
 
 
@@ -205,6 +206,9 @@ class SkillResult:
     """The transitions estimated, in order."""
     evaluations: tuple[TransitionEvaluation, ...] = ()
     """Each estimate the runtime had a privileged reference for, scored against it."""
+    assumed: tuple[Transition, ...] = ()
+    """The transitions the skill proceeded on unobserved, in order, because the spec
+    assumed them (``assume_unobserved``): the application's assumption, not evidence."""
 
     @property
     def stage(self) -> Stage:
