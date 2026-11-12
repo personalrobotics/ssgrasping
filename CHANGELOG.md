@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+A hand declares whether its gripper opening establishes a grasp
+(`GraspingProfile.opening_establishes_grasp`, default True; personalrobotics/ssgrasping#47).
+- **The declaration** is a keyword of `sstsr.profile`, and a field of `GraspSpec`,
+  `PlaceSpec` and `DropSpec`; `GraspRegions.spec` copies the profile's.
+- **When False,** as for the Kinova JACO2, whose fingers roll an object into the palm and
+  can close to their target around it, the opening decides nothing: a close is not judged
+  a miss, carries run with no opening guard, and `acquired` and `retained` are
+  `unobserved` (`no_portable_signal`). Proceeding on them is the application's policy.
+- **The default is unchanged:** every existing test's evidence is identical but for the
+  lookahead race's field documented as timing-dependent.
+- **`tests/test_ada_grasp.py`:** ADA's bare hand grasps and lifts the 4 cm cylinder in
+  open space with the declaration; without it, the same close reads as a miss.
+
 ssrobot's pin moves to e1761b1, whose planning model leaves out geometry that cannot
 collide, and with it sscbirrt to 3.16.0, which checks each trajectory piece at its own
 speed (personalrobotics/ssrobot#251, personalrobotics/sscbirrt#279).

@@ -50,6 +50,15 @@ these stages, recording each:
     attachment monitor's report is kept beside it, with the object's pose before and
     after the lift, for evaluation only (``SkillResult.evaluations``).
 
+For a hand whose opening does not establish a grasp (``GraspSpec.opening_establishes_grasp``
+False, such as the Kinova JACO2's, whose fingers roll a pinched object into the palm and
+can reach their target around it), the opening decides nothing: ``obstructed`` records
+the close without judging a miss, the lift runs with no opening guard, ``acquired``
+closes nothing again, since its result would decide nothing, and ``acquired`` and
+``retained`` are unobserved (``no_portable_signal``). The grasp then succeeds having
+claimed neither; whether to proceed on them is the application's policy, and the
+estimates stay in the result for it to record (personalrobotics/ssgrasping#47).
+
 After ``attach``, a failure or cancellation leaves the attachment declared and reports
 the object as held: the physically conservative state, since it may be in the hand.
 Retrying or recovering is the application's.
@@ -96,7 +105,7 @@ from ssgrasping._skill import (
     unit,
 )
 from ssgrasping.execution import SkillExecution
-from ssgrasping.outcomes import Criterion, Evidence, Reason
+from ssgrasping.outcomes import Criterion, Evidence, Reason, Transition
 
 REACHED_TOLERANCE = (1e-4, 1e-3)
 """How far, in metres and radians, the end of the pregrasp's planned path may be from a
@@ -152,6 +161,11 @@ class GraspSpec:
     """A name for each of ``pregrasps``, such as ``GraspRegions``' ``region/strategy``.
     With them, the grasp records in ``values["pregrasp_region"]`` the labels of the
     regions the end effector reached before its approach."""
+    opening_establishes_grasp: bool = True
+    """The hand's ``GraspingProfile.opening_establishes_grasp``. When False, the opening
+    decides nothing: a close that reaches its target is not taken for a miss, the lift
+    runs with no opening guard, and ``acquired`` and ``retained`` are unobserved
+    (``no_portable_signal``). Whether to proceed on them is the application's policy."""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "normal", unit(self.normal, "normal"))
@@ -180,6 +194,11 @@ class GraspSpec:
         check_spec(self.gripper_timeout_ns > 0, "must be positive", "gripper_timeout_ns")
         check_spec(self.pregrasp_attempts >= 1, "at least 1", "pregrasp_attempts")
         check_spec(0.0 < self.lift_scaling <= 1.0, "in (0, 1]", "lift_scaling")
+        check_spec(
+            isinstance(self.opening_establishes_grasp, bool),
+            "True or False",
+            "opening_establishes_grasp",
+        )
         check_spec(
             math.isfinite(self.clearance_m) and self.clearance_m >= 0,
             "must be finite and non-negative",
@@ -353,7 +372,8 @@ def _grasp(
     run.record("close", True, f"opening {opening:.3f}", Evidence.PORTABLE)
 
     closed = run.values["gripper"]["close"]  # type: ignore[index]
-    if closed["termination"] == GripperTermination.REACHED_TARGET:
+    reached = closed["termination"] == GripperTermination.REACHED_TARGET
+    if reached and spec.opening_establishes_grasp:
         run.held = False
         yield from run.grip(
             "obstructed",
@@ -375,7 +395,10 @@ def _grasp(
     run.record(
         "obstructed",
         True,
-        f"the fingers stopped short, at opening {opening:.3f}",
+        f"the fingers stopped short, at opening {opening:.3f}"
+        if spec.opening_establishes_grasp
+        else f"not judged: this hand's opening does not establish a grasp; the fingers "
+        f"{'reached their target' if reached else 'stopped short'}, at opening {opening:.3f}",
         Evidence.PORTABLE,
     )
 
@@ -406,34 +429,49 @@ def _grasp(
         spec.opening_channel,
         Criterion("held_opening", opening, "observed: the opening the close stopped short at"),
         Criterion("close_opening", spec.close_opening, "GraspSpec.close_opening"),
+        opening_establishes_grasp=spec.opening_establishes_grasp,
     )
     yield from run.move("lift", lift, planner, retain=carry)
+    lifted_estimate = run.transitions[-1]
 
-    yield from run.grip(
-        "acquired",
-        spec.gripper,
-        spec.close_opening,
-        spec.gripper_timeout_ns,
-        ends="closed",
-        group=arm.group,
-        allow=(spec.object,),
-    )
-    lifted = float(run.observe(spec.opening_channel)[0])
-    reclosed = run.values["gripper"]["acquired"]  # type: ignore[index]
-    if reclosed["termination"] == GripperTermination.REACHED_TARGET:
+    if not spec.opening_establishes_grasp:
+        # No re-close: its result would decide nothing.
+        run.begin("acquired")
+        lifted = float(run.observe(spec.opening_channel)[0])
+        run.unobserved(Transition.ACQUIRED, "acquired")
         run.record(
             "acquired",
-            False,
-            f"lost: after the lift, the fingers reached their target, at opening {lifted:.3f}",
+            True,
+            f"unobserved: this hand's opening does not establish a grasp; after the lift, "
+            f"opening {lifted:.3f}",
             Evidence.PORTABLE,
-            Reason.LOST,
         )
-    run.record(
-        "acquired",
-        True,
-        f"held: after the lift, the fingers still stop short, at opening {lifted:.3f}",
-        Evidence.PORTABLE,
-    )
+    else:
+        yield from run.grip(
+            "acquired",
+            spec.gripper,
+            spec.close_opening,
+            spec.gripper_timeout_ns,
+            ends="closed",
+            group=arm.group,
+            allow=(spec.object,),
+        )
+        lifted = float(run.observe(spec.opening_channel)[0])
+        reclosed = run.values["gripper"]["acquired"]  # type: ignore[index]
+        if reclosed["termination"] == GripperTermination.REACHED_TARGET:
+            run.record(
+                "acquired",
+                False,
+                f"lost: after the lift, the fingers reached their target, at opening {lifted:.3f}",
+                Evidence.PORTABLE,
+                Reason.LOST,
+            )
+        run.record(
+            "acquired",
+            True,
+            f"held: after the lift, the fingers still stop short, at opening {lifted:.3f}",
+            Evidence.PORTABLE,
+        )
 
     run.boundary("restrict", "re-declares the attachment's allowance: a scene change")
     run.replace_allowance("restrict", hand)
@@ -452,7 +490,6 @@ def _grasp(
         None if clear else Reason.IN_CONTACT,
     )
 
-    lifted_estimate = run.transitions[-1]
     run.record(
         "retained",
         True,

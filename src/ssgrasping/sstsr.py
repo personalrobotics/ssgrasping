@@ -116,10 +116,18 @@ class SstsrTemplates:
 
 
 def profile(
-    hand: Any, *, manipulator: str, end_effector: str, gripper: str, opening_channel: str
+    hand: Any,
+    *,
+    manipulator: str,
+    end_effector: str,
+    gripper: str,
+    opening_channel: str,
+    opening_establishes_grasp: bool = True,
 ) -> GraspingProfile:
     """A ``GraspingProfile`` for an sstsr hand: its class as the hand's identity and its
-    ``max_aperture`` as the aperture."""
+    ``max_aperture`` as the aperture. ``opening_establishes_grasp`` is the application's
+    declaration (``GraspingProfile.opening_establishes_grasp``); sstsr's hands say
+    nothing of it."""
     return GraspingProfile(
         hand=type(hand).__name__,
         manipulator=manipulator,
@@ -127,6 +135,7 @@ def profile(
         gripper=gripper,
         opening_channel=opening_channel,
         max_aperture_m=float(hand.max_aperture),
+        opening_establishes_grasp=opening_establishes_grasp,
     )
 
 

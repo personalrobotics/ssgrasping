@@ -263,11 +263,24 @@ class GraspingProfile:
     opening_channel: str
     max_aperture_m: float
     """The widest object the open hand clears."""
+    opening_establishes_grasp: bool = True
+    """Whether the opening tells a grasp: a close that reaches its target closed on
+    nothing, and fingers still short of it after a lift or through a carry hold the
+    object. True of a hand whose fingers stop at an object's width, such as the Robotiq
+    2F-140. False of one whose fingers can close past a held object's width, such as the
+    Kinova JACO2's, which roll a pinched object into the palm: there ``acquired`` and
+    ``retained`` are unobserved (personalrobotics/ssgrasping#47). A property of the
+    hand, declared by the application; never inferred."""
 
     def __post_init__(self) -> None:
         for name in ("hand", "manipulator", "end_effector", "gripper", "opening_channel"):
             _name(getattr(self, name), name)
         object.__setattr__(self, "max_aperture_m", _length(self.max_aperture_m, "max_aperture_m"))
+        check_spec(
+            isinstance(self.opening_establishes_grasp, bool),
+            "True or False",
+            "opening_establishes_grasp",
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -440,6 +453,7 @@ class GraspRegions:
             end_effector=self.profile.end_effector,
             gripper=self.profile.gripper,
             opening_channel=self.profile.opening_channel,
+            opening_establishes_grasp=self.profile.opening_establishes_grasp,
             object=self.object.name,
             support=support,
             normal=normal,

@@ -70,7 +70,7 @@ The reason names the vocabulary of its cause, and a cause is a code, never prose
 | `cancelled` | The skill was cancelled (`SkillExecution.cancel`) | the stage in progress | None |
 | `not_attached` | The object must be attached and is not | `transfer`, an allowance change | None |
 | `still_attached` | The object must be released and is still attached | `observed` | None |
-| `missed` | The fingers closed to their target: nothing is between them | `obstructed` | None |
+| `missed` | The fingers closed to their target: nothing is between them. Not reported for a hand whose opening does not establish a grasp | `obstructed` | None |
 | `lost` | After the lift, the fingers closed to their target | `acquired` | None |
 | `in_contact` | After the lift, the arm or the object is in contact with the scene | `clear` | None |
 | `release_unconfirmed` | The fingers did not reach the released opening | `release` | None |
@@ -192,6 +192,22 @@ where the loss was seen, `retained` is refuted, and the stage fails at once
 (`transition_refuted`), with the object reported not held and still declared attached:
 detaching it is the application's choice. `place`'s descent runs under its wrench
 guard alone, so `retained` is not monitored through it.
+
+That reading holds only for a hand whose fingers stop at an object's width. The Kinova
+JACO2's fingers pinch an object and then roll it into the palm, and can close to their
+target around an object they hold, so its opening tells neither a miss nor a loss
+(#47). A hand declares which kind it is in its profile,
+`GraspingProfile.opening_establishes_grasp` (default True; `sstsr.profile` takes it as a
+keyword), and `GraspSpec`, `PlaceSpec` and `DropSpec` carry it. When it is False:
+- `grasp`'s close is not judged a miss, whichever way it ends;
+- the lift, and `place`'s and `drop`'s transfers, run with no opening guard;
+- `acquired` and `retained` are `unobserved` (`no_portable_signal`).
+
+The grasp then succeeds having claimed neither. Proceeding on them is the application's
+explicit policy, and the estimates stay in the result for it to record. ADA's grasp and
+lift of a cylinder in open space is `tests/test_ada_grasp.py`: with the declaration it
+succeeds, and scored by privileged state the cylinder rose with the hand; with the
+default, the same close reads as a miss.
 
 The evidence for this is
 [`evidence/transitions/`](evidence/transitions/README.md). In Geodude's MuJoCo model the
@@ -391,7 +407,7 @@ attachment monitor tolerates the can swinging between the pads as the arm accele
 | Planning ahead within a skill, and continuing the kept approach | Implemented; demonstrated on Geodude |
 | Estimating `retained` from the gripper opening, stopping a carry that loses its object | Implemented; demonstrated on Geodude in MuJoCo. `placed` and `landed` are recorded `unobserved`, scored against privileged poses; `acquired` and `released` estimates are planned (#28) |
 | Racing grasp candidates across arms, including during an earlier motion | Implemented; used by Geodude's four-can recycling demo |
-| Skills on ADA | Planned; the ADA package opens in the test environment, but no skill has been demonstrated on it |
+| Skills on ADA | `grasp` and its lift demonstrated in MuJoCo on the bare-hand package, in open space, with `acquired` and `retained` unobserved (#47). Not `place` or `drop`: the planner's held geometry is not conservative once the JACO2 seats the object in its palm (personalrobotics/ssrobot#242, deferred) |
 | Physical robots and learned policies | Not yet supported; they depend on ssrobot's hardware runtimes and policy execution |
 
 Each test writes a deterministic evidence artifact under `artifacts/` and documents how

@@ -171,16 +171,24 @@ class Lookahead:
 @dataclass(frozen=True, slots=True)
 class Retention:
     """How a carry's ``retained`` is estimated: the opening guard it runs under, or None
-    when the opening cannot tell (``no_opening_margin``), and the criteria behind it."""
+    when the opening cannot tell, why (``unobserved``), and the criteria behind it."""
 
     guard: OpeningGuard | None
     criteria: tuple[Criterion, ...]
+    unobserved: EstimateReason = EstimateReason.NO_OPENING_MARGIN
+    """Why ``retained`` is unobserved without a guard."""
 
 
-def retention(channel: str, held: Criterion, target: Criterion) -> Retention:
+def retention(
+    channel: str, held: Criterion, target: Criterion, *, opening_establishes_grasp: bool = True
+) -> Retention:
     """The opening guard for a carry of an object held at ``held``, by fingers closing on
     ``target``: midway between them. An object that leaves lets the fingers run on toward
-    the target; one still in hand keeps them at its width."""
+    the target; one still in hand keeps them at its width. None, for a hand whose opening
+    does not establish a grasp (``no_portable_signal``): its fingers can close past a
+    held object's width, so the guard would read a held object as lost."""
+    if not opening_establishes_grasp:
+        return Retention(None, (held, target), EstimateReason.NO_PORTABLE_SIGNAL)
     if held.value <= target.value:
         return Retention(None, (held, target))
     below = Criterion(
@@ -528,7 +536,7 @@ class Run:
         status = execution.status
         evidence: tuple[Observed, ...] = ()
         if retain.guard is None:
-            outcome, why = TransitionOutcome.UNOBSERVED, EstimateReason.NO_OPENING_MARGIN
+            outcome, why = TransitionOutcome.UNOBSERVED, retain.unobserved
         else:
             assert status.guard is not None  # a guarded trajectory's success carries one
             fell = status.guard.cause is GuardCause.GUARD_TRIGGERED
