@@ -1,19 +1,24 @@
-"""ADA's hand declares that its opening does not establish a grasp, and so grasps and
-lifts a cylinder (#47).
+"""ADA's hand declares that its opening does not establish a grasp, and ADA's application
+assumes what it cannot observe, and so grasps and lifts a cylinder (#47).
 
 ADA's bare-hand package (``ada_assets.models``) closes on the 4 cm reference cylinder,
 standing on the over-bed table's top with nothing else in the scene. The JACO2's fingers
 pinch it, then roll it into the palm, and the close ends ``reached_target``: the tendon
-reaches its closed target around the object it holds. Two grasps of the same scene,
-recorded in ``ada_grasp.json``, differ only in the profile's declaration:
+reaches its closed target around the object it holds. Three grasps of the same scene,
+recorded in ``ada_grasp.json``, differ only in the hand's declaration and the
+application's policy:
 - ``default``: with the opening taken to establish a grasp, the close reaching its target
   reads as a miss: the grasp reopens the hand on the cylinder it held and fails
   ``missed``.
-- ``declared``: with ``opening_establishes_grasp=False``, the opening decides nothing. The
-  grasp succeeds, with ``acquired`` and ``retained`` unobserved (``no_portable_signal``),
-  and the lift ran with no opening guard. Scored by privileged state, for evaluation only,
-  the cylinder rose with the hand by the lift, and the attachment monitor's report of the
-  lift is kept beside the estimate.
+- ``refused``: with ``opening_establishes_grasp=False``, the opening decides nothing, and
+  the lift runs with no opening guard. ``retained`` is then unobserved
+  (``no_portable_signal``), and without the application's policy the lift fails
+  ``transition_unobserved``, with the cylinder conservatively reported held.
+- ``assumed``: the same declaration, with the policy ``assume_unobserved=True``. The grasp
+  succeeds, with ``acquired`` and ``retained`` unobserved and both recorded as assumed
+  (``SkillResult.assumed``). Scored by privileged state, for evaluation only, the cylinder
+  rose with the hand by the lift, and the attachment monitor's report of the lift is kept
+  beside the estimate.
 
 The cylinder's pose is registered from its privileged pose channel, standing in for
 perception. That the planned held geometry is not conservative once the cylinder is
@@ -75,7 +80,9 @@ GRIPPER_TIMEOUT_NS = 30_000_000_000
 MAX_TICKS = 100_000
 
 
-def _grasp(scene: Path, **declaration: bool) -> tuple[SkillResult, dict[str, Any]]:
+def _grasp(
+    scene: Path, *, assume_unobserved: bool = False, **declaration: bool
+) -> tuple[SkillResult, dict[str, Any]]:
     package = load_installed_package("ada_assets.models")
     description = package.description
     (end_effector,) = description.end_effectors
@@ -119,6 +126,7 @@ def _grasp(scene: Path, **declaration: bool) -> tuple[SkillResult, dict[str, Any
             lift_m=LIFT_M,
             clearance_m=0.005,
             gripper_timeout_ns=GRIPPER_TIMEOUT_NS,
+            assume_unobserved=assume_unobserved,
         )
         before = height()
         result = run_skill(ctx, grasp(ctx, planner, spec), max_ticks=MAX_TICKS)
@@ -139,6 +147,7 @@ def _report(result: SkillResult, measured: dict[str, Any]) -> dict[str, Any]:
             for s in result.stages
         ],
         "transitions": [json.loads(json.dumps(dataclasses.asdict(t))) for t in result.transitions],
+        "assumed": [t.value for t in result.assumed],
         "evaluations": [
             {
                 "transition": e.estimate.transition.value,
@@ -160,10 +169,18 @@ def test_ada_grasps_and_lifts_under_its_declaration(artifacts: Path, tmp_path: P
     assert not default.succeeded
     assert default.stage.name == "obstructed" and default.stage.reason is Reason.MISSED
 
-    declared, measured = _grasp(scene, opening_establishes_grasp=False)
+    refused, _ = _grasp(scene, opening_establishes_grasp=False)
+    assert not refused.succeeded
+    assert refused.stage.name == "lift", refused.stage
+    assert refused.stage.reason is Reason.TRANSITION_UNOBSERVED, refused.stage
+    assert refused.stage.cause == Transition.RETAINED.value and refused.stage.held is True
+    assert refused.assumed == ()
+
+    declared, measured = _grasp(scene, opening_establishes_grasp=False, assume_unobserved=True)
     assert declared.succeeded, declared.stage
-    # The premise: in both, the JACO2's close around the cylinder reached its target.
-    for result in (default, declared):
+    assert declared.assumed == (Transition.RETAINED, Transition.ACQUIRED)
+    # The premise: in each, the JACO2's close around the cylinder reached its target.
+    for result in (default, refused, declared):
         close = result.values["gripper"]["close"]  # type: ignore[index]
         assert close["termination"] == "reached_target", close
     by_transition = {t.transition: t for t in declared.transitions}
@@ -180,6 +197,7 @@ def test_ada_grasps_and_lifts_under_its_declaration(artifacts: Path, tmp_path: P
         "scene": "the over-bed table's top and the 4 cm cylinder, nothing else",
         "close_termination": close["termination"],
         "default": _report(default, {}),
-        "declared": _report(declared, measured),
+        "refused": _report(refused, {}),
+        "assumed": _report(declared, measured),
     }
     (artifacts / "ada_grasp.json").write_text(json.dumps(report, indent=2) + "\n")

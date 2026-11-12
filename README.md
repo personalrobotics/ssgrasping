@@ -77,6 +77,7 @@ The reason names the vocabulary of its cause, and a cause is a code, never prose
 | `not_at_rest` | The arm was not observed at rest before the tare | `descend` | The `RestOutcome` |
 | `no_contact` | The guarded descent ended without its guard triggering | `descend` | The `GuardCause` |
 | `outside_regions` | The held object is outside every target region | `contact` | None |
+| `transition_unobserved` | A transition the stage needs is unobserved for want of a portable signal (a hand whose opening does not establish a grasp), and the spec does not assume it (`assume_unobserved`) | `lift`, `transfer`, `acquired` | The `Transition` |
 | `transition_refuted` | Portable evidence refuted a manipulation transition the stage needs: for `retained`, the opening guard stopped a carry when the fingers closed past the object's width | `lift`, `transfer` | The `Transition` |
 | `gripper_obstructed` | The fingers, where the gripper command would leave them, would touch something the command does not expect: nothing was commanded | any gripper stage: `open`, `close`, `obstructed`, `acquired`, `release` | Where the command ends: `open` or `closed` |
 
@@ -203,11 +204,16 @@ keyword), and `GraspSpec`, `PlaceSpec` and `DropSpec` carry it. When it is False
 - the lift, and `place`'s and `drop`'s transfers, run with no opening guard;
 - `acquired` and `retained` are `unobserved` (`no_portable_signal`).
 
-The grasp then succeeds having claimed neither. Proceeding on them is the application's
-explicit policy, and the estimates stay in the result for it to record. ADA's grasp and
-lift of a cylinder in open space is `tests/test_ada_grasp.py`: with the declaration it
-succeeds, and scored by privileged state the cylinder rose with the hand; with the
-default, the same close reads as a miss.
+The hand's declaration is sensing, not permission. Whether to proceed on what it cannot
+observe is the application's separate policy, `assume_unobserved` on `GraspSpec`,
+`PlaceSpec` and `DropSpec`, which defaults to refusing: the stage that needs the
+transition fails `transition_unobserved`, with the object conservatively reported held.
+With the policy the skill proceeds, and `SkillResult.assumed` lists each transition it
+assumed, beside the `unobserved` estimates. ADA's grasp and lift of a cylinder in open
+space is `tests/test_ada_grasp.py`: with the default declaration, the close reads as a
+miss; with ADA's declaration and no policy, the lift refuses `retained`; with the policy
+it succeeds, `retained` and `acquired` assumed, and scored by privileged state the
+cylinder rose with the hand.
 
 The evidence for this is
 [`evidence/transitions/`](evidence/transitions/README.md). In Geodude's MuJoCo model the

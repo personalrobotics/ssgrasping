@@ -177,10 +177,18 @@ class Retention:
     criteria: tuple[Criterion, ...]
     unobserved: EstimateReason = EstimateReason.NO_OPENING_MARGIN
     """Why ``retained`` is unobserved without a guard."""
+    assume_unobserved: bool = False
+    """For ``no_portable_signal``: whether the spec assumes ``retained`` (recorded in
+    ``SkillResult.assumed``) or refuses it (``transition_unobserved``)."""
 
 
 def retention(
-    channel: str, held: Criterion, target: Criterion, *, opening_establishes_grasp: bool = True
+    channel: str,
+    held: Criterion,
+    target: Criterion,
+    *,
+    opening_establishes_grasp: bool = True,
+    assume_unobserved: bool = False,
 ) -> Retention:
     """The opening guard for a carry of an object held at ``held``, by fingers closing on
     ``target``: midway between them. An object that leaves lets the fingers run on toward
@@ -188,7 +196,7 @@ def retention(
     does not establish a grasp (``no_portable_signal``): its fingers can close past a
     held object's width, so the guard would read a held object as lost."""
     if not opening_establishes_grasp:
-        return Retention(None, (held, target), EstimateReason.NO_PORTABLE_SIGNAL)
+        return Retention(None, (held, target), EstimateReason.NO_PORTABLE_SIGNAL, assume_unobserved)
     if held.value <= target.value:
         return Retention(None, (held, target))
     below = Criterion(
@@ -292,6 +300,7 @@ class Run:
         self.held: bool | None = None
         self.transitions: list[TransitionEstimate] = []
         self.evaluations: list[TransitionEvaluation] = []
+        self.assumed: list[Transition] = []
         self.lookahead = lookahead
         self._aheads: list[Ahead] = []
 
@@ -433,6 +442,7 @@ class Run:
             values=dict(self.values),
             transitions=tuple(self.transitions),
             evaluations=tuple(self.evaluations),
+            assumed=tuple(self.assumed),
         )
 
     def _append(
@@ -572,6 +582,25 @@ class Run:
                 Reason.TRANSITION_REFUTED,
                 Transition.RETAINED.value,
             )
+        if why is EstimateReason.NO_PORTABLE_SIGNAL:
+            self.assume(name, Transition.RETAINED, retain.assume_unobserved)
+
+    def assume(self, name: str, transition: Transition, assume_unobserved: bool) -> None:
+        """Proceed on ``transition``, unobserved for want of a portable signal, only if the
+        spec assumes it: recorded in ``SkillResult.assumed``. Otherwise ``name`` fails
+        ``transition_unobserved``, with the object conservatively reported held."""
+        if assume_unobserved:
+            self.assumed.append(transition)
+            return
+        self.record(
+            name,
+            False,
+            f"{transition.value} is unobserved: this hand's opening does not establish a "
+            "grasp, and the spec does not assume it (assume_unobserved)",
+            Evidence.PORTABLE,
+            Reason.TRANSITION_UNOBSERVED,
+            transition.value,
+        )
 
     def _execute(
         self,

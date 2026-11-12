@@ -55,9 +55,12 @@ False, such as the Kinova JACO2's, whose fingers roll a pinched object into the 
 can reach their target around it), the opening decides nothing: ``obstructed`` records
 the close without judging a miss, the lift runs with no opening guard, ``acquired``
 closes nothing again, since its result would decide nothing, and ``acquired`` and
-``retained`` are unobserved (``no_portable_signal``). The grasp then succeeds having
-claimed neither; whether to proceed on them is the application's policy, and the
-estimates stay in the result for it to record (personalrobotics/ssgrasping#47).
+``retained`` are unobserved (``no_portable_signal``). The hand's declaration does not
+decide whether to proceed on them; the application's policy, ``assume_unobserved``, does
+(personalrobotics/ssgrasping#47). By default the grasp refuses: the lift fails
+``transition_unobserved`` for ``retained``, the object conservatively reported held. With
+the policy it proceeds, and records each transition it assumed in
+``SkillResult.assumed``, beside the unobserved estimates.
 
 After ``attach``, a failure or cancellation leaves the attachment declared and reports
 the object as held: the physically conservative state, since it may be in the hand.
@@ -165,7 +168,13 @@ class GraspSpec:
     """The hand's ``GraspingProfile.opening_establishes_grasp``. When False, the opening
     decides nothing: a close that reaches its target is not taken for a miss, the lift
     runs with no opening guard, and ``acquired`` and ``retained`` are unobserved
-    (``no_portable_signal``). Whether to proceed on them is the application's policy."""
+    (``no_portable_signal``). Whether to proceed on them is the application's policy,
+    ``assume_unobserved``."""
+    assume_unobserved: bool = False
+    """The application's policy, apart from the hand's declaration: whether to proceed
+    on a transition this hand's opening cannot observe (``opening_establishes_grasp``
+    False). False, the default, refuses it: the stage fails ``transition_unobserved``.
+    True proceeds, and records it in ``SkillResult.assumed``."""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "normal", unit(self.normal, "normal"))
@@ -199,6 +208,7 @@ class GraspSpec:
             "True or False",
             "opening_establishes_grasp",
         )
+        check_spec(isinstance(self.assume_unobserved, bool), "True or False", "assume_unobserved")
         check_spec(
             math.isfinite(self.clearance_m) and self.clearance_m >= 0,
             "must be finite and non-negative",
@@ -430,6 +440,7 @@ def _grasp(
         Criterion("held_opening", opening, "observed: the opening the close stopped short at"),
         Criterion("close_opening", spec.close_opening, "GraspSpec.close_opening"),
         opening_establishes_grasp=spec.opening_establishes_grasp,
+        assume_unobserved=spec.assume_unobserved,
     )
     yield from run.move("lift", lift, planner, retain=carry)
     lifted_estimate = run.transitions[-1]
@@ -439,11 +450,12 @@ def _grasp(
         run.begin("acquired")
         lifted = float(run.observe(spec.opening_channel)[0])
         run.unobserved(Transition.ACQUIRED, "acquired")
+        run.assume("acquired", Transition.ACQUIRED, spec.assume_unobserved)
         run.record(
             "acquired",
             True,
-            f"unobserved: this hand's opening does not establish a grasp; after the lift, "
-            f"opening {lifted:.3f}",
+            f"assumed, unobserved: this hand's opening does not establish a grasp; after the "
+            f"lift, opening {lifted:.3f}",
             Evidence.PORTABLE,
         )
     else:

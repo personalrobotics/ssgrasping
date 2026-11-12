@@ -111,6 +111,11 @@ class DropSpec:
     """The hand's ``GraspingProfile.opening_establishes_grasp``. When False, the
     transfer runs with no opening guard, and ``retained`` is unobserved
     (``no_portable_signal``)."""
+    assume_unobserved: bool = False
+    """The application's policy, apart from the hand's declaration: whether to proceed
+    on a transition this hand's opening cannot observe (``opening_establishes_grasp``
+    False). False, the default, refuses it: the stage fails ``transition_unobserved``.
+    True proceeds, and records it in ``SkillResult.assumed``."""
     released_opening: float = 0.9
     """The opening that confirms the fingers have let go."""
     gripper_timeout_ns: int = GRIPPER_TIMEOUT_NS
@@ -140,6 +145,7 @@ class DropSpec:
             "True or False",
             "opening_establishes_grasp",
         )
+        check_spec(isinstance(self.assume_unobserved, bool), "True or False", "assume_unobserved")
         check_spec(self.retreat_m >= 0, "must be non-negative", "retreat_m")
         check_spec(
             math.isfinite(self.fall_m) and 0 < self.fall_m <= MAX_FALL_M,
@@ -249,6 +255,7 @@ def _drop(
         ),
         Criterion("close_opening", spec.close_opening, "DropSpec.close_opening"),
         opening_establishes_grasp=spec.opening_establishes_grasp,
+        assume_unobserved=spec.assume_unobserved,
     )
     yield from run.move("transfer", choose(), planner, retain=carry)
 

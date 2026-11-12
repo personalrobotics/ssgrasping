@@ -9,11 +9,18 @@ A hand declares whether its gripper opening establishes a grasp
 - **When False,** as for the Kinova JACO2, whose fingers roll an object into the palm and
   can close to their target around it, the opening decides nothing: a close is not judged
   a miss, carries run with no opening guard, and `acquired` and `retained` are
-  `unobserved` (`no_portable_signal`). Proceeding on them is the application's policy.
+  `unobserved` (`no_portable_signal`).
+- **Proceeding on them is the application's separate policy,** `assume_unobserved` on
+  `GraspSpec`, `PlaceSpec` and `DropSpec`, default False. Without it, the stage that
+  needs the transition fails with the new reason `transition_unobserved` (cause: the
+  transition), the object conservatively reported held. With it, the skill proceeds and
+  records each transition it assumed in the new `SkillResult.assumed`.
 - **The default is unchanged:** every existing test's evidence is identical but for the
   lookahead race's field documented as timing-dependent.
-- **`tests/test_ada_grasp.py`:** ADA's bare hand grasps and lifts the 4 cm cylinder in
-  open space with the declaration; without it, the same close reads as a miss.
+- **`tests/test_ada_grasp.py`:** ADA's bare hand on the 4 cm cylinder in open space.
+  Without the declaration, the close reads as a miss; with it and no policy, the lift
+  refuses `retained`; with the policy, the grasp and lift succeed, both transitions
+  assumed.
 
 ssrobot's pin moves to e1761b1, whose planning model leaves out geometry that cannot
 collide, and with it sscbirrt to 3.16.0, which checks each trajectory piece at its own
