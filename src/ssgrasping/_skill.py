@@ -742,32 +742,35 @@ class Run:
         timeout_ns: int,
         *,
         ends: Ends,
-        group: str,
         allow: Sequence[str],
     ) -> Body:
         """Command ``gripper`` to ``opening`` and wait for the command to end, which it
         does when the fingers' motion ends (``GripperResult``); require it to succeed by
         ``timeout_ns``. The result is kept in ``values["gripper"][name]``.
 
-        Nothing is commanded unless the hand, with the fingers where the command ``ends``
-        (the gripper's declared ``open_positions`` or ``closed_positions``) and ``group``
-        where it is, touches nothing but ``allow`` (``obstructing``): otherwise ``name``
-        fails, ``gripper_obstructed``, naming what the fingers would touch, with the
-        fingers unmoved and the object as it was. An arm trajectory is checked by the
-        planner before it runs; this is the same check for the fingers."""
+        The command goes through ssrobot's checked path, ``ctx.grip``: nothing is
+        commanded unless the hand, with the fingers where the command leaves them (the
+        gripper's declared ``open_positions`` or ``closed_positions``, which ``ends``
+        names), touches nothing new but ``allow``. Otherwise ``name`` fails,
+        ``gripper_obstructed``, naming what the fingers would touch, with the fingers
+        unmoved and the object as it was. An arm trajectory is checked by the planner
+        before it runs; this is the same check for the fingers."""
         self.begin(name)
-        touched = obstructing(self.ctx, self.ctx.snapshot(), group, gripper, ends, allow)
-        if touched:
+        command = GripperCommand(gripper=gripper, opening=opening)
+        try:
+            execution = self.ctx.grip(command, allow=allow, timeout_ns=timeout_ns)
+        except ValidationError as e:
+            if e.code != "gripper_obstructed":
+                raise
             self.record(
                 name,
                 False,
-                f"the fingers {ends} would touch {', '.join(touched)}",
+                f"{ends}: {e.message}",
                 Evidence.PLANNED,
                 Reason.GRIPPER_OBSTRUCTED,
                 ends,
             )
-        command = GripperCommand(gripper=gripper, opening=opening)
-        execution = self.ctx.submit(command, timeout_ns=timeout_ns)
+            raise  # unreachable: a failed record ends the skill
         yield Wait(execution=execution)
         self.finished(name, execution)
         result = execution.status.gripper
@@ -943,51 +946,26 @@ def obstructing(
     """What the hand would newly touch in ``snapshot``, besides ``allow``, with
     ``gripper``'s joints where a command leaves them, its declared ``open_positions`` or
     ``closed_positions`` by ``ends``, and ``group`` at each of ``qs`` (where it is in
-    ``snapshot`` when None): each contact as ``first/second``, from the planning scene
-    with no clearance. A contact already there with the fingers where ``snapshot`` has
-    them is not the command's, so it is not counted: the command neither makes nor
-    clears it.
+    ``snapshot`` when None): each contact as ``first/second``. It is ssrobot's
+    ``ctx.gripper_contacts`` for a command fully opening or closing the fingers, at each
+    of ``qs``, so it is the check ``ctx.grip`` applies to that command there.
 
-    Only where the fingers end is checked, not their sweep. A gripper whose fingers move
-    monotonically between open and closed, as both reference robots' do, sweeps no
-    further out than it ends when opening, nor further in when closing. ``snapshot`` must
-    be the scene as it is when the command is sent.
+    A contact already there with the fingers where ``snapshot`` has them is not the
+    command's, so it is not counted, and only where the fingers end is checked, not
+    their sweep (``ctx.gripper_contacts``). ``snapshot`` must be the scene as it is when
+    the command is sent.
 
-    Refused (``ValidationError``): ``ends`` other than ``"open"`` or ``"closed"``; ``allow``
-    given as one string rather than a sequence of names; a gripper that declares no
-    positions; a snapshot that does not measure every one of its joints."""
+    Refused (``ValidationError``): ``ends`` other than ``"open"`` or ``"closed"``, and
+    whatever ``ctx.gripper_contacts`` refuses: ``allow`` given as one string rather than a
+    sequence of names, a gripper that declares no positions, or a snapshot that does not
+    measure every one of its joints."""
     if ends not in ("open", "closed"):
         raise ValidationError("invalid_ends", f"{ends!r} is not 'open' or 'closed'", path="ends")
-    if isinstance(allow, str):
-        raise ValidationError("wrong_type", "a sequence of names, not one string", path="allow")
-    declared = ctx.description.gripper(gripper)
-    positions = declared.open_positions if ends == "open" else declared.closed_positions
-    if not positions:
-        raise ValidationError(
-            "undeclared_positions",
-            f"gripper {gripper!r} declares no open_positions and closed_positions",
-            path="gripper",
-        )
-    missing = sorted(set(declared.joints) - set(snapshot.joints))
-    if missing:
-        raise ValidationError(
-            "missing_joints", f"the snapshot does not measure {', '.join(missing)}", path="snapshot"
-        )
-    if qs is None:
-        qs = (tuple(snapshot.position(j) for j in ctx.description.group(group).joints),)
-    allowed = set(allow)
-    ended = ctx.planning_scene(_at(snapshot, declared.joints, positions), group)
-    now = ctx.planning_scene(snapshot, group)
+    command = GripperCommand(gripper=gripper, opening=1.0 if ends == "open" else 0.0)
     touched: set[str] = set()
-    for q in qs:
-        before = {(c.first, c.second) for c in now.contacts(q)}
-        touched |= {
-            f"{c.first}/{c.second}"
-            for c in ended.contacts(q)
-            if c.first not in allowed
-            and c.second not in allowed
-            and (c.first, c.second) not in before
-        }
+    for q in (None,) if qs is None else qs:
+        contacts = ctx.gripper_contacts(command, snapshot=snapshot, allow=allow, group=group, q=q)
+        touched |= {f"{c.first}/{c.second}" for c in contacts}
     return tuple(sorted(touched))
 
 

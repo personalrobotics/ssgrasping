@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+The gripper is checked by ssrobot's own check, not a copy of it
+(personalrobotics/ssgrasping#63). ssrobot's pin moves to 66845ec, after
+personalrobotics/ssrobot#269, which refuses a gripper command reaching `ctx.submit`
+whose fingers would touch anything (`gripper_obstructed`).
+- **Every skill's gripper command goes through `ctx.grip`,** allowing what its stage
+  expects to touch, such as the object and its support for a close. A refused command
+  fails the stage `gripper_obstructed` as before, its cause the end the fingers were
+  checked at (`open` or `closed`); its detail is now ssrobot's message, such as
+  `closed: the fingers would touch post/right_ur5e/gripper/left_follower`.
+- **`obstructing` keeps its signature** and is now `ctx.gripper_contacts`, for a command
+  fully opening or closing the fingers, at each configuration given. An application that
+  commands a gripper itself can instead call `ctx.grip` with what it may touch.
+- **Unchanged evidence:** every test's evidence is identical but for that detail and the
+  lookahead race's field documented as timing-dependent.
+
 A hand declares whether its gripper opening establishes a grasp
 (`GraspingProfile.opening_establishes_grasp`, default True; personalrobotics/ssgrasping#47).
 - **The declaration** is a keyword of `sstsr.profile`, and a field of `GraspSpec`,
