@@ -288,7 +288,6 @@ def _grasp(
         spec.open_opening,
         spec.gripper_timeout_ns,
         ends="open",
-        group=arm.group,
         allow=(),
     )
     run.record(
@@ -375,7 +374,6 @@ def _grasp(
         spec.close_opening,
         spec.gripper_timeout_ns,
         ends="closed",
-        group=arm.group,
         allow=(spec.object, spec.support),
     )
     opening = float(run.observe(spec.opening_channel)[0])
@@ -391,7 +389,6 @@ def _grasp(
             spec.open_opening,
             spec.gripper_timeout_ns,
             ends="open",
-            group=arm.group,
             allow=(spec.object, spec.support),
         )
         run.record(
@@ -465,7 +462,6 @@ def _grasp(
             spec.close_opening,
             spec.gripper_timeout_ns,
             ends="closed",
-            group=arm.group,
             allow=(spec.object,),
         )
         lifted = float(run.observe(spec.opening_channel)[0])

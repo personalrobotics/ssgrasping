@@ -329,7 +329,6 @@ def _place(
         spec.open_opening,
         spec.gripper_timeout_ns,
         ends="open",
-        group=arm.group,
         allow=(spec.object, spec.target),
     )
     opening = float(run.observe(spec.opening_channel)[0])
